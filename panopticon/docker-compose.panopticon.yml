@@ -1,0 +1,336 @@
+# 8-agent Personal Panopticon (CN-IM env -> openclaw.json)
+#
+# Usage:
+#   docker compose -f panopticon/docker-compose.panopticon.yml up -d
+#
+# Notes:
+# - This compose builds the CN-IM image from this repo (../src/OpenClaw-Docker-CN-IM).
+# - CN-IM generates /home/node/.openclaw/openclaw.json from env on first boot.
+# - Each agent has its own OpenClaw home volume: panopticon/agent-homes/<agent>
+# - Each agent has its own workspace mounted into /home/node/.openclaw/workspace: panopticon/workspaces/<agent>
+# - Container-internal ports remain 18789 (gateway) / 18790 (bridge). Host ports are unique per agent.
+
+services:
+  mc-redis:
+    container_name: mc-redis
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/mission-control/redis-data
+        target: /data
+    restart: unless-stopped
+    networks:
+      - panopticon
+
+  mc-postgres:
+    container_name: mc-postgres
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: mission_control
+      POSTGRES_PASSWORD: mission_control
+      POSTGRES_DB: mission_control
+    volumes:
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/mission-control/postgres-data
+        target: /var/lib/postgresql/data
+      - type: bind
+        source: ./mission-control/db
+        target: /docker-entrypoint-initdb.d
+        read_only: true
+    restart: unless-stopped
+    networks:
+      - panopticon
+
+  mission-control-api:
+    container_name: mission-control-api
+    build:
+      context: ../mission_control_api
+      dockerfile: Dockerfile
+    image: mission-control-api:local
+    env_file:
+      - ./env/mission-control.env.example
+    depends_on:
+      - mc-redis
+      - mc-postgres
+    ports:
+      - "18910:8080"
+    restart: unless-stopped
+    networks:
+      - panopticon
+
+  mission-control-ui:
+    container_name: mission-control-ui
+    build:
+      context: ../MissionControl
+      dockerfile: Dockerfile
+    image: mission-control-ui:local
+    env_file:
+      - ./env/mission-control-ui.env.example
+    depends_on:
+      - mission-control-api
+    ports:
+      - "18920:8050"
+    restart: unless-stopped
+    networks:
+      - panopticon
+
+  openclaw-nox:
+    container_name: openclaw-nox
+    build:
+      context: ../src/OpenClaw-Docker-CN-IM
+      dockerfile: Dockerfile
+    image: openclaw-docker-cn-im:local
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+    env_file:
+      - ./env/nox.env.example
+    volumes:
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/nox
+        target: /home/node/.openclaw
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/workspaces/nox
+        target: /home/node/.openclaw/workspace
+      - /home/node/.openclaw/extensions
+    ports:
+      - "18801:18789"
+      - "18802:18790"
+    init: true
+    restart: unless-stopped
+    networks:
+      - panopticon
+
+  openclaw-metrics:
+    container_name: openclaw-metrics
+    build:
+      context: ../src/OpenClaw-Docker-CN-IM
+      dockerfile: Dockerfile
+    image: openclaw-docker-cn-im:local
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+    env_file:
+      - ./env/metrics.env.example
+    volumes:
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/metrics
+        target: /home/node/.openclaw
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/workspaces/metrics
+        target: /home/node/.openclaw/workspace
+      - /home/node/.openclaw/extensions
+    ports:
+      - "18811:18789"
+      - "18812:18790"
+    init: true
+    restart: unless-stopped
+    networks:
+      - panopticon
+
+  openclaw-email:
+    container_name: openclaw-email
+    build:
+      context: ../src/OpenClaw-Docker-CN-IM
+      dockerfile: Dockerfile
+    image: openclaw-docker-cn-im:local
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+    env_file:
+      - ./env/email.env.example
+    volumes:
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/email
+        target: /home/node/.openclaw
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/workspaces/email
+        target: /home/node/.openclaw/workspace
+      - /home/node/.openclaw/extensions
+    ports:
+      - "18821:18789"
+      - "18822:18790"
+    init: true
+    restart: unless-stopped
+    networks:
+      - panopticon
+
+  openclaw-growth:
+    container_name: openclaw-growth
+    build:
+      context: ../src/OpenClaw-Docker-CN-IM
+      dockerfile: Dockerfile
+    image: openclaw-docker-cn-im:local
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+    env_file:
+      - ./env/growth.env.example
+    volumes:
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/growth
+        target: /home/node/.openclaw
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/workspaces/growth
+        target: /home/node/.openclaw/workspace
+      - /home/node/.openclaw/extensions
+    ports:
+      - "18831:18789"
+      - "18832:18790"
+    init: true
+    restart: unless-stopped
+    networks:
+      - panopticon
+
+  openclaw-trades:
+    container_name: openclaw-trades
+    build:
+      context: ../src/OpenClaw-Docker-CN-IM
+      dockerfile: Dockerfile
+    image: openclaw-docker-cn-im:local
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+    env_file:
+      - ./env/trades.env.example
+    volumes:
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/trades
+        target: /home/node/.openclaw
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/workspaces/trades
+        target: /home/node/.openclaw/workspace
+      - /home/node/.openclaw/extensions
+    ports:
+      - "18841:18789"
+      - "18842:18790"
+    init: true
+    restart: unless-stopped
+    networks:
+      - panopticon
+
+  openclaw-health:
+    container_name: openclaw-health
+    build:
+      context: ../src/OpenClaw-Docker-CN-IM
+      dockerfile: Dockerfile
+    image: openclaw-docker-cn-im:local
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+    env_file:
+      - ./env/health.env.example
+    volumes:
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/health
+        target: /home/node/.openclaw
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/workspaces/health
+        target: /home/node/.openclaw/workspace
+      - /home/node/.openclaw/extensions
+    ports:
+      - "18851:18789"
+      - "18852:18790"
+    init: true
+    restart: unless-stopped
+    networks:
+      - panopticon
+
+  openclaw-writing:
+    container_name: openclaw-writing
+    build:
+      context: ../src/OpenClaw-Docker-CN-IM
+      dockerfile: Dockerfile
+    image: openclaw-docker-cn-im:local
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+    env_file:
+      - ./env/writing.env.example
+    volumes:
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/writing
+        target: /home/node/.openclaw
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/workspaces/writing
+        target: /home/node/.openclaw/workspace
+      - /home/node/.openclaw/extensions
+    ports:
+      - "18861:18789"
+      - "18862:18790"
+    init: true
+    restart: unless-stopped
+    networks:
+      - panopticon
+
+  openclaw-personal:
+    container_name: openclaw-personal
+    build:
+      context: ../src/OpenClaw-Docker-CN-IM
+      dockerfile: Dockerfile
+    image: openclaw-docker-cn-im:local
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+    env_file:
+      - ./env/personal.env.example
+    volumes:
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/personal
+        target: /home/node/.openclaw
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/workspaces/personal
+        target: /home/node/.openclaw/workspace
+      - /home/node/.openclaw/extensions
+    ports:
+      - "18871:18789"
+      - "18872:18790"
+    init: true
+    restart: unless-stopped
+    networks:
+      - panopticon
+
+networks:
+  panopticon:
+    driver: bridge

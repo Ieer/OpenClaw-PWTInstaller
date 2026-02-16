@@ -1,0 +1,39 @@
+# {slug} agent ({role})
+# CN-IM env -> openclaw.json (used by init.sh in the image)
+
+# Model
+MODEL_ID=
+BASE_URL=
+API_KEY=
+# openai-completions | anthropic-messages
+API_PROTOCOL=openai-completions
+CONTEXT_WINDOW=128000
+MAX_TOKENS=4096
+
+# Channels (optional)
+TELEGRAM_BOT_TOKEN=
+FEISHU_APP_ID=
+FEISHU_APP_SECRET=
+DINGTALK_CLIENT_ID=
+DINGTALK_CLIENT_SECRET=
+DINGTALK_ROBOT_CODE=
+DINGTALK_CORP_ID=
+DINGTALK_AGENT_ID=
+QQBOT_APP_ID=
+QQBOT_CLIENT_SECRET=
+WECOM_TOKEN=
+WECOM_ENCODING_AES_KEY=
+
+# Workspace (do not change unless you also change the volume mount)
+WORKSPACE=/home/node/.openclaw/workspace
+
+# Gateway (container-internal ports stay 18789/18790; host ports are mapped in docker-compose)
+OPENCLAW_GATEWAY_TOKEN={gateway_token}
+OPENCLAW_GATEWAY_BIND=lan
+OPENCLAW_GATEWAY_PORT=18789
+OPENCLAW_BRIDGE_PORT=18790
+
+# Mission Control integration (future; not consumed by CN-IM init.sh today)
+AGENT_SLUG={slug}
+EVENT_HTTP_URL=
+EVENT_WS_URL=

@@ -1,0 +1,69 @@
+version: 1
+
+mission_control:
+  api_port: 18910
+  ui_port: 18920
+
+agent_runtime:
+  cnim_build_context: ../src/OpenClaw-Docker-CN-IM
+  cnim_dockerfile: Dockerfile
+  cnim_image: openclaw-docker-cn-im:local
+  container_gateway_port: 18789
+  container_bridge_port: 18790
+
+agents:
+  - slug: nox
+    role: product ops / roadmap
+    enabled: true
+    gateway_host_port: 18801
+    bridge_host_port: 18802
+    gateway_token: CHANGE_ME_NOX
+
+  - slug: metrics
+    role: analytics / reporting
+    enabled: true
+    gateway_host_port: 18811
+    bridge_host_port: 18812
+    gateway_token: CHANGE_ME_METRICS
+
+  - slug: email
+    role: email marketing
+    enabled: true
+    gateway_host_port: 18821
+    bridge_host_port: 18822
+    gateway_token: CHANGE_ME_EMAIL
+
+  - slug: growth
+    role: growth strategy
+    enabled: true
+    gateway_host_port: 18831
+    bridge_host_port: 18832
+    gateway_token: CHANGE_ME_GROWTH
+
+  - slug: trades
+    role: trading / finance ops
+    enabled: true
+    gateway_host_port: 18841
+    bridge_host_port: 18842
+    gateway_token: CHANGE_ME_TRADES
+
+  - slug: health
+    role: personal health planner
+    enabled: true
+    gateway_host_port: 18851
+    bridge_host_port: 18852
+    gateway_token: CHANGE_ME_HEALTH
+
+  - slug: writing
+    role: writing / content
+    enabled: true
+    gateway_host_port: 18861
+    bridge_host_port: 18862
+    gateway_token: CHANGE_ME_WRITING
+
+  - slug: personal
+    role: personal assistant
+    enabled: true
+    gateway_host_port: 18871
+    bridge_host_port: 18872
+    gateway_token: CHANGE_ME_PERSONAL
