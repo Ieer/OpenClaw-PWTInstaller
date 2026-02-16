@@ -1,4 +1,5 @@
 import os
+import re
 import threading
 import time
 from urllib.parse import parse_qs, urlencode
@@ -12,8 +13,10 @@ from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
 APP_TITLE = "Mission Control"
 
 MISSION_CONTROL_API_URL = os.getenv("MISSION_CONTROL_API_URL") or "http://localhost:18910"
+MISSION_CONTROL_AGENT_MANIFEST_PATH = os.getenv("MISSION_CONTROL_AGENT_MANIFEST_PATH") or "/app/panopticon_agents.manifest.yaml"
+MISSION_CONTROL_AGENT_SLUGS = os.getenv("MISSION_CONTROL_AGENT_SLUGS") or ""
 MISSION_CONTROL_DOCS_URL = os.getenv("MISSION_CONTROL_DOCS_URL") or (
-    "https://github.com/miaoxworld/OpenClawInstaller/blob/main/panopticon/README.md"
+    "https://github.com/Ieer/OpenClaw-PWTInstaller/blob/main/panopticon/README.md"
 )
 MISSION_CONTROL_AUTH_TOKEN = (
     os.getenv("MISSION_CONTROL_AUTH_TOKEN")
@@ -21,6 +24,42 @@ MISSION_CONTROL_AUTH_TOKEN = (
     or os.getenv("MISSION_CONTROL_TOKEN")
     or ""
 ).strip()
+
+
+def _load_static_agent_names() -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+
+    env_names = [part.strip() for part in MISSION_CONTROL_AGENT_SLUGS.split(",") if part.strip()]
+    for name in env_names:
+        if name not in seen:
+            seen.add(name)
+            names.append(name)
+
+    manifest_path = MISSION_CONTROL_AGENT_MANIFEST_PATH.strip()
+    if not manifest_path:
+        return names
+
+    if not os.path.exists(manifest_path):
+        return names
+
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            for line in f:
+                match = re.match(r"^\s*-\s*slug\s*:\s*([A-Za-z0-9_-]+)\s*$", line)
+                if not match:
+                    continue
+                slug = match.group(1).strip()
+                if slug and slug not in seen:
+                    seen.add(slug)
+                    names.append(slug)
+    except OSError:
+        return names
+
+    return names
+
+
+STATIC_AGENT_NAMES = _load_static_agent_names()
 
 
 WS_LOCK = threading.Lock()
@@ -171,7 +210,7 @@ def _tone_for_status(status: str) -> str:
 
 
 def _build_agents(board: dict, feed: list[dict]) -> list[dict]:
-    names: set[str] = set()
+    names: set[str] = set(STATIC_AGENT_NAMES)
     last_seen: dict[str, datetime] = {}
 
     for col in board.get("columns", []) or []:
@@ -204,10 +243,11 @@ def _build_agents(board: dict, feed: list[dict]) -> list[dict]:
         status = "IDLE"
         if recent_time and (now - recent_time).total_seconds() <= 30 * 60:
             status = "RECENT"
+        role = "Seen in board/feed" if recent_time else "Manifest agent"
         agents.append(
             {
                 "name": name,
-                "role": "Seen in board/feed",
+                "role": role,
                 "badge": "AGENT",
                 "status": status,
                 "tag": "AGENT",
@@ -734,9 +774,9 @@ _ensure_ws_thread_started()
 
 if __name__ == "__main__":
     debug = (os.getenv("DASH_DEBUG") or "").strip().lower() in {"1", "true", "yes"}
-    port_raw = (os.getenv("PORT") or os.getenv("DASH_PORT") or "8050").strip()
+    port_raw = (os.getenv("PORT") or os.getenv("DASH_PORT") or "9090").strip()
     try:
         port = int(port_raw)
     except ValueError:
-        port = 8050
+        port = 9090
     app.run(host="0.0.0.0", port=port, debug=debug)

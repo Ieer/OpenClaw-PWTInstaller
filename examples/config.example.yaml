@@ -129,7 +129,7 @@ gateway:
   host: "127.0.0.1"
   
   # 监听端口
-  port: 18789
+  port: 26216
   
   # API 密钥（用于 HTTP API 鉴权）
   # api_key: "your-gateway-api-key"

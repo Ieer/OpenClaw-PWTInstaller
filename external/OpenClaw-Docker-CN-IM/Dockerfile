@@ -75,7 +75,7 @@ ENV HOME=/home/node \
     TERM=xterm-256color
 
 # 暴露端口
-EXPOSE 18789 18790
+EXPOSE 27216 27217
 
 # 设置工作目录为 home
 WORKDIR /home/node

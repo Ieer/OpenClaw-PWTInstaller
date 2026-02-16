@@ -117,6 +117,28 @@ docker compose -f panopticon/docker-compose.panopticon.yml up -d
 docker compose -f panopticon/docker-compose.panopticon.yml logs -f --tail=200
 ```
 
+## 开机自启（Mission Control 一条命令）
+
+启用（创建并启动 systemd 服务）：
+
+```bash
+bash panopticon/tools/setup_mission_control_autostart.sh
+```
+
+停用（移除 systemd 服务）：
+
+```bash
+bash panopticon/tools/setup_mission_control_autostart.sh --disable
+```
+
+该服务统一管理 `mc-redis`、`mc-postgres`、`mission-control-api`、`mission-control-ui`、`mc-heartbeat` 以及 8 个 `openclaw-*` agent 容器。
+
+一键巡检 13 个服务（红绿结果）：
+
+```bash
+bash panopticon/tools/check_panopticon_services.sh
+```
+
 ## 增删 Agent 快速作业
 
 新增 agent（建议）：
@@ -154,17 +176,17 @@ docker compose -f panopticon/docker-compose.panopticon.yml up -d --remove-orphan
 
 Mission Control：
 
-- API：18910→8080（REST + WebSocket）
-- UI：18920→8050（Dash）
+- API：18910→9090（REST + WebSocket）
+- UI：18920→9090（Dash）
 
-- nox：18801→18789，18802→18790
-- metrics：18811→18789，18812→18790
-- email：18821→18789，18822→18790
-- growth：18831→18789，18832→18790
-- trades：18841→18789，18842→18790
-- health：18851→18789，18852→18790
-- writing：18861→18789，18862→18790
-- personal：18871→18789，18872→18790
+- nox：18801→26216，18802→18790
+- metrics：18811→26216，18812→18790
+- email：18821→26216，18822→18790
+- growth：18831→26216，18832→18790
+- trades：18841→26216，18842→18790
+- health：18851→26216，18852→18790
+- writing：18861→26216，18862→18790
+- personal：18871→26216，18872→18790
 
 Mission Control API（示例）：
 
@@ -179,6 +201,9 @@ curl http://localhost:18910/v1/boards/default
 curl -X POST http://localhost:18910/v1/events \
   -H "Content-Type: application/json" \
   -d '{"type":"agent.heartbeat","agent":"nox","payload":{"ok":true}}'
+
+# 自动心跳上报日志
+docker compose -f panopticon/docker-compose.panopticon.yml logs -f --tail=50 mc-heartbeat
 ```
 
 ## 数据隔离
@@ -189,8 +214,8 @@ curl -X POST http://localhost:18910/v1/events \
 
 ## 注意事项
 
-- 该 compose 默认从本 repo 直接 build CN-IM 镜像：`../src/OpenClaw-Docker-CN-IM`（tag 为 `openclaw-docker-cn-im:local`）；首次启动会花较久时间在安装依赖与插件。
-- `OPENCLAW_GATEWAY_PORT` / `OPENCLAW_BRIDGE_PORT` 在 env 中保持 **18789/18790**（容器内端口固定）；host 端口在 compose 中已做区分。
+- 该 compose 默认从本 repo 直接 build CN-IM 镜像：`../external/OpenClaw-Docker-CN-IM`（tag 为 `openclaw-docker-cn-im:local`）；首次启动会花较久时间在安装依赖与插件。
+- `OPENCLAW_GATEWAY_PORT` / `OPENCLAW_BRIDGE_PORT` 在 env 中保持 **26216/18790**（容器内端口固定）；host 端口在 compose 中已做区分。
 
 Mission Control：
 

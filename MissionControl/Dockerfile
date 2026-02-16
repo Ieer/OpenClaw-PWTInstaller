@@ -11,6 +11,6 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY app.py /app/app.py
 COPY assets /app/assets
 
-EXPOSE 8050
+EXPOSE 9090
 
 CMD ["python", "/app/app.py"]

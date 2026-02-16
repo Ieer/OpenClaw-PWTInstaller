@@ -43,7 +43,7 @@ services:
       # 使用匿名卷排除 extensions 目录，使用镜像中预装的插件
       - /home/node/.openclaw/extensions
     ports:
-      - "${OPENCLAW_GATEWAY_PORT}:18789"
-      - "${OPENCLAW_BRIDGE_PORT}:18790"
+      - "${OPENCLAW_GATEWAY_PORT}:27216"
+      - "${OPENCLAW_BRIDGE_PORT}:27217"
     init: true
     restart: unless-stopped

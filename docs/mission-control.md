@@ -28,7 +28,7 @@ Build a multi-agent "Mission Control" system on top of OpenClaw where each agent
 
 - One container per agent role (Jarvis, Shuri, Fury, Vision, Loki, Quill, Wanda, Pepper, Friday, Wong).
 - Each container has its own config and secrets and a scoped toolset.
-- Agents expose REST endpoints on port 18789 for task execution and health.
+- Agents expose REST endpoints on port 26216 for task execution and health.
 
 ### 2) Mission Control Web
 

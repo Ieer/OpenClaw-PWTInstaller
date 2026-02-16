@@ -30,7 +30,7 @@
 每個容器：
 - 掛載獨立 OpenClaw home（例如 /root/.openclaw）以隔離 config / plugins / skills cache。
 - 掛載獨立工作目錄到 /workspace（例如 host 的 ~/nox 對應一個 volume）。
-- 容器內 gateway 服務固定使用 18789；host 端映射到不同 port（避免衝突）。
+- 容器內 gateway 服務固定使用 26216；host 端映射到不同 port（避免衝突）。
 - 只啟用該角色需要的工具（browser/shell/外部 API）與最小權限。
 
 ### 2) Control plane：Mission Control（Dash + API + WS）
@@ -142,7 +142,7 @@ CN-IM 既有欄位（可直接沿用）：
 為了支援「多 agent per-container 差異化」與「Mission Control 整合」，建議新增：
 - AGENT_SLUG：nox/metrics/email/...（用於命名、事件上報、log 標籤）
 - AGENT_ROLE：可讀的人類角色描述（可選）
-- AGENT_HOST_PORT：對外映射 port（例如 18789→18xxx）
+- AGENT_HOST_PORT：對外映射 port（例如 26216→18xxx）
 - OPENCLAW_HOME_DIR：容器內 OpenClaw home（例如 /root/.openclaw）
 - WORKSPACE_DIR：容器內 workspace 掛載點（例如 /workspace）
 - GLOBAL_SKILLS_DIR：global skills 掛載路徑（例如 /skills/global）

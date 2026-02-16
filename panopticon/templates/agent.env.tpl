@@ -27,10 +27,10 @@ WECOM_ENCODING_AES_KEY=
 # Workspace (do not change unless you also change the volume mount)
 WORKSPACE=/home/node/.openclaw/workspace
 
-# Gateway (container-internal ports stay 18789/18790; host ports are mapped in docker-compose)
+# Gateway (container-internal ports stay 26216/18790; host ports are mapped in docker-compose)
 OPENCLAW_GATEWAY_TOKEN={gateway_token}
 OPENCLAW_GATEWAY_BIND=lan
-OPENCLAW_GATEWAY_PORT=18789
+OPENCLAW_GATEWAY_PORT=26216
 OPENCLAW_BRIDGE_PORT=18790
 
 # Mission Control integration (future; not consumed by CN-IM init.sh today)

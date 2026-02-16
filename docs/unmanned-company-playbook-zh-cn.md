@@ -185,7 +185,7 @@ CN-IM 模板已有字段（可沿用）：
 
 为支持多 agent 与 Mission Control 整合，建议补齐：
 - `AGENT_SLUG`：nox/metrics/email/...
-- `AGENT_HOST_PORT`：host 映射端口（容器内仍使用 18789）
+- `AGENT_HOST_PORT`：host 映射端口（容器内仍使用 26216）
 - `OPENCLAW_HOME_DIR`：容器内 OpenClaw home（如 /root/.openclaw）
 - `WORKSPACE_DIR`：容器内挂载点（如 /workspace）
 - `GLOBAL_SKILLS_DIR`：如 /skills/global

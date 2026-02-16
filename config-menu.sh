@@ -261,7 +261,7 @@ restart_gateway_for_channel() {
     sleep 2
     
     # 使用端口检测判断服务是否启动成功（更可靠）
-    local gateway_pid=$(lsof -ti :18789 2>/dev/null | head -1)
+    local gateway_pid=$(lsof -ti :26216 2>/dev/null | head -1)
     
     if [ -n "$gateway_pid" ]; then
         log_info "Gateway 已重启！(PID: $gateway_pid)"
@@ -872,7 +872,7 @@ show_status() {
         echo -e "  ${GREEN}✓${NC} OpenClaw 已安装: $(openclaw --version 2>/dev/null || echo 'unknown')"
         
         # 使用端口检测判断服务运行状态（更可靠）
-        local status_pid=$(lsof -ti :18789 2>/dev/null | head -1)
+        local status_pid=$(lsof -ti :26216 2>/dev/null | head -1)
         if [ -n "$status_pid" ]; then
             echo -e "  ${GREEN}●${NC} 服务状态: ${GREEN}运行中${NC} (PID: $status_pid)"
         else
@@ -3558,7 +3558,7 @@ manage_service() {
     echo ""
     
     # 使用端口检测判断服务状态（更可靠）
-    local menu_status_pid=$(lsof -ti :18789 2>/dev/null | head -1)
+    local menu_status_pid=$(lsof -ti :26216 2>/dev/null | head -1)
     if [ -n "$menu_status_pid" ]; then
         echo -e "  当前状态: ${GREEN}● 运行中${NC} (PID: $menu_status_pid)"
     else
@@ -3587,7 +3587,7 @@ manage_service() {
             echo ""
             if command -v openclaw &> /dev/null; then
                 # 先检查服务是否已经在运行（使用端口检测，更可靠）
-                local port=18789
+                local port=26216
                 local running_pid=$(lsof -ti :$port 2>/dev/null | head -1)
                 
                 if [ -n "$running_pid" ]; then
@@ -3673,16 +3673,16 @@ manage_service() {
                 # 后台启动 Gateway（使用 setsid 完全脱离终端）
                 if command -v setsid &> /dev/null; then
                     if [ -f "$OPENCLAW_ENV" ]; then
-                        setsid bash -c "source $OPENCLAW_ENV && exec openclaw gateway --port 18789" > /tmp/openclaw-gateway.log 2>&1 &
+                        setsid bash -c "source $OPENCLAW_ENV && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
                     else
-                        setsid openclaw gateway --port 18789 > /tmp/openclaw-gateway.log 2>&1 &
+                        setsid openclaw gateway --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
                     fi
                 else
                     # 备用方案：nohup + disown
                     if [ -f "$OPENCLAW_ENV" ]; then
-                        nohup bash -c "source $OPENCLAW_ENV && exec openclaw gateway --port 18789" > /tmp/openclaw-gateway.log 2>&1 &
+                        nohup bash -c "source $OPENCLAW_ENV && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
                     else
-                        nohup openclaw gateway --port 18789 > /tmp/openclaw-gateway.log 2>&1 &
+                        nohup openclaw gateway --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
                     fi
                     disown 2>/dev/null || true
                 fi
@@ -3692,7 +3692,7 @@ manage_service() {
                 local check_count=0
                 while [ $check_count -lt 5 ]; do
                     sleep 1
-                    gateway_pid=$(lsof -ti :18789 2>/dev/null | head -1)
+                    gateway_pid=$(lsof -ti :26216 2>/dev/null | head -1)
                     if [ -n "$gateway_pid" ]; then
                         break
                     fi
@@ -3728,7 +3728,7 @@ manage_service() {
                         tail -5 /tmp/openclaw-gateway.log 2>/dev/null | sed 's/^/  /'
                     fi
                 else
-                    log_error "启动失败，端口 18789 无服务监听"
+                    log_error "启动失败，端口 26216 无服务监听"
                     echo ""
                     
                     # 显示日志文件内容
@@ -3761,7 +3761,7 @@ manage_service() {
                 openclaw gateway stop 2>/dev/null || true
                 sleep 1
                 # 使用端口检测判断服务是否已停止（更可靠）
-                local stop_pid=$(lsof -ti :18789 2>/dev/null | head -1)
+                local stop_pid=$(lsof -ti :26216 2>/dev/null | head -1)
                 if [ -z "$stop_pid" ]; then
                     log_info "服务已停止"
                 else
@@ -3792,7 +3792,7 @@ manage_service() {
                 sleep 2
                 
                 # 使用端口检测判断服务是否启动成功（更可靠）
-                local gateway_pid=$(lsof -ti :18789 2>/dev/null | head -1)
+                local gateway_pid=$(lsof -ti :26216 2>/dev/null | head -1)
                 
                 if [ -n "$gateway_pid" ]; then
                     log_info "服务已重启 (PID: $gateway_pid)"
@@ -3914,7 +3914,7 @@ manage_service() {
             fi
             
             # 使用端口检测确保服务已停止
-            local uninstall_pid=$(lsof -ti :18789 2>/dev/null | head -1)
+            local uninstall_pid=$(lsof -ti :26216 2>/dev/null | head -1)
             if [ -n "$uninstall_pid" ]; then
                 log_warn "强制停止服务 (PID: $uninstall_pid)..."
                 kill -9 $uninstall_pid 2>/dev/null || true

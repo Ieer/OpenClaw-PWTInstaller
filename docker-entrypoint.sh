@@ -23,7 +23,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "配置目录: $CONFIG_DIR"
 echo "日志目录: $CONFIG_DIR/logs"
 echo "技能目录: $CONFIG_DIR/skills"
-echo "网关端口: 18789"
+echo "网关端口: 26216"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 

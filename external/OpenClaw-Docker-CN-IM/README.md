@@ -76,13 +76,27 @@ nano .env
 docker-compose up -d
 ```
 
-### 4. 查看日志
+### 4. 设置开机自启（systemd 一条命令）
+
+启用（创建并启动 systemd 服务）：
+
+```bash
+bash tools/setup_openclaw_autostart.sh
+```
+
+停用（移除 systemd 服务）：
+
+```bash
+bash tools/setup_openclaw_autostart.sh --disable
+```
+
+### 5. 查看日志
 
 ```bash
 docker-compose logs -f
 ```
 
-### 5. 停止服务
+### 6. 停止服务
 
 ```bash
 docker-compose down
@@ -146,8 +160,8 @@ MAX_TOKENS=8192
 |------|------|--------|
 | `OPENCLAW_GATEWAY_TOKEN` | Gateway 访问令牌 | `123456` |
 | `OPENCLAW_GATEWAY_BIND` | 绑定地址 | `lan` |
-| `OPENCLAW_GATEWAY_PORT` | Gateway 端口 | `18789` |
-| `OPENCLAW_BRIDGE_PORT` | Bridge 端口 | `18790` |
+| `OPENCLAW_GATEWAY_PORT` | Gateway 端口 | `27216` |
+| `OPENCLAW_BRIDGE_PORT` | Bridge 端口 | `27217` |
 
 ### 工作空间配置
 
@@ -213,7 +227,15 @@ openclaw pairing approve telegram {token}
 
 ## 注意事项
 
-1. 确保宿主机的 18789 和 18790 端口未被占用
+1. 确保宿主机的 27216 和 27217 端口未被占用
+
+可一键自检：
+
+```bash
+ss -ltn '( sport = :27216 or sport = :27217 )'
+```
+
+无输出表示端口空闲；若有输出请先停止占用进程后再启动容器。
 2. 配置文件中的敏感信息（如 API 密钥、令牌）应妥善保管
 3. 首次运行时会自动创建必要的目录和配置文件
 4. 容器以 `node` 用户身份运行，确保挂载的卷有正确的权限
@@ -475,11 +497,12 @@ docker run -d \
   -e WECOM_ENCODING_AES_KEY=your-aes-key \
   -e OPENCLAW_GATEWAY_TOKEN=123456 \
   -e OPENCLAW_GATEWAY_BIND=lan \
-  -e OPENCLAW_GATEWAY_PORT=18789 \
+  -e OPENCLAW_GATEWAY_PORT=27216 \
+  -e OPENCLAW_BRIDGE_PORT=27217 \
   -v ~/.openclaw:/home/node/.openclaw \
   -v ~/.openclaw/workspace:/home/node/.openclaw/workspace \
-  -p 18789:18789 \
-  -p 18790:18790 \
+  -p 27216:27216 \
+  -p 27217:27217 \
   --restart unless-stopped \
   justlikemaki/openclaw-docker-cn-im:latest
 ```
@@ -499,8 +522,8 @@ docker run -d \
 <details>
 <summary><b>端口说明</b></summary>
 
-- `18789` - OpenClaw Gateway 端口
-- `18790` - OpenClaw Bridge 端口
+- `27216` - OpenClaw Gateway 端口
+- `27217` - OpenClaw Bridge 端口
 
 </details>
 

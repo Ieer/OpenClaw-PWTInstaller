@@ -1426,7 +1426,7 @@ start_openclaw_service() {
     fi
     
     # 使用端口检测判断是否已有服务在运行（更可靠）
-    local existing_pid=$(lsof -ti :18789 2>/dev/null | head -1)
+    local existing_pid=$(lsof -ti :26216 2>/dev/null | head -1)
     if [ -n "$existing_pid" ]; then
         log_warn "OpenClaw Gateway 已在运行 (PID: $existing_pid)"
         echo ""
@@ -1443,16 +1443,16 @@ start_openclaw_service() {
     
     if command -v setsid &> /dev/null; then
         if [ -f "$env_file" ]; then
-            setsid bash -c "source $env_file && exec openclaw gateway --port 18789" > /tmp/openclaw-gateway.log 2>&1 &
+            setsid bash -c "source $env_file && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
         else
-            setsid openclaw gateway --port 18789 > /tmp/openclaw-gateway.log 2>&1 &
+            setsid openclaw gateway --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
         fi
     else
         # 备用方案：nohup + disown
         if [ -f "$env_file" ]; then
-            nohup bash -c "source $env_file && exec openclaw gateway --port 18789" > /tmp/openclaw-gateway.log 2>&1 &
+            nohup bash -c "source $env_file && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
         else
-            nohup openclaw gateway --port 18789 > /tmp/openclaw-gateway.log 2>&1 &
+            nohup openclaw gateway --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
         fi
         disown 2>/dev/null || true
     fi
@@ -1461,7 +1461,7 @@ start_openclaw_service() {
     sleep 3
     
     # 使用端口检测判断服务是否启动成功（更可靠）
-    local gateway_pid=$(lsof -ti :18789 2>/dev/null | head -1)
+    local gateway_pid=$(lsof -ti :26216 2>/dev/null | head -1)
     if [ -n "$gateway_pid" ]; then
         echo ""
         echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

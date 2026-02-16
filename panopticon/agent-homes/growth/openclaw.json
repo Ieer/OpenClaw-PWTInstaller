@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "lastTouchedVersion": "2026.2.14",
+    "lastTouchedAt": "2026-02-16T13:27:06.767Z"
+  },
+  "update": {
+    "checkOnStart": false
+  },
+  "browser": {
+    "headless": true,
+    "noSandbox": true,
+    "defaultProfile": "openclaw",
+    "executablePath": "/usr/bin/chromium"
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "default": {
+        "models": []
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "compaction": {
+        "mode": "safeguard"
+      },
+      "elevatedDefault": "full",
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
+      }
+    }
+  },
+  "messages": {
+    "ackReactionScope": "group-mentions",
+    "tts": {
+      "edge": {
+        "voice": "zh-CN-XiaoxiaoNeural"
+      }
+    }
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto"
+  },
+  "channels": {},
+  "plugins": {
+    "entries": {},
+    "installs": {}
+  },
+  "memory": {
+    "backend": "qmd",
+    "qmd": {
+      "command": "/usr/local/bin/qmd",
+      "paths": [
+        {
+          "path": "/home/node/.openclaw/workspace",
+          "name": "workspace",
+          "pattern": "**/*.md"
+        }
+      ]
+    }
+  },
+  "gateway": {
+    "port": 26216,
+    "bind": "lan",
+    "mode": "local",
+    "auth": {
+      "token": "CHANGE_ME_GROWTH"
+    }
+  }
+}

@@ -43,7 +43,7 @@ COPY examples/skills/ /root/.openclaw/skills/
 VOLUME ["/root/.openclaw"]
 
 # 暴露端口
-EXPOSE 18789
+EXPOSE 26216
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

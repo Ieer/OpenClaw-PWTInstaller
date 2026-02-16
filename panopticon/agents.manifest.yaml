@@ -5,10 +5,10 @@ mission_control:
   ui_port: 18920
 
 agent_runtime:
-  cnim_build_context: ../src/OpenClaw-Docker-CN-IM
+  cnim_build_context: ../external/OpenClaw-Docker-CN-IM
   cnim_dockerfile: Dockerfile
   cnim_image: openclaw-docker-cn-im:local
-  container_gateway_port: 18789
+  container_gateway_port: 26216
   container_bridge_port: 18790
 
 agents:

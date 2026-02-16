@@ -25,6 +25,7 @@ def render_compose(manifest: dict) -> str:
     mission_control = manifest["mission_control"]
     runtime = manifest["agent_runtime"]
     agents = [agent for agent in manifest["agents"] if agent.get("enabled", True)]
+    agent_slugs = ",".join(agent["slug"] for agent in agents)
 
     compose_header = textwrap.dedent(
         """\
@@ -39,7 +40,7 @@ def render_compose(manifest: dict) -> str:
             command: [\"redis-server\", \"--appendonly\", \"yes\"]
             volumes:
               - type: bind
-                source: ${PANOPTICON_DATA_DIR:-.}/mission-control/redis-data
+                source: ${{PANOPTICON_DATA_DIR:-.}}/mission-control/redis-data
                 target: /data
             restart: unless-stopped
             networks:
@@ -54,7 +55,7 @@ def render_compose(manifest: dict) -> str:
               POSTGRES_DB: mission_control
             volumes:
               - type: bind
-                source: ${PANOPTICON_DATA_DIR:-.}/mission-control/postgres-data
+                source: ${{PANOPTICON_DATA_DIR:-.}}/mission-control/postgres-data
                 target: /var/lib/postgresql/data
               - type: bind
                 source: ./mission-control/db
@@ -76,7 +77,7 @@ def render_compose(manifest: dict) -> str:
               - mc-redis
               - mc-postgres
             ports:
-              - \"{api_port}:8080\"
+              - \"{api_port}:9090\"
             restart: unless-stopped
             networks:
               - panopticon
@@ -89,15 +90,41 @@ def render_compose(manifest: dict) -> str:
             image: mission-control-ui:local
             env_file:
               - ./env/mission-control-ui.env.example
+            volumes:
+              - type: bind
+                source: ./agents.manifest.yaml
+                target: /app/panopticon_agents.manifest.yaml
+                read_only: true
             depends_on:
               - mission-control-api
             ports:
-              - \"{ui_port}:8050\"
+              - \"{ui_port}:9090\"
+            restart: unless-stopped
+            networks:
+              - panopticon
+
+          mc-heartbeat:
+            container_name: mc-heartbeat
+            image: python:3.12-alpine
+            env_file:
+              - ./env/mission-control.env.example
+            environment:
+              MC_API_URL: http://mission-control-api:9090
+              MC_HEARTBEAT_AGENTS: {agent_slugs}
+              MC_HEARTBEAT_INTERVAL_SECONDS: "60"
+            volumes:
+              - type: bind
+                source: ./tools/heartbeat_emitter.py
+                target: /app/heartbeat_emitter.py
+                read_only: true
+            command: ["python", "/app/heartbeat_emitter.py"]
+            depends_on:
+              - mission-control-api
             restart: unless-stopped
             networks:
               - panopticon
         """
-    ).format(api_port=mission_control["api_port"], ui_port=mission_control["ui_port"])
+    ).format(api_port=mission_control["api_port"], ui_port=mission_control["ui_port"], agent_slugs=agent_slugs)
 
     services_text = []
     for agent in agents:
@@ -105,53 +132,52 @@ def render_compose(manifest: dict) -> str:
         gateway_host_port = agent["gateway_host_port"]
         bridge_host_port = agent["bridge_host_port"]
 
-        services_text.append(
-            textwrap.dedent(
-                """\
+        service_block = textwrap.dedent(
+            """\
+            openclaw-{slug}:
+              container_name: openclaw-{slug}
+              build:
+                context: {cnim_build_context}
+                dockerfile: {cnim_dockerfile}
+              image: {cnim_image}
+              cap_add:
+                - CHOWN
+                - SETUID
+                - SETGID
+                - DAC_OVERRIDE
+              environment:
+                HOME: /home/node
+                TERM: xterm-256color
+              env_file:
+                - ./env/{slug}.env.example
+              volumes:
+                - type: bind
+                  source: ${{PANOPTICON_DATA_DIR:-.}}/agent-homes/{slug}
+                  target: /home/node/.openclaw
+                - type: bind
+                  source: ${{PANOPTICON_DATA_DIR:-.}}/workspaces/{slug}
+                  target: /home/node/.openclaw/workspace
+                - /home/node/.openclaw/extensions
+              ports:
+                - \"{gateway_host_port}:{gateway_container_port}\"
+                - \"{bridge_host_port}:{bridge_container_port}\"
+              init: true
+              restart: unless-stopped
+              networks:
+                - panopticon
 
-                  openclaw-{slug}:
-                    container_name: openclaw-{slug}
-                    build:
-                      context: {cnim_build_context}
-                      dockerfile: {cnim_dockerfile}
-                    image: {cnim_image}
-                    cap_add:
-                      - CHOWN
-                      - SETUID
-                      - SETGID
-                      - DAC_OVERRIDE
-                    environment:
-                      HOME: /home/node
-                      TERM: xterm-256color
-                    env_file:
-                      - ./env/{slug}.env.example
-                    volumes:
-                      - type: bind
-                        source: ${{PANOPTICON_DATA_DIR:-.}}/agent-homes/{slug}
-                        target: /home/node/.openclaw
-                      - type: bind
-                        source: ${{PANOPTICON_DATA_DIR:-.}}/workspaces/{slug}
-                        target: /home/node/.openclaw/workspace
-                      - /home/node/.openclaw/extensions
-                    ports:
-                      - \"{gateway_host_port}:{gateway_container_port}\"
-                      - \"{bridge_host_port}:{bridge_container_port}\"
-                    init: true
-                    restart: unless-stopped
-                    networks:
-                      - panopticon
-                """
-            ).format(
-                slug=slug,
-                cnim_build_context=runtime["cnim_build_context"],
-                cnim_dockerfile=runtime["cnim_dockerfile"],
-                cnim_image=runtime["cnim_image"],
-                gateway_host_port=gateway_host_port,
-                bridge_host_port=bridge_host_port,
-                gateway_container_port=runtime["container_gateway_port"],
-                bridge_container_port=runtime["container_bridge_port"],
-            )
+            """
+        ).format(
+            slug=slug,
+            cnim_build_context=runtime["cnim_build_context"],
+            cnim_dockerfile=runtime["cnim_dockerfile"],
+            cnim_image=runtime["cnim_image"],
+            gateway_host_port=gateway_host_port,
+            bridge_host_port=bridge_host_port,
+            gateway_container_port=runtime["container_gateway_port"],
+            bridge_container_port=runtime["container_bridge_port"],
         )
+        services_text.append(textwrap.indent(service_block, "  "))
 
     footer = textwrap.dedent(
         """

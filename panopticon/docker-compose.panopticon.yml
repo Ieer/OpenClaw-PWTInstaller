@@ -1,14 +1,6 @@
-# 8-agent Personal Panopticon (CN-IM env -> openclaw.json)
-#
-# Usage:
-#   docker compose -f panopticon/docker-compose.panopticon.yml up -d
-#
-# Notes:
-# - This compose builds the CN-IM image from this repo (../src/OpenClaw-Docker-CN-IM).
-# - CN-IM generates /home/node/.openclaw/openclaw.json from env on first boot.
-# - Each agent has its own OpenClaw home volume: panopticon/agent-homes/<agent>
-# - Each agent has its own workspace mounted into /home/node/.openclaw/workspace: panopticon/workspaces/<agent>
-# - Container-internal ports remain 18789 (gateway) / 18790 (bridge). Host ports are unique per agent.
+# AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY.
+# Source of truth: panopticon/agents.manifest.yaml
+# Generator: panopticon/tools/generate_panopticon.py
 
 services:
   mc-redis:
@@ -54,7 +46,7 @@ services:
       - mc-redis
       - mc-postgres
     ports:
-      - "18910:8080"
+      - "18910:9090"
     restart: unless-stopped
     networks:
       - panopticon
@@ -67,18 +59,43 @@ services:
     image: mission-control-ui:local
     env_file:
       - ./env/mission-control-ui.env.example
+    volumes:
+      - type: bind
+        source: ./agents.manifest.yaml
+        target: /app/panopticon_agents.manifest.yaml
+        read_only: true
     depends_on:
       - mission-control-api
     ports:
-      - "18920:8050"
+      - "18920:9090"
     restart: unless-stopped
     networks:
       - panopticon
 
+  mc-heartbeat:
+    container_name: mc-heartbeat
+    image: python:3.12-alpine
+    env_file:
+      - ./env/mission-control.env.example
+    environment:
+      MC_API_URL: http://mission-control-api:9090
+      MC_HEARTBEAT_AGENTS: nox,metrics,email,growth,trades,health,writing,personal
+      MC_HEARTBEAT_INTERVAL_SECONDS: "60"
+    volumes:
+      - type: bind
+        source: ./tools/heartbeat_emitter.py
+        target: /app/heartbeat_emitter.py
+        read_only: true
+    command: ["python", "/app/heartbeat_emitter.py"]
+    depends_on:
+      - mission-control-api
+    restart: unless-stopped
+    networks:
+      - panopticon
   openclaw-nox:
     container_name: openclaw-nox
     build:
-      context: ../src/OpenClaw-Docker-CN-IM
+      context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
     image: openclaw-docker-cn-im:local
     cap_add:
@@ -100,7 +117,7 @@ services:
         target: /home/node/.openclaw/workspace
       - /home/node/.openclaw/extensions
     ports:
-      - "18801:18789"
+      - "18801:26216"
       - "18802:18790"
     init: true
     restart: unless-stopped
@@ -110,7 +127,7 @@ services:
   openclaw-metrics:
     container_name: openclaw-metrics
     build:
-      context: ../src/OpenClaw-Docker-CN-IM
+      context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
     image: openclaw-docker-cn-im:local
     cap_add:
@@ -132,7 +149,7 @@ services:
         target: /home/node/.openclaw/workspace
       - /home/node/.openclaw/extensions
     ports:
-      - "18811:18789"
+      - "18811:26216"
       - "18812:18790"
     init: true
     restart: unless-stopped
@@ -142,7 +159,7 @@ services:
   openclaw-email:
     container_name: openclaw-email
     build:
-      context: ../src/OpenClaw-Docker-CN-IM
+      context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
     image: openclaw-docker-cn-im:local
     cap_add:
@@ -164,7 +181,7 @@ services:
         target: /home/node/.openclaw/workspace
       - /home/node/.openclaw/extensions
     ports:
-      - "18821:18789"
+      - "18821:26216"
       - "18822:18790"
     init: true
     restart: unless-stopped
@@ -174,7 +191,7 @@ services:
   openclaw-growth:
     container_name: openclaw-growth
     build:
-      context: ../src/OpenClaw-Docker-CN-IM
+      context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
     image: openclaw-docker-cn-im:local
     cap_add:
@@ -196,7 +213,7 @@ services:
         target: /home/node/.openclaw/workspace
       - /home/node/.openclaw/extensions
     ports:
-      - "18831:18789"
+      - "18831:26216"
       - "18832:18790"
     init: true
     restart: unless-stopped
@@ -206,7 +223,7 @@ services:
   openclaw-trades:
     container_name: openclaw-trades
     build:
-      context: ../src/OpenClaw-Docker-CN-IM
+      context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
     image: openclaw-docker-cn-im:local
     cap_add:
@@ -228,7 +245,7 @@ services:
         target: /home/node/.openclaw/workspace
       - /home/node/.openclaw/extensions
     ports:
-      - "18841:18789"
+      - "18841:26216"
       - "18842:18790"
     init: true
     restart: unless-stopped
@@ -238,7 +255,7 @@ services:
   openclaw-health:
     container_name: openclaw-health
     build:
-      context: ../src/OpenClaw-Docker-CN-IM
+      context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
     image: openclaw-docker-cn-im:local
     cap_add:
@@ -260,7 +277,7 @@ services:
         target: /home/node/.openclaw/workspace
       - /home/node/.openclaw/extensions
     ports:
-      - "18851:18789"
+      - "18851:26216"
       - "18852:18790"
     init: true
     restart: unless-stopped
@@ -270,7 +287,7 @@ services:
   openclaw-writing:
     container_name: openclaw-writing
     build:
-      context: ../src/OpenClaw-Docker-CN-IM
+      context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
     image: openclaw-docker-cn-im:local
     cap_add:
@@ -292,7 +309,7 @@ services:
         target: /home/node/.openclaw/workspace
       - /home/node/.openclaw/extensions
     ports:
-      - "18861:18789"
+      - "18861:26216"
       - "18862:18790"
     init: true
     restart: unless-stopped
@@ -302,7 +319,7 @@ services:
   openclaw-personal:
     container_name: openclaw-personal
     build:
-      context: ../src/OpenClaw-Docker-CN-IM
+      context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
     image: openclaw-docker-cn-im:local
     cap_add:
@@ -324,12 +341,14 @@ services:
         target: /home/node/.openclaw/workspace
       - /home/node/.openclaw/extensions
     ports:
-      - "18871:18789"
+      - "18871:26216"
       - "18872:18790"
     init: true
     restart: unless-stopped
     networks:
       - panopticon
+
+
 
 networks:
   panopticon:
