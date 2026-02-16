@@ -70,3 +70,9 @@ data/
 # ------------------------------
 tmp.txt
 README-mo.md
+
+# ------------------------------
+# Panopticon runtime data
+# ------------------------------
+panopticon/mission-control/redis-data/
+panopticon/mission-control/postgres-data/
