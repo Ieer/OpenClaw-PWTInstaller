@@ -64,3 +64,35 @@ class BoardColumn(BaseModel):
 
 class BoardOut(BaseModel):
     columns: list[BoardColumn]
+
+
+class SkillItem(BaseModel):
+    slug: str
+    name: str
+    description: str | None = None
+    path: str
+    scope: str
+
+
+class WorkspaceSkillGroup(BaseModel):
+    agent_slug: str
+    skills: list[SkillItem]
+
+
+class AgentSkillMappingOut(BaseModel):
+    id: UUID
+    agent_slug: str
+    skill_slug: str
+    created_at: datetime
+
+
+class SkillsMappingPatchIn(BaseModel):
+    agent_slugs: list[str] = Field(default_factory=list)
+    add_skill_slugs: list[str] = Field(default_factory=list)
+    remove_skill_slugs: list[str] = Field(default_factory=list)
+
+
+class SkillsMappingPatchOut(BaseModel):
+    updated: int
+    affected_agents: list[str]
+    restart_hint: str

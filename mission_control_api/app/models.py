@@ -40,3 +40,14 @@ events = sa.Table(
     sa.Column("payload", sa.JSON, nullable=False, server_default=sa.text("'{}'::jsonb")),
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
 )
+
+
+agent_skill_mappings = sa.Table(
+    "agent_skill_mappings",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column("agent_slug", sa.Text, nullable=False, index=True),
+    sa.Column("skill_slug", sa.Text, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+    sa.UniqueConstraint("agent_slug", "skill_slug", name="uq_agent_skill_mappings_agent_skill"),
+)

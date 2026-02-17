@@ -9,6 +9,7 @@
 - Agent 清单（单一来源）： [panopticon/agents.manifest.yaml](panopticon/agents.manifest.yaml)
 - 生成工具： [panopticon/tools/generate_panopticon.py](panopticon/tools/generate_panopticon.py)
 - 校验工具： [panopticon/tools/validate_panopticon.py](panopticon/tools/validate_panopticon.py)
+- Skills 模板校验： [panopticon/tools/validate_skills_template.py](panopticon/tools/validate_skills_template.py)
 
 另外新增：
 
@@ -37,6 +38,7 @@ python panopticon/tools/generate_panopticon.py --prune
 
 ```bash
 python panopticon/tools/validate_panopticon.py
+python panopticon/tools/validate_skills_template.py
 ```
 
 可选：指定数据根目录（方便把数据放到 U 盘 / 外接 SSD / 树莓派挂载点）。
@@ -155,6 +157,7 @@ bash panopticon/tools/check_panopticon_services.sh
 ```bash
 python panopticon/tools/generate_panopticon.py --prune
 python panopticon/tools/validate_panopticon.py
+python panopticon/tools/validate_skills_template.py
 docker compose -f panopticon/docker-compose.panopticon.yml up -d --build
 ```
 
@@ -167,6 +170,7 @@ docker compose -f panopticon/docker-compose.panopticon.yml up -d --build
 ```bash
 python panopticon/tools/generate_panopticon.py --prune
 python panopticon/tools/validate_panopticon.py
+python panopticon/tools/validate_skills_template.py
 docker compose -f panopticon/docker-compose.panopticon.yml up -d --remove-orphans
 ```
 

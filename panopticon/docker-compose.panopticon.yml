@@ -42,6 +42,17 @@ services:
     image: mission-control-api:local
     env_file:
       - ./env/mission-control.env.example
+    environment:
+      MC_GLOBAL_SKILLS_DIR: /data/global-skills
+      MC_AGENT_HOMES_DIR: /data/agent-homes
+    volumes:
+      - type: bind
+        source: ./global-skills
+        target: /data/global-skills
+        read_only: true
+      - type: bind
+        source: ${PANOPTICON_DATA_DIR:-.}/agent-homes
+        target: /data/agent-homes
     depends_on:
       - mc-redis
       - mc-postgres

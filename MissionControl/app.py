@@ -198,6 +198,20 @@ def api_get_json(path: str, *, timeout: float = 3.0):
     return resp.json()
 
 
+def api_patch_json(path: str, body: dict, *, timeout: float = 5.0):
+    url = MISSION_CONTROL_API_URL.rstrip("/") + path
+    resp = requests.patch(url, headers=_api_headers(), json=body, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def api_patch_json(path: str, body: dict, *, timeout: float = 5.0):
+    url = MISSION_CONTROL_API_URL.rstrip("/") + path
+    resp = requests.patch(url, headers=_api_headers(), json=body, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def _tone_for_status(status: str) -> str:
     mapping = {
         "INBOX": "amber",
@@ -481,6 +495,15 @@ app.layout = html.Div(
                 "revision": 0,
             },
         ),
+        dcc.Store(
+            id="skills-ui",
+            data={
+                "open": False,
+                "revision": 0,
+                "message": "",
+                "message_tone": "neutral",
+            },
+        ),
         html.Div(
             className="topbar",
             children=[
@@ -520,6 +543,7 @@ app.layout = html.Div(
                             rel="noreferrer",
                             className="ghost-button docs-link",
                         ),
+                        html.Button("Skills", id="open-skills", className="ghost-button"),
                         html.Button("Clear Filters", id="clear-filters", className="ghost-button"),
                         html.Div("-", id="api-status", className="status-pill status-unknown"),
                         html.Div("--:--:--", id="clock", className="clock"),
@@ -581,6 +605,85 @@ app.layout = html.Div(
                             ],
                         ),
                         html.Div(id="feed", className="feed"),
+                    ],
+                ),
+            ],
+        ),
+        html.Div(
+            id="skills-modal",
+            className="skills-modal",
+            children=[
+                html.Div(
+                    className="skills-modal-card",
+                    children=[
+                        html.Div(
+                            className="skills-modal-header",
+                            children=[
+                                html.Div(
+                                    children=[
+                                        html.Div("Skills Management", className="skills-title"),
+                                        html.Div(
+                                            "View global/workspace skills and batch-assign global skills to agents.",
+                                            className="skills-subtitle",
+                                        ),
+                                    ]
+                                ),
+                                html.Button("Close", id="close-skills", className="ghost-button"),
+                            ],
+                        ),
+                        html.Div(
+                            id="skills-notice",
+                            className="skills-notice",
+                        ),
+                        html.Div(
+                            className="skills-grid",
+                            children=[
+                                html.Div(
+                                    className="skills-col",
+                                    children=[
+                                        html.Div("Global Skills", className="skills-col-title"),
+                                        dcc.Checklist(id="skills-global-checklist", options=[], value=[]),
+                                    ],
+                                ),
+                                html.Div(
+                                    className="skills-col",
+                                    children=[
+                                        html.Div("Agents (multi-select)", className="skills-col-title"),
+                                        dcc.Checklist(id="skills-agent-checklist", options=[], value=[]),
+                                        html.Div(
+                                            className="skills-actions",
+                                            children=[
+                                                html.Button("Add Skills", id="skills-add", className="ghost-button"),
+                                                html.Button("Remove Skills", id="skills-remove", className="ghost-button"),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            "Changes are saved immediately. Restart affected agent containers to apply.",
+                                            className="skills-hint",
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
+                        html.Div(
+                            className="skills-lists",
+                            children=[
+                                html.Div(
+                                    className="skills-list-block",
+                                    children=[
+                                        html.Div("Assigned Global Skills", className="skills-col-title"),
+                                        html.Div(id="skills-mapping-view", className="skills-scroll"),
+                                    ],
+                                ),
+                                html.Div(
+                                    className="skills-list-block",
+                                    children=[
+                                        html.Div("Workspace Skills (agent-homes/<agent>/skills)", className="skills-col-title"),
+                                        html.Div(id="skills-workspace-view", className="skills-scroll"),
+                                    ],
+                                ),
+                            ],
+                        ),
                     ],
                 ),
             ],
@@ -677,6 +780,207 @@ def poll_ws_meta(_, current):
     if int(current.get("revision") or 0) == revision:
         return no_update
     return {"revision": revision}
+
+
+@app.callback(
+    Output("skills-ui", "data", allow_duplicate=True),
+    Input("open-skills", "n_clicks"),
+    Input("close-skills", "n_clicks"),
+    State("skills-ui", "data"),
+    prevent_initial_call=True,
+)
+def toggle_skills_modal(_, __, data):
+    data = data or {"open": False, "revision": 0, "message": "", "message_tone": "neutral"}
+    trigger = ctx.triggered_id
+    if trigger == "open-skills":
+        data["open"] = True
+        data["message"] = ""
+        data["message_tone"] = "neutral"
+        data["revision"] = int(data.get("revision") or 0) + 1
+    elif trigger == "close-skills":
+        data["open"] = False
+    return data
+
+
+@app.callback(
+    Output("skills-ui", "data", allow_duplicate=True),
+    Input("skills-add", "n_clicks"),
+    Input("skills-remove", "n_clicks"),
+    State("skills-global-checklist", "value"),
+    State("skills-agent-checklist", "value"),
+    State("skills-ui", "data"),
+    prevent_initial_call=True,
+)
+def patch_skill_mappings(add_clicks, remove_clicks, skill_slugs, agent_slugs, data):
+    _ = add_clicks
+    _ = remove_clicks
+    data = data or {"open": False, "revision": 0, "message": "", "message_tone": "neutral"}
+    trigger = ctx.triggered_id
+
+    selected_skills = [s for s in (skill_slugs or []) if s]
+    selected_agents = [a for a in (agent_slugs or []) if a]
+
+    if not selected_skills or not selected_agents:
+        data["message"] = "Select at least one global skill and one agent first."
+        data["message_tone"] = "warn"
+        return data
+
+    body = {
+        "agent_slugs": selected_agents,
+        "add_skill_slugs": selected_skills if trigger == "skills-add" else [],
+        "remove_skill_slugs": selected_skills if trigger == "skills-remove" else [],
+    }
+
+    try:
+        resp = api_patch_json("/v1/skills/mappings", body)
+        updated = int(resp.get("updated") or 0)
+        data["message"] = f"Saved. {updated} mapping change(s) applied. Restart affected agents to take effect."
+        data["message_tone"] = "ok"
+        data["revision"] = int(data.get("revision") or 0) + 1
+    except Exception as e:
+        data["message"] = f"Update failed: {e}"
+        data["message_tone"] = "error"
+    return data
+
+
+@app.callback(
+    Output("skills-modal", "className"),
+    Output("skills-global-checklist", "options"),
+    Output("skills-global-checklist", "value"),
+    Output("skills-agent-checklist", "options"),
+    Output("skills-agent-checklist", "value"),
+    Output("skills-mapping-view", "children"),
+    Output("skills-workspace-view", "children"),
+    Output("skills-notice", "children"),
+    Output("skills-notice", "className"),
+    Input("refresh", "n_intervals"),
+    Input("skills-ui", "data"),
+    State("skills-global-checklist", "value"),
+    State("skills-agent-checklist", "value"),
+    prevent_initial_call=False,
+)
+def render_skills_modal(_, skills_ui, selected_skill_slugs, selected_agent_slugs):
+    skills_ui = skills_ui or {}
+    is_open = bool(skills_ui.get("open"))
+
+    if not is_open:
+        return (
+            "skills-modal",
+            [],
+            [],
+            [],
+            [],
+            html.Div("Open Skills to load mappings.", className="column-empty"),
+            html.Div("Open Skills to load workspace skills.", className="column-empty"),
+            "",
+            "skills-notice",
+        )
+
+    try:
+        global_skills = api_get_json("/v1/skills/global")
+        workspace_groups = api_get_json("/v1/skills/workspace")
+        mappings = api_get_json("/v1/skills/mappings")
+    except Exception as e:
+        msg = f"Unable to load skills data: {e}"
+        return (
+            "skills-modal open",
+            [],
+            [],
+            [],
+            [],
+            html.Div(msg, className="column-empty"),
+            html.Div(msg, className="column-empty"),
+            msg,
+            "skills-notice error",
+        )
+
+    global_options = [
+        {
+            "label": f"{item.get('slug', '-')}: {item.get('description') or item.get('name') or ''}".strip(),
+            "value": item.get("slug"),
+        }
+        for item in global_skills
+        if item.get("slug")
+    ]
+    global_values_allowed = {opt["value"] for opt in global_options}
+    selected_skill_slugs = [s for s in (selected_skill_slugs or []) if s in global_values_allowed]
+
+    agent_pool = sorted({str(m.get("agent_slug")) for m in mappings if m.get("agent_slug")})
+    if not agent_pool:
+        agent_pool = sorted({str(g.get("agent_slug")) for g in workspace_groups if g.get("agent_slug")})
+    if not agent_pool:
+        agent_pool = list(STATIC_AGENT_NAMES)
+
+    agent_options = [{"label": a, "value": a} for a in agent_pool]
+    selected_agent_slugs = [a for a in (selected_agent_slugs or []) if a in set(agent_pool)]
+
+    mapping_by_agent: dict[str, list[str]] = {}
+    for row in mappings:
+        agent = str(row.get("agent_slug") or "")
+        skill = str(row.get("skill_slug") or "")
+        if not agent or not skill:
+            continue
+        mapping_by_agent.setdefault(agent, []).append(skill)
+    for agent in mapping_by_agent:
+        mapping_by_agent[agent] = sorted(set(mapping_by_agent[agent]))
+
+    focused_agents = selected_agent_slugs or sorted(mapping_by_agent.keys())[:8]
+    if focused_agents:
+        mapping_children = []
+        for agent in focused_agents:
+            skills = mapping_by_agent.get(agent) or []
+            mapping_children.append(
+                html.Div(
+                    className="skills-item",
+                    children=[
+                        html.Div(agent, className="skills-item-title"),
+                        html.Div(
+                            [html.Span(s, className="tag") for s in skills] if skills else "No mapped global skills",
+                            className="skills-item-body",
+                        ),
+                    ],
+                )
+            )
+    else:
+        mapping_children = [html.Div("No agents selected.", className="column-empty")]
+
+    workspace_children = []
+    for group in workspace_groups:
+        agent = group.get("agent_slug")
+        skills = group.get("skills") or []
+        skill_slugs = [str(s.get("slug")) for s in skills if s.get("slug")]
+        workspace_children.append(
+            html.Div(
+                className="skills-item",
+                children=[
+                    html.Div(str(agent), className="skills-item-title"),
+                    html.Div(
+                        [html.Span(s, className="tag") for s in skill_slugs] if skill_slugs else "No workspace skills",
+                        className="skills-item-body",
+                    ),
+                ],
+            )
+        )
+    if not workspace_children:
+        workspace_children = [html.Div("No workspace agents discovered.", className="column-empty")]
+
+    message = str(skills_ui.get("message") or "")
+    tone = str(skills_ui.get("message_tone") or "neutral")
+    notice_class = "skills-notice"
+    if tone in {"ok", "warn", "error"}:
+        notice_class = f"skills-notice {tone}"
+
+    return (
+        "skills-modal open",
+        global_options,
+        selected_skill_slugs,
+        agent_options,
+        selected_agent_slugs,
+        mapping_children,
+        workspace_children,
+        message,
+        notice_class,
+    )
 
 
 @app.callback(

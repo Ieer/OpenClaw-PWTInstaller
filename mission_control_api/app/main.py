@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from redis.asyncio import Redis
 
 from .config import Settings, load_settings
 from .db import create_engine, create_session_factory
-from .models import comments, events, tasks
+from .models import agent_skill_mappings, comments, events, tasks
 from .schemas import (
+    AgentSkillMappingOut,
     BoardColumn,
     BoardOut,
     CommentCreate,
@@ -19,8 +22,12 @@ from .schemas import (
     EventIn,
     EventOut,
     Health,
+    SkillItem,
+    SkillsMappingPatchIn,
+    SkillsMappingPatchOut,
     TaskCreate,
     TaskOut,
+    WorkspaceSkillGroup,
 )
 
 
@@ -32,6 +39,87 @@ def require_auth(settings: Settings, authorization: str | None = Header(default=
     token = authorization.split(" ", 1)[1].strip()
     if token != settings.auth_token:
         raise HTTPException(status_code=403, detail="invalid token")
+
+
+def _parse_skill_frontmatter(skill_file: Path, fallback_slug: str) -> tuple[str, str | None]:
+    name = fallback_slug
+    description: str | None = None
+
+    try:
+        text = skill_file.read_text(encoding="utf-8")
+    except OSError:
+        return name, description
+
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return name, description
+
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if line.startswith("name:"):
+            parsed = line.split(":", 1)[1].strip().strip('"').strip("'")
+            if parsed:
+                name = parsed
+        elif line.startswith("description:"):
+            parsed = line.split(":", 1)[1].strip().strip('"').strip("'")
+            if parsed:
+                description = parsed
+    return name, description
+
+
+def _scan_global_skills(settings: Settings) -> list[SkillItem]:
+    root = Path(settings.global_skills_dir)
+    if not root.exists() or not root.is_dir():
+        return []
+
+    out: list[SkillItem] = []
+    for skill_file in sorted(root.glob("*/SKILL.md")):
+        slug = skill_file.parent.name
+        name, description = _parse_skill_frontmatter(skill_file, slug)
+        out.append(
+            SkillItem(
+                slug=slug,
+                name=name,
+                description=description,
+                path=str(skill_file),
+                scope="global",
+            )
+        )
+    return out
+
+
+def _scan_workspace_skills(settings: Settings, agent_slug: str | None = None) -> list[WorkspaceSkillGroup]:
+    root = Path(settings.agent_homes_dir)
+    if not root.exists() or not root.is_dir():
+        return []
+
+    groups: list[WorkspaceSkillGroup] = []
+    agent_dirs = sorted(path for path in root.iterdir() if path.is_dir())
+
+    for agent_dir in agent_dirs:
+        slug = agent_dir.name
+        if agent_slug and slug != agent_slug:
+            continue
+
+        skills_dir = agent_dir / "skills"
+        skill_items: list[SkillItem] = []
+        if skills_dir.exists() and skills_dir.is_dir():
+            for skill_file in sorted(skills_dir.glob("*/SKILL.md")):
+                s_slug = skill_file.parent.name
+                s_name, s_desc = _parse_skill_frontmatter(skill_file, s_slug)
+                skill_items.append(
+                    SkillItem(
+                        slug=s_slug,
+                        name=s_name,
+                        description=s_desc,
+                        path=str(skill_file),
+                        scope="workspace",
+                    )
+                )
+
+        groups.append(WorkspaceSkillGroup(agent_slug=slug, skills=skill_items))
+    return groups
 
 
 def create_app() -> FastAPI:
@@ -50,6 +138,90 @@ def create_app() -> FastAPI:
     @app.get("/health", response_model=Health)
     async def healthcheck() -> Health:
         return Health(ok=True)
+
+    @app.get("/v1/skills/global", response_model=list[SkillItem])
+    async def get_global_skills(
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+    ) -> list[SkillItem]:
+        return _scan_global_skills(settings)
+
+    @app.get("/v1/skills/workspace", response_model=list[WorkspaceSkillGroup])
+    async def get_workspace_skills(
+        agent_slug: str | None = None,
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+    ) -> list[WorkspaceSkillGroup]:
+        return _scan_workspace_skills(settings, agent_slug=agent_slug)
+
+    @app.get("/v1/skills/mappings", response_model=list[AgentSkillMappingOut])
+    async def get_skill_mappings(
+        agent_slug: str | None = None,
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> list[AgentSkillMappingOut]:
+        stmt = sa.select(
+            agent_skill_mappings.c.id,
+            agent_skill_mappings.c.agent_slug,
+            agent_skill_mappings.c.skill_slug,
+            agent_skill_mappings.c.created_at,
+        ).order_by(agent_skill_mappings.c.agent_slug.asc(), agent_skill_mappings.c.skill_slug.asc())
+        if agent_slug:
+            stmt = stmt.where(agent_skill_mappings.c.agent_slug == agent_slug)
+        rows = (await session.execute(stmt)).all()
+        return [AgentSkillMappingOut(**row._asdict()) for row in rows]
+
+    @app.patch("/v1/skills/mappings", response_model=SkillsMappingPatchOut)
+    async def patch_skill_mappings(
+        body: SkillsMappingPatchIn,
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> SkillsMappingPatchOut:
+        agent_slugs = sorted({slug.strip() for slug in body.agent_slugs if slug and slug.strip()})
+        add_skill_slugs = sorted({slug.strip() for slug in body.add_skill_slugs if slug and slug.strip()})
+        remove_skill_slugs = sorted({slug.strip() for slug in body.remove_skill_slugs if slug and slug.strip()})
+
+        if not agent_slugs:
+            raise HTTPException(status_code=400, detail="agent_slugs is required")
+        if not add_skill_slugs and not remove_skill_slugs:
+            raise HTTPException(status_code=400, detail="nothing to update")
+
+        known_global = {item.slug for item in _scan_global_skills(settings)}
+        unknown_add = [slug for slug in add_skill_slugs if slug not in known_global]
+        unknown_remove = [slug for slug in remove_skill_slugs if slug not in known_global]
+        unknown = sorted(set(unknown_add + unknown_remove))
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"unknown global skill slug(s): {', '.join(unknown)}")
+
+        updated = 0
+        if add_skill_slugs:
+            rows = [
+                {"id": uuid4(), "agent_slug": agent, "skill_slug": skill}
+                for agent in agent_slugs
+                for skill in add_skill_slugs
+            ]
+            if rows:
+                insert_stmt = pg_insert(agent_skill_mappings).values(rows)
+                insert_stmt = insert_stmt.on_conflict_do_nothing(
+                    constraint="uq_agent_skill_mappings_agent_skill"
+                )
+                insert_stmt = insert_stmt.returning(agent_skill_mappings.c.id)
+                result = await session.execute(insert_stmt)
+                updated += len(result.scalars().all())
+
+        if remove_skill_slugs:
+            delete_stmt = agent_skill_mappings.delete().where(
+                agent_skill_mappings.c.agent_slug.in_(agent_slugs),
+                agent_skill_mappings.c.skill_slug.in_(remove_skill_slugs),
+            )
+            result = await session.execute(delete_stmt)
+            updated += int(result.rowcount or 0)
+
+        await session.commit()
+
+        return SkillsMappingPatchOut(
+            updated=updated,
+            affected_agents=agent_slugs,
+            restart_hint="Configuration saved. Restart affected agent containers to apply changes.",
+        )
 
     @app.post("/v1/tasks", response_model=TaskOut)
     async def create_task(
@@ -238,6 +410,31 @@ def create_app() -> FastAPI:
                         await websocket.send_text(event_json)
         except WebSocketDisconnect:
             return
+
+    @app.on_event("startup")
+    async def _startup():
+        async with engine.begin() as conn:
+            await conn.execute(
+                sa.text(
+                    """
+                    CREATE TABLE IF NOT EXISTS agent_skill_mappings (
+                      id uuid PRIMARY KEY,
+                      agent_slug text NOT NULL,
+                      skill_slug text NOT NULL,
+                      created_at timestamptz NOT NULL DEFAULT now(),
+                      CONSTRAINT uq_agent_skill_mappings_agent_skill UNIQUE (agent_slug, skill_slug)
+                    );
+                    """
+                )
+            )
+            await conn.execute(
+                sa.text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_agent_skill_mappings_agent_slug
+                    ON agent_skill_mappings(agent_slug);
+                    """
+                )
+            )
 
     @app.on_event("shutdown")
     async def _shutdown():

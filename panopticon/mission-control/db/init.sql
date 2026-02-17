@@ -30,6 +30,15 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at DESC);
 
+CREATE TABLE IF NOT EXISTS agent_skill_mappings (
+  id uuid PRIMARY KEY,
+  agent_slug text NOT NULL,
+  skill_slug text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_agent_skill_mappings_agent_skill UNIQUE (agent_slug, skill_slug)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_skill_mappings_agent_slug ON agent_skill_mappings(agent_slug);
+
 -- WIP: 向量記憶/檢索（預設維度 1536；需要更換模型維度時請調整這裡）
 CREATE TABLE IF NOT EXISTS memory_chunks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
