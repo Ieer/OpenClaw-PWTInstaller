@@ -49,7 +49,7 @@ server {
 
     sub_filter_once on;
     sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/nox";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};if(!v.gatewayUrl){v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host;}v.token="${TOKEN_NOX}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
+    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/nox";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/nox/";v.token="${TOKEN_NOX}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
 
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
@@ -71,7 +71,7 @@ server {
     proxy_hide_header Content-Security-Policy;
     sub_filter_once on;
     sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/metrics";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};if(!v.gatewayUrl){v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host;}v.token="${TOKEN_METRICS}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
+    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/metrics";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/metrics/";v.token="${TOKEN_METRICS}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
     proxy_pass http://openclaw-metrics:26216/;
@@ -92,7 +92,7 @@ server {
     proxy_hide_header Content-Security-Policy;
     sub_filter_once on;
     sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/email";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};if(!v.gatewayUrl){v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host;}v.token="${TOKEN_EMAIL}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
+    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/email";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/email/";v.token="${TOKEN_EMAIL}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
     proxy_pass http://openclaw-email:26216/;
@@ -113,7 +113,7 @@ server {
     proxy_hide_header Content-Security-Policy;
     sub_filter_once on;
     sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/growth";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};if(!v.gatewayUrl){v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host;}v.token="${TOKEN_GROWTH}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
+    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/growth";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/growth/";v.token="${TOKEN_GROWTH}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
     proxy_pass http://openclaw-growth:26216/;
@@ -134,7 +134,7 @@ server {
     proxy_hide_header Content-Security-Policy;
     sub_filter_once on;
     sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/trades";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};if(!v.gatewayUrl){v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host;}v.token="${TOKEN_TRADES}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
+    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/trades";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/trades/";v.token="${TOKEN_TRADES}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
     proxy_pass http://openclaw-trades:26216/;
@@ -155,7 +155,7 @@ server {
     proxy_hide_header Content-Security-Policy;
     sub_filter_once on;
     sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/health";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};if(!v.gatewayUrl){v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host;}v.token="${TOKEN_HEALTH}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
+    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/health";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/health/";v.token="${TOKEN_HEALTH}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
     proxy_pass http://openclaw-health:26216/;
@@ -176,7 +176,7 @@ server {
     proxy_hide_header Content-Security-Policy;
     sub_filter_once on;
     sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/writing";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};if(!v.gatewayUrl){v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host;}v.token="${TOKEN_WRITING}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
+    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/writing";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/writing/";v.token="${TOKEN_WRITING}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
     proxy_pass http://openclaw-writing:26216/;
@@ -197,7 +197,7 @@ server {
     proxy_hide_header Content-Security-Policy;
     sub_filter_once on;
     sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/personal";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};if(!v.gatewayUrl){v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host;}v.token="${TOKEN_PERSONAL}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
+    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/personal";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/personal/";v.token="${TOKEN_PERSONAL}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
     proxy_pass http://openclaw-personal:26216/;
