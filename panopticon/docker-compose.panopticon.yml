@@ -70,6 +70,7 @@ services:
     image: mission-control-ui:local
     env_file:
       - ./env/mission-control-ui.env.example
+      - ./env/mission-control-ui.env
     volumes:
       - type: bind
         source: ./agents.manifest.yaml
@@ -77,8 +78,24 @@ services:
         read_only: true
     depends_on:
       - mission-control-api
+    restart: unless-stopped
+    networks:
+      - panopticon
+
+  mission-control-gateway:
+    container_name: mission-control-gateway
+    image: nginx:alpine
+    env_file:
+      - ./env/mission-control-gateway.env
+    volumes:
+      - type: bind
+        source: ./nginx/mission-control-gateway.conf.template
+        target: /etc/nginx/templates/default.conf.template
+        read_only: true
+    depends_on:
+      - mission-control-ui
     ports:
-      - "18920:9090"
+      - "18920:80"
     restart: unless-stopped
     networks:
       - panopticon
@@ -119,6 +136,7 @@ services:
       TERM: xterm-256color
     env_file:
       - ./env/nox.env.example
+      - ./env/nox.env
     volumes:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/nox
@@ -151,6 +169,7 @@ services:
       TERM: xterm-256color
     env_file:
       - ./env/metrics.env.example
+      - ./env/metrics.env
     volumes:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/metrics
@@ -183,6 +202,7 @@ services:
       TERM: xterm-256color
     env_file:
       - ./env/email.env.example
+      - ./env/email.env
     volumes:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/email
@@ -215,6 +235,7 @@ services:
       TERM: xterm-256color
     env_file:
       - ./env/growth.env.example
+      - ./env/growth.env
     volumes:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/growth
@@ -247,6 +268,7 @@ services:
       TERM: xterm-256color
     env_file:
       - ./env/trades.env.example
+      - ./env/trades.env
     volumes:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/trades
@@ -279,6 +301,7 @@ services:
       TERM: xterm-256color
     env_file:
       - ./env/health.env.example
+      - ./env/health.env
     volumes:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/health
@@ -311,6 +334,7 @@ services:
       TERM: xterm-256color
     env_file:
       - ./env/writing.env.example
+      - ./env/writing.env
     volumes:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/writing
@@ -343,6 +367,7 @@ services:
       TERM: xterm-256color
     env_file:
       - ./env/personal.env.example
+      - ./env/personal.env
     volumes:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/agent-homes/personal

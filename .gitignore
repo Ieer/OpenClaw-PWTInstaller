@@ -79,3 +79,6 @@ panopticon/mission-control/postgres-data/
 panopticon/agent-homes/
 panopticon/workspaces/*/.git/
 panopticon/workspaces/*/.openclaw/
+
+# Panopticon local env overrides (contain secrets; do not commit)
+panopticon/env/*.env

@@ -1,0 +1,69 @@
+# Mission Control gateway (nginx) - routes:
+# - /         -> mission-control-ui (Dash)
+# - /chat/<agent>/... -> openclaw-<agent>:26216 (Control UI + WS)
+
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  '' close;
+}
+
+# Per-agent token injection (rendered by envsubst via docker entrypoint).
+map $agent $chat_auth_header {
+  default "";
+  nox "Bearer ${TOKEN_NOX}";
+  metrics "Bearer ${TOKEN_METRICS}";
+  email "Bearer ${TOKEN_EMAIL}";
+  growth "Bearer ${TOKEN_GROWTH}";
+  trades "Bearer ${TOKEN_TRADES}";
+  health "Bearer ${TOKEN_HEALTH}";
+  writing "Bearer ${TOKEN_WRITING}";
+  personal "Bearer ${TOKEN_PERSONAL}";
+}
+
+server {
+  listen 80;
+
+  resolver 127.0.0.11 ipv6=off;
+
+  client_max_body_size 50m;
+
+  location / {
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    proxy_pass http://mission-control-ui:9090;
+  }
+
+  # /chat/<agent>/... -> openclaw-<agent>:26216/...
+  location ~ ^/chat/(?<agent>nox|metrics|email|growth|trades|health|writing|personal)(?<rest>/.*)?$ {
+    set $upstream "openclaw-$agent";
+    set $rest_path $rest;
+    if ($rest_path = "") {
+      set $rest_path "/";
+    }
+
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # Inject token server-side; browser never sees it.
+    proxy_set_header Authorization $chat_auth_header;
+
+    # Allow embedding by stripping frame-blocking headers from upstream.
+    proxy_hide_header X-Frame-Options;
+    proxy_hide_header Content-Security-Policy;
+
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+
+    proxy_pass http://$upstream:26216$rest_path$is_args$args;
+  }
+}

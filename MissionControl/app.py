@@ -27,6 +27,8 @@ MISSION_CONTROL_AUTH_TOKEN = (
 ).strip()
 MISSION_CONTROL_CHAT_HOST = (os.getenv("MISSION_CONTROL_CHAT_HOST") or "127.0.0.1").strip() or "127.0.0.1"
 MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT = int((os.getenv("MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT") or "26216").strip())
+MISSION_CONTROL_CHAT_AUTH_SCHEME = (os.getenv("MISSION_CONTROL_CHAT_AUTH_SCHEME") or "Bearer").strip() or "Bearer"
+MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP = (os.getenv("MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP") or "").strip()
 
 
 def _load_static_agent_names() -> list[str]:
@@ -69,6 +71,40 @@ def _slug_label(slug: str) -> str:
     return slug.replace("-", " ").replace("_", " ").strip().title() or slug
 
 
+def _is_placeholder_token(token: str | None) -> bool:
+    raw = str(token or "").strip()
+    if not raw:
+        return True
+    upper = raw.upper()
+    return upper.startswith("CHANGE_ME") or upper in {"TODO", "REPLACE_ME", "YOUR_TOKEN"}
+
+
+def _parse_agent_token_overrides(raw: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    text = (raw or "").strip()
+    if not text:
+        return out
+    for chunk in re.split(r"[;,\n]", text):
+        item = chunk.strip()
+        if not item:
+            continue
+        if "=" in item:
+            slug, token = item.split("=", 1)
+        elif ":" in item:
+            slug, token = item.split(":", 1)
+        else:
+            continue
+        slug_key = slug.strip()
+        token_val = token.strip()
+        if not slug_key or _is_placeholder_token(token_val):
+            continue
+        out[slug_key] = token_val
+    return out
+
+
+CHAT_AGENT_TOKEN_OVERRIDES = _parse_agent_token_overrides(MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP)
+
+
 def _load_chat_agent_configs() -> list[dict]:
     configs: list[dict] = []
     seen: set[str] = set()
@@ -91,6 +127,7 @@ def _load_chat_agent_configs() -> list[dict]:
                             "enabled": True,
                             "gateway_host_port": None,
                             "bridge_host_port": None,
+                            "gateway_token": "",
                         }
                         continue
                     if current is None:
@@ -106,6 +143,11 @@ def _load_chat_agent_configs() -> list[dict]:
                     bridge_match = re.match(r"^bridge_host_port\s*:\s*([0-9]+)$", line)
                     if bridge_match:
                         current["bridge_host_port"] = int(bridge_match.group(1))
+                        continue
+                    token_match = re.match(r"^gateway_token\s*:\s*(.+)$", line)
+                    if token_match:
+                        token_text = token_match.group(1).strip().strip('"').strip("'")
+                        current["gateway_token"] = token_text
             if current and current.get("slug"):
                 configs.append(current)
         except OSError:
@@ -120,6 +162,8 @@ def _load_chat_agent_configs() -> list[dict]:
         seen.add(slug)
         gateway_port = item.get("gateway_host_port")
         bridge_port = item.get("bridge_host_port")
+        token_candidate = CHAT_AGENT_TOKEN_OVERRIDES.get(slug) or str(item.get("gateway_token") or "").strip()
+        gateway_token = "" if _is_placeholder_token(token_candidate) else token_candidate
         if gateway_port is None:
             gateway_port = 18801 + idx * 10
         out.append(
@@ -135,6 +179,7 @@ def _load_chat_agent_configs() -> list[dict]:
                 ),
                 "bridge_url": f"tcp://{MISSION_CONTROL_CHAT_HOST}:{int(bridge_port)}" if bridge_port else "",
                 "health_url": f"http://{MISSION_CONTROL_CHAT_HOST}:{int(gateway_port)}",
+                "gateway_token": gateway_token,
                 "open_mode": "iframe",
                 "order": idx,
             }
@@ -147,6 +192,8 @@ def _load_chat_agent_configs() -> list[dict]:
     for idx, slug in enumerate(STATIC_AGENT_NAMES):
         gateway_port = 18801 + idx * 10
         bridge_port = gateway_port + 1
+        token_candidate = CHAT_AGENT_TOKEN_OVERRIDES.get(slug) or ""
+        gateway_token = "" if _is_placeholder_token(token_candidate) else token_candidate
         fallback.append(
             {
                 "slug": slug,
@@ -160,6 +207,7 @@ def _load_chat_agent_configs() -> list[dict]:
                 ),
                 "bridge_url": f"tcp://{MISSION_CONTROL_CHAT_HOST}:{bridge_port}",
                 "health_url": f"http://{MISSION_CONTROL_CHAT_HOST}:{gateway_port}",
+                "gateway_token": gateway_token,
                 "open_mode": "iframe",
                 "order": idx,
             }
@@ -173,6 +221,11 @@ CHAT_AGENT_PROXY_TARGET_URL_MAP = {
     item["slug"]: item.get("proxy_target_url") or item["chat_url"]
     for item in CHAT_AGENT_CONFIGS
     if item.get("slug")
+}
+CHAT_AGENT_TOKEN_MAP = {
+    item["slug"]: str(item.get("gateway_token") or "").strip()
+    for item in CHAT_AGENT_CONFIGS
+    if item.get("slug") and str(item.get("gateway_token") or "").strip()
 }
 CHAT_AGENT_EMBED_URL_MAP = {item["slug"]: f"/chat/{item['slug']}/" for item in CHAT_AGENT_CONFIGS if item.get("slug")}
 
@@ -627,6 +680,11 @@ def chat_reverse_proxy(agent_slug: str, proxy_path: str):
         if key.lower() in skip_headers:
             continue
         forward_headers[key] = value
+
+    token = CHAT_AGENT_TOKEN_MAP.get(agent_slug, "").strip()
+    if token:
+        auth_value = token if token.lower().startswith("bearer ") else f"{MISSION_CONTROL_CHAT_AUTH_SCHEME} {token}"
+        forward_headers["Authorization"] = auth_value
 
     body = request.get_data() if request.method in {"POST", "PUT", "PATCH", "DELETE"} else None
 

@@ -232,8 +232,16 @@ Mission Control UI 已支持 `Chat` 按钮（与 `Skills` 同级）。点击后�
 
 安全说明：
 
-- Mission Control 不会注入 Gateway token；首次访问目标 chat 页面时，按目标页面提示完成登录/配对。
+- Mission Control 支持在代理层按 agent 注入 `Authorization`（服务端注入，不暴露前端）。
+- 可通过 `MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP` 配置 token 映射（示例：`nox=token1,email=token2,...`）。
+- 可通过 `MISSION_CONTROL_CHAT_AUTH_SCHEME` 设置鉴权前缀（默认 `Bearer`）。
 - 如需改 Chat 主机地址，可设置 `MISSION_CONTROL_CHAT_HOST`（默认 `127.0.0.1`）。
+
+实现说明（推荐）：
+
+- 为了支持 Control UI 的 WebSocket（并稳定内嵌），18920 端口由 `mission-control-gateway`（nginx）对外提供。
+- 该网关会将 `/` 转发到 `mission-control-ui`，并将 `/chat/<agent>/...` 转发到对应 `openclaw-<agent>:26216`，同时按 agent 注入 `Authorization`。
+- token 建议放在本地文件 `panopticon/env/mission-control-gateway.env` 与 `panopticon/env/mission-control-ui.env`（已在 `.gitignore` 忽略，避免提交密钥）。
 
 Mission Control API（示例）：
 
