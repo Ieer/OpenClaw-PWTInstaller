@@ -159,6 +159,14 @@ bash panopticon/tools/check_agent_endpoints.sh
 HOST=localhost HTTP_TIMEOUT=8 TCP_TIMEOUT=5 bash panopticon/tools/check_agent_endpoints.sh
 ```
 
+### 一键轮换 Gateway Token + 重启全栈
+
+该脚本会为 8 个 agent 生成新 token（不打印出来），写入本地 `panopticon/env/*.env` 覆盖文件（已被 `.gitignore` 忽略），同步更新 `panopticon/agent-homes/<agent>/openclaw.json`，并用 `docker compose --force-recreate` 重启相关服务：
+
+```bash
+bash panopticon/tools/rotate_gateway_tokens.sh
+```
+
 ## 增删 Agent 快速作业
 
 新增 agent（建议）：
