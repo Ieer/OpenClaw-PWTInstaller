@@ -141,6 +141,24 @@ bash panopticon/tools/setup_mission_control_autostart.sh --disable
 bash panopticon/tools/check_panopticon_services.sh
 ```
 
+一键巡检 8 个 Agent 端点（Gateway 按 HTTP、Bridge 按 TCP）：
+
+```bash
+bash panopticon/tools/check_agent_endpoints.sh
+```
+
+可选参数（环境变量）：
+
+- `HOST`（默认 `127.0.0.1`）
+- `HTTP_TIMEOUT`（默认 `5` 秒）
+- `TCP_TIMEOUT`（默认 `3` 秒）
+
+示例：
+
+```bash
+HOST=localhost HTTP_TIMEOUT=8 TCP_TIMEOUT=5 bash panopticon/tools/check_agent_endpoints.sh
+```
+
 ## 增删 Agent 快速作业
 
 新增 agent（建议）：
@@ -191,6 +209,31 @@ Mission Control：
 - health：18851→26216，18852→18790
 - writing：18861→26216，18862→18790
 - personal：18871→26216，18872→18790
+
+## Mission Control Chat（内嵌对话）
+
+Mission Control UI 已支持 `Chat` 按钮（与 `Skills` 同级）。点击后会打开内嵌 Chat 弹窗，可在 8 个 agent 间切换：
+
+- nox → `http://127.0.0.1:18801`
+- metrics → `http://127.0.0.1:18811`
+- email → `http://127.0.0.1:18821`
+- growth → `http://127.0.0.1:18831`
+- trades → `http://127.0.0.1:18841`
+- health → `http://127.0.0.1:18851`
+- writing → `http://127.0.0.1:18861`
+- personal → `http://127.0.0.1:18871`
+
+交互说明：
+
+- `Maximize`：应用内最大化 Chat 窗口。
+- `Chat Only`：隐藏左侧选择区，仅保留对话区。
+- `Open External`：若 iframe 因浏览器策略（例如 X-Frame-Options/CSP）无法显示，可一键外部打开。
+- iframe 内嵌默认走 Mission Control 同域代理路径：`/chat/<agent>/...`（由 UI 容器转发到对应 agent 网关），用于规避目标网关返回的 `X-Frame-Options` 限制。
+
+安全说明：
+
+- Mission Control 不会注入 Gateway token；首次访问目标 chat 页面时，按目标页面提示完成登录/配对。
+- 如需改 Chat 主机地址，可设置 `MISSION_CONTROL_CHAT_HOST`（默认 `127.0.0.1`）。
 
 Mission Control API（示例）：
 

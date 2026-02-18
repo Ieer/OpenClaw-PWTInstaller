@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import requests
 import websocket
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
+from flask import Response, request
 
 APP_TITLE = "Mission Control"
 
@@ -24,6 +25,8 @@ MISSION_CONTROL_AUTH_TOKEN = (
     or os.getenv("MISSION_CONTROL_TOKEN")
     or ""
 ).strip()
+MISSION_CONTROL_CHAT_HOST = (os.getenv("MISSION_CONTROL_CHAT_HOST") or "127.0.0.1").strip() or "127.0.0.1"
+MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT = int((os.getenv("MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT") or "26216").strip())
 
 
 def _load_static_agent_names() -> list[str]:
@@ -60,6 +63,118 @@ def _load_static_agent_names() -> list[str]:
 
 
 STATIC_AGENT_NAMES = _load_static_agent_names()
+
+
+def _slug_label(slug: str) -> str:
+    return slug.replace("-", " ").replace("_", " ").strip().title() or slug
+
+
+def _load_chat_agent_configs() -> list[dict]:
+    configs: list[dict] = []
+    seen: set[str] = set()
+
+    manifest_path = MISSION_CONTROL_AGENT_MANIFEST_PATH.strip()
+    if manifest_path and os.path.exists(manifest_path):
+        current: dict | None = None
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    slug_match = re.match(r"^-\s*slug\s*:\s*([A-Za-z0-9_-]+)$", line)
+                    if slug_match:
+                        if current and current.get("slug"):
+                            configs.append(current)
+                        current = {
+                            "slug": slug_match.group(1).strip(),
+                            "enabled": True,
+                            "gateway_host_port": None,
+                            "bridge_host_port": None,
+                        }
+                        continue
+                    if current is None:
+                        continue
+                    enabled_match = re.match(r"^enabled\s*:\s*(true|false)$", line, flags=re.IGNORECASE)
+                    if enabled_match:
+                        current["enabled"] = enabled_match.group(1).lower() == "true"
+                        continue
+                    gateway_match = re.match(r"^gateway_host_port\s*:\s*([0-9]+)$", line)
+                    if gateway_match:
+                        current["gateway_host_port"] = int(gateway_match.group(1))
+                        continue
+                    bridge_match = re.match(r"^bridge_host_port\s*:\s*([0-9]+)$", line)
+                    if bridge_match:
+                        current["bridge_host_port"] = int(bridge_match.group(1))
+            if current and current.get("slug"):
+                configs.append(current)
+        except OSError:
+            configs = []
+
+    out: list[dict] = []
+    inside_docker = os.path.exists("/.dockerenv")
+    for idx, item in enumerate(configs):
+        slug = str(item.get("slug") or "").strip()
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+        gateway_port = item.get("gateway_host_port")
+        bridge_port = item.get("bridge_host_port")
+        if gateway_port is None:
+            gateway_port = 18801 + idx * 10
+        out.append(
+            {
+                "slug": slug,
+                "label": _slug_label(slug),
+                "enabled": bool(item.get("enabled", True)),
+                "chat_url": f"http://{MISSION_CONTROL_CHAT_HOST}:{int(gateway_port)}",
+                "proxy_target_url": (
+                    f"http://openclaw-{slug}:{MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT}"
+                    if inside_docker
+                    else f"http://{MISSION_CONTROL_CHAT_HOST}:{int(gateway_port)}"
+                ),
+                "bridge_url": f"tcp://{MISSION_CONTROL_CHAT_HOST}:{int(bridge_port)}" if bridge_port else "",
+                "health_url": f"http://{MISSION_CONTROL_CHAT_HOST}:{int(gateway_port)}",
+                "open_mode": "iframe",
+                "order": idx,
+            }
+        )
+
+    if out:
+        return [item for item in out if item.get("enabled", True)]
+
+    fallback = []
+    for idx, slug in enumerate(STATIC_AGENT_NAMES):
+        gateway_port = 18801 + idx * 10
+        bridge_port = gateway_port + 1
+        fallback.append(
+            {
+                "slug": slug,
+                "label": _slug_label(slug),
+                "enabled": True,
+                "chat_url": f"http://{MISSION_CONTROL_CHAT_HOST}:{gateway_port}",
+                "proxy_target_url": (
+                    f"http://openclaw-{slug}:{MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT}"
+                    if inside_docker
+                    else f"http://{MISSION_CONTROL_CHAT_HOST}:{gateway_port}"
+                ),
+                "bridge_url": f"tcp://{MISSION_CONTROL_CHAT_HOST}:{bridge_port}",
+                "health_url": f"http://{MISSION_CONTROL_CHAT_HOST}:{gateway_port}",
+                "open_mode": "iframe",
+                "order": idx,
+            }
+        )
+    return fallback
+
+
+CHAT_AGENT_CONFIGS = _load_chat_agent_configs()
+CHAT_AGENT_URL_MAP = {item["slug"]: item["chat_url"] for item in CHAT_AGENT_CONFIGS if item.get("slug")}
+CHAT_AGENT_PROXY_TARGET_URL_MAP = {
+    item["slug"]: item.get("proxy_target_url") or item["chat_url"]
+    for item in CHAT_AGENT_CONFIGS
+    if item.get("slug")
+}
+CHAT_AGENT_EMBED_URL_MAP = {item["slug"]: f"/chat/{item['slug']}/" for item in CHAT_AGENT_CONFIGS if item.get("slug")}
 
 
 WS_LOCK = threading.Lock()
@@ -475,6 +590,79 @@ def feed_item(item):
 app = Dash(__name__)
 app.title = APP_TITLE
 
+
+def _rewrite_location_for_proxy(location_value: str, agent_slug: str, upstream_base: str) -> str:
+    if not location_value:
+        return location_value
+    base = upstream_base.rstrip("/")
+    prefix = f"/chat/{agent_slug}"
+    if location_value.startswith(base):
+        tail = location_value[len(base):]
+        if not tail.startswith("/"):
+            tail = "/" + tail
+        return f"{prefix}{tail}"
+    if location_value.startswith("/"):
+        return f"{prefix}{location_value}"
+    return location_value
+
+
+@app.server.route("/chat/<agent_slug>/", defaults={"proxy_path": ""}, methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.server.route("/chat/<agent_slug>/<path:proxy_path>", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+def chat_reverse_proxy(agent_slug: str, proxy_path: str):
+    upstream_base = CHAT_AGENT_PROXY_TARGET_URL_MAP.get(agent_slug)
+    if not upstream_base:
+        return Response("Unknown agent", status=404)
+
+    upstream = upstream_base.rstrip("/") + "/"
+    if proxy_path:
+        upstream += proxy_path.lstrip("/")
+
+    query_string = request.query_string.decode("utf-8", errors="ignore")
+    if query_string:
+        upstream = f"{upstream}?{query_string}"
+
+    skip_headers = {"host", "content-length", "connection"}
+    forward_headers = {}
+    for key, value in request.headers.items():
+        if key.lower() in skip_headers:
+            continue
+        forward_headers[key] = value
+
+    body = request.get_data() if request.method in {"POST", "PUT", "PATCH", "DELETE"} else None
+
+    try:
+        upstream_resp = requests.request(
+            method=request.method,
+            url=upstream,
+            headers=forward_headers,
+            data=body,
+            cookies=request.cookies,
+            allow_redirects=False,
+            timeout=20,
+        )
+    except Exception as e:
+        return Response(f"Upstream unavailable: {e}", status=502)
+
+    excluded_resp_headers = {
+        "content-length",
+        "transfer-encoding",
+        "content-encoding",
+        "connection",
+        "x-frame-options",
+        "content-security-policy",
+    }
+
+    resp = Response(upstream_resp.content, status=upstream_resp.status_code)
+    for key, value in upstream_resp.headers.items():
+        lk = key.lower()
+        if lk in excluded_resp_headers:
+            continue
+        if lk == "location":
+            value = _rewrite_location_for_proxy(value, agent_slug, upstream_base)
+        resp.headers[key] = value
+
+    return resp
+
 app.layout = html.Div(
     className="page",
     children=[
@@ -502,6 +690,18 @@ app.layout = html.Div(
                 "revision": 0,
                 "message": "",
                 "message_tone": "neutral",
+            },
+        ),
+        dcc.Store(
+            id="chat-ui",
+            data={
+                "open": False,
+                "selected_agent": "",
+                "last_agent": "",
+                "window_mode": "floating",
+                "panel_mode": "split",
+                "iframe_status": "idle",
+                "error_message": "",
             },
         ),
         html.Div(
@@ -543,6 +743,7 @@ app.layout = html.Div(
                             rel="noreferrer",
                             className="ghost-button docs-link",
                         ),
+                        html.Button("Chat", id="open-chat", className="ghost-button"),
                         html.Button("Skills", id="open-skills", className="ghost-button"),
                         html.Button("Clear Filters", id="clear-filters", className="ghost-button"),
                         html.Div("-", id="api-status", className="status-pill status-unknown"),
@@ -688,6 +889,78 @@ app.layout = html.Div(
                 ),
             ],
         ),
+        html.Div(
+            id="chat-modal",
+            className="chat-modal",
+            children=[
+                html.Div(
+                    id="chat-modal-card",
+                    className="chat-modal-card",
+                    children=[
+                        html.Div(
+                            className="chat-modal-header",
+                            children=[
+                                html.Div(
+                                    children=[
+                                        html.Div("Agent Chat", className="chat-title"),
+                                        html.Div(
+                                            "Switch agents in one window. If embedded chat is blocked, use Open External.",
+                                            className="chat-subtitle",
+                                        ),
+                                    ]
+                                ),
+                                html.Div(
+                                    className="chat-header-actions",
+                                    children=[
+                                        html.Button("Maximize", id="toggle-chat-max", className="ghost-button"),
+                                        html.Button("Chat Only", id="toggle-chat-panel", className="ghost-button"),
+                                        html.Button("Close", id="close-chat", className="ghost-button"),
+                                    ],
+                                ),
+                            ],
+                        ),
+                        html.Div(id="chat-notice", className="chat-notice"),
+                        html.Div(
+                            id="chat-modal-body",
+                            className="chat-modal-body",
+                            children=[
+                                html.Div(
+                                    className="chat-sidebar",
+                                    children=[
+                                        html.Div("Agent", className="chat-col-title"),
+                                        dcc.Dropdown(
+                                            id="chat-agent-select",
+                                            options=[],
+                                            value=None,
+                                            clearable=False,
+                                            placeholder="Select an agent",
+                                        ),
+                                        html.A(
+                                            "Open External",
+                                            id="chat-open-external",
+                                            href="#",
+                                            target="_blank",
+                                            rel="noreferrer",
+                                            className="ghost-button docs-link chat-external-link",
+                                        ),
+                                        html.Div(
+                                            "For security, Mission Control does not inject gateway tokens. Login/pair in the target chat page if prompted.",
+                                            className="chat-hint",
+                                        ),
+                                    ],
+                                ),
+                                html.Div(
+                                    className="chat-main",
+                                    children=[
+                                        html.Iframe(id="chat-iframe", src="about:blank", className="chat-iframe"),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        ),
     ],
 )
 
@@ -799,6 +1072,61 @@ def toggle_skills_modal(_, __, data):
         data["revision"] = int(data.get("revision") or 0) + 1
     elif trigger == "close-skills":
         data["open"] = False
+    return data
+
+
+@app.callback(
+    Output("chat-ui", "data", allow_duplicate=True),
+    Input("open-chat", "n_clicks"),
+    Input("close-chat", "n_clicks"),
+    Input("toggle-chat-max", "n_clicks"),
+    Input("toggle-chat-panel", "n_clicks"),
+    Input("chat-agent-select", "value"),
+    State("chat-ui", "data"),
+    prevent_initial_call=True,
+)
+def update_chat_ui(_, __, ___, ____, selected_agent, data):
+    data = data or {
+        "open": False,
+        "selected_agent": "",
+        "last_agent": "",
+        "window_mode": "floating",
+        "panel_mode": "split",
+        "iframe_status": "idle",
+        "error_message": "",
+    }
+    trigger = ctx.triggered_id
+
+    available_slugs = [str(item.get("slug")) for item in CHAT_AGENT_CONFIGS if item.get("slug")]
+    default_slug = data.get("last_agent") or (available_slugs[0] if available_slugs else "")
+
+    if trigger == "open-chat":
+        data["open"] = True
+        data["selected_agent"] = str(data.get("selected_agent") or default_slug)
+        data["last_agent"] = str(data.get("selected_agent") or default_slug)
+        data["error_message"] = ""
+        data["iframe_status"] = "loading"
+        return data
+    if trigger == "close-chat":
+        data["open"] = False
+        return data
+    if trigger == "toggle-chat-max":
+        current_mode = str(data.get("window_mode") or "floating")
+        data["window_mode"] = "maximized" if current_mode != "maximized" else "floating"
+        return data
+    if trigger == "toggle-chat-panel":
+        current_panel = str(data.get("panel_mode") or "split")
+        data["panel_mode"] = "chat_only" if current_panel != "chat_only" else "split"
+        return data
+    if trigger == "chat-agent-select":
+        chosen = str(selected_agent or "").strip()
+        if chosen and chosen in available_slugs:
+            data["selected_agent"] = chosen
+            data["last_agent"] = chosen
+            data["iframe_status"] = "loading"
+            data["error_message"] = ""
+        return data
+
     return data
 
 
@@ -980,6 +1308,109 @@ def render_skills_modal(_, skills_ui, selected_skill_slugs, selected_agent_slugs
         workspace_children,
         message,
         notice_class,
+    )
+
+
+@app.callback(
+    Output("chat-modal", "className"),
+    Output("chat-modal-card", "className"),
+    Output("chat-modal-body", "className"),
+    Output("chat-agent-select", "options"),
+    Output("chat-agent-select", "value"),
+    Output("chat-iframe", "src"),
+    Output("chat-open-external", "href"),
+    Output("chat-notice", "children"),
+    Output("chat-notice", "className"),
+    Output("toggle-chat-max", "children"),
+    Output("toggle-chat-panel", "children"),
+    Input("refresh", "n_intervals"),
+    Input("chat-ui", "data"),
+    prevent_initial_call=False,
+)
+def render_chat_modal(_, chat_ui):
+    chat_ui = chat_ui or {}
+    is_open = bool(chat_ui.get("open"))
+    window_mode = str(chat_ui.get("window_mode") or "floating")
+    panel_mode = str(chat_ui.get("panel_mode") or "split")
+
+    options = [
+        {
+            "label": f"{item.get('label') or item.get('slug')} ({item.get('slug')})",
+            "value": item.get("slug"),
+        }
+        for item in CHAT_AGENT_CONFIGS
+        if item.get("enabled", True) and item.get("slug")
+    ]
+    values = [str(opt.get("value")) for opt in options if opt.get("value")]
+
+    selected = str(chat_ui.get("selected_agent") or chat_ui.get("last_agent") or "").strip()
+    if selected not in values:
+        selected = values[0] if values else ""
+
+    embed_url = CHAT_AGENT_EMBED_URL_MAP.get(selected, "")
+    external_url = CHAT_AGENT_URL_MAP.get(selected, "") or "#"
+    probe_url = CHAT_AGENT_PROXY_TARGET_URL_MAP.get(selected, "")
+    iframe_src = embed_url or "about:blank"
+
+    notice = ""
+    notice_class = "chat-notice"
+    if not options:
+        notice = "No enabled agents discovered in manifest."
+        notice_class = "chat-notice error"
+    elif not external_url or external_url == "#":
+        notice = "Selected agent has no chat URL mapping."
+        notice_class = "chat-notice warn"
+    else:
+        try:
+            resp = requests.get(probe_url or external_url, timeout=2.0)
+            if 200 <= resp.status_code < 400:
+                notice = "Embedded chat via same-origin proxy is enabled. If target flow blocks in-frame, click Open External."
+                notice_class = "chat-notice ok"
+            else:
+                notice = f"Agent endpoint reachable with HTTP {resp.status_code}. If embed fails, use Open External."
+                notice_class = "chat-notice warn"
+        except Exception:
+            notice = "Agent endpoint appears offline from Mission Control. Check container status or use Open External."
+            notice_class = "chat-notice error"
+
+    modal_class = "chat-modal open" if is_open else "chat-modal"
+    card_classes = ["chat-modal-card"]
+    body_classes = ["chat-modal-body"]
+    if window_mode == "maximized":
+        card_classes.append("maximized")
+    if panel_mode == "chat_only":
+        body_classes.append("chat-only")
+
+    max_label = "Exit Max" if window_mode == "maximized" else "Maximize"
+    panel_label = "Split View" if panel_mode == "chat_only" else "Chat Only"
+
+    if not is_open:
+        return (
+            "chat-modal",
+            "chat-modal-card",
+            "chat-modal-body",
+            options,
+            selected or None,
+            "about:blank",
+            external_url,
+            "",
+            "chat-notice",
+            max_label,
+            panel_label,
+        )
+
+    return (
+        modal_class,
+        " ".join(card_classes),
+        " ".join(body_classes),
+        options,
+        selected or None,
+        iframe_src,
+        external_url,
+        notice,
+        notice_class,
+        max_label,
+        panel_label,
     )
 
 
