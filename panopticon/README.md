@@ -147,6 +147,50 @@ bash panopticon/tools/check_panopticon_services.sh
 bash panopticon/tools/check_agent_endpoints.sh
 ```
 
+## Control UI（Web Chat）推荐入口与 1008 排障
+
+在 Panopticon 模式下，推荐一律从 Mission Control Gateway 的同源入口打开每个 agent 的 Control UI（它会注入 Authorization + LocalStorage 配置）：
+
+```text
+http://127.0.0.1:18920/chat/<agent>/
+```
+
+不要直接访问 `188xx`（例如 `http://127.0.0.1:18801/`），否则容易出现 `disconnected (1008)` 的 `token missing` / `unauthorized`。
+
+如果看到 `unauthorized: device token mismatch`，直接运行一键轮换脚本（会同步 env + openclaw.json 并重启服务）：
+
+```bash
+bash panopticon/tools/rotate_gateway_tokens.sh
+```
+
+如果看到 `pairing required`（OpenClaw 新版设备配对机制）：
+- 本仓库通过同源网关 + 信任代理配置来让 webchat 自动完成 silent pairing。
+- 若你改过 Nginx 模板或 openclaw.json，确保 `/chat/<agent>/` 的反代配置仍然生效，并重建 `mission-control-gateway`：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --force-recreate mission-control-gateway
+```
+
+安全提示：若你的网关配置会让反代请求被识别为 `127.0.0.1` 以自动配对，请不要把 `18920` 暴露到公网/不可信网段。
+
+配对状态速查（最短 checklist）：
+
+```text
+容器内路径：/home/node/.openclaw/devices/pending.json 与 /home/node/.openclaw/devices/paired.json
+```
+
+```bash
+AGENT=nox
+docker exec openclaw-$AGENT sh -lc 'jq -r "\"pending=\" + ((keys|length)|tostring)" /home/node/.openclaw/devices/pending.json 2>/dev/null; jq -r "\"paired=\" + ((keys|length)|tostring)" /home/node/.openclaw/devices/paired.json 2>/dev/null'
+```
+
+如果路径找不到（你改了 OPENCLAW_HOME/镜像用户），用 find 定位：
+
+```bash
+AGENT=nox
+docker exec openclaw-$AGENT sh -lc 'find / -maxdepth 6 -type f \( -name pending.json -o -name paired.json \) 2>/dev/null'
+```
+
 可选参数（环境变量）：
 
 - `HOST`（默认 `127.0.0.1`）

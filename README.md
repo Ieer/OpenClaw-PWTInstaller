@@ -497,6 +497,91 @@ export TELEGRAM_BOT_TOKEN="xxx"
 
 如果你在启动、连接或渠道配置中遇到问题，先从这里快速定位。
 
+### Q: 使用 8-Agent（Panopticon）打开聊天时 WebSocket 断开，报 `disconnected (1008)`？
+
+在多 agent + 同源反代（Mission Control Gateway）模式下，1008 常见有三类：
+
+1) `unauthorized: device token mismatch (rotate/reissue device token)`
+- **原因**：Gateway Token 在多处不一致（`panopticon/env/*.env` 覆盖文件、`panopticon/agent-homes/<agent>/openclaw.json`、浏览器 LocalStorage）。
+- **修复**：直接轮换并同步 8 个 token（不会打印 token），并重启相关容器：
+
+```bash
+bash panopticon/tools/rotate_gateway_tokens.sh
+```
+
+2) `unauthorized: gateway token missing` / `token missing`
+- **原因**：绕过同源入口，直接访问 host 端口（如 `http://127.0.0.1:18801/`）会缺少 Nginx 注入的 `Authorization` 与 LocalStorage 配置。
+- **修复**：永远用同源入口打开 Control UI：
+
+```text
+http://127.0.0.1:18920/chat/<agent>/
+```
+
+并避免使用“直连 188xx”的外链（如有自定义 UI/链接，确保指向 `/chat/<agent>/`）。
+
+3) `pairing required`
+- **原因**：OpenClaw 新版引入“设备配对”，非本地（loopback）请求默认需要人工批准；在 Docker 反代场景下，客户端 IP 常被解析为网桥地址（如 `172.21.x.x`），从而触发 `pairing required`。
+- **本仓库默认解法**：通过同源网关 + 信任代理，让反代请求被识别为本地，从而自动完成 silent pairing。
+
+如果你改过 Nginx 或 openclaw.json，检查两点：
+- Nginx（Mission Control Gateway）在 `/chat/<agent>/` 反代时需要把 `X-Forwarded-For` / `X-Real-IP` 设为 `127.0.0.1`。
+- 每个 agent 的 `panopticon/agent-homes/<agent>/openclaw.json` 需要包含 `gateway.trustedProxies`（通常是 compose 网络的 CIDR，例如 `172.21.0.0/16`）。
+
+使配置生效（重建网关容器）：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --force-recreate mission-control-gateway
+```
+
+验证/定位：
+- 网关入口是否可用：`curl -I http://127.0.0.1:18920/chat/nox/`
+- 容器内配对状态（出现 paired 即成功）：
+
+```bash
+docker exec openclaw-nox sh -lc 'cat /home/node/.openclaw/devices/pending.json; echo; cat /home/node/.openclaw/devices/paired.json'
+```
+
+必要时（最后手段）可清理浏览器 LocalStorage（避免旧设备身份/旧 token 影响）：
+- `openclaw.control.settings.v1`
+- `openclaw-device-identity-v1`
+- `openclaw.device.auth.v1`
+
+> 安全提示：如果你启用了“让反代请求看起来像 127.0.0.1 以自动配对”，务必不要把 `18920` 暴露到不可信网络（否则远端访问也可能被当作“本地设备”自动批准）。
+
+### Q: 如何快速检查某个 agent 是否已配对？（paired/pending 位置速查）
+
+最短 checklist：
+
+1) **确认容器名**（Panopticon 默认是 `openclaw-<agent>`，例如 `openclaw-nox`）。
+
+2) **容器内文件路径**（OpenClaw 会把设备配对状态写在 OpenClaw home 下）：
+
+```text
+/home/node/.openclaw/devices/pending.json
+/home/node/.openclaw/devices/paired.json
+```
+
+3) **直接查看**（复制粘贴即可）：
+
+```bash
+AGENT=nox
+docker exec openclaw-$AGENT sh -lc 'echo ---pending---; cat /home/node/.openclaw/devices/pending.json 2>/dev/null || echo "(missing)"; echo; echo ---paired---; cat /home/node/.openclaw/devices/paired.json 2>/dev/null || echo "(missing)"'
+```
+
+4) **只看数量**（更适合排查“有没有配对上”）：
+
+```bash
+AGENT=nox
+docker exec openclaw-$AGENT sh -lc 'jq -r "\"pending=\" + ((keys|length)|tostring)" /home/node/.openclaw/devices/pending.json 2>/dev/null; jq -r "\"paired=\" + ((keys|length)|tostring)" /home/node/.openclaw/devices/paired.json 2>/dev/null'
+```
+
+5) **如果你改过镜像/用户/OPENCLAW_HOME 导致路径不同**：用 find 定位一次：
+
+```bash
+AGENT=nox
+docker exec openclaw-$AGENT sh -lc 'find / -maxdepth 6 -type f \( -name pending.json -o -name paired.json \) 2>/dev/null'
+```
+
 ### Q: 安装时提示 Node.js 版本过低？
 
 ```bash

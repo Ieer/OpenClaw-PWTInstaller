@@ -1406,7 +1406,9 @@ def render_chat_modal(_, chat_ui):
         selected = values[0] if values else ""
 
     embed_url = CHAT_AGENT_EMBED_URL_MAP.get(selected, "")
-    external_url = CHAT_AGENT_URL_MAP.get(selected, "") or "#"
+    # Prefer the same-origin proxy path for external open as well.
+    # Direct 188xx gateway URLs do not inject token into localStorage and will prompt for manual token paste.
+    external_url = embed_url or (CHAT_AGENT_URL_MAP.get(selected, "") or "#")
     probe_url = CHAT_AGENT_PROXY_TARGET_URL_MAP.get(selected, "")
     iframe_src = embed_url or "about:blank"
 

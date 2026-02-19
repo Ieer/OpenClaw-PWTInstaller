@@ -94,14 +94,14 @@ docker compose -f "$COMPOSE_FILE" up -d --no-build --force-recreate \
 
 echo "[3/4] Waiting for gateways to become reachable"
 # Gateways can take a bit to come up after token reload.
-for i in {1..10}; do
+for i in {1..30}; do
   if bash panopticon/tools/check_agent_endpoints.sh >/dev/null 2>&1; then
     echo "Gateways OK"
     break
   fi
-  echo "...waiting ($i/10)"
+  echo "...waiting ($i/30)"
   sleep 3
-  if [[ $i -eq 10 ]]; then
+  if [[ $i -eq 30 ]]; then
     echo "Gateway checks still failing; showing full output:" >&2
     bash panopticon/tools/check_agent_endpoints.sh || true
   fi
@@ -109,8 +109,25 @@ done
 
 echo "[4/4] Smoke checks"
 # Check the unified entrypoint is alive.
-curl -sS -o /dev/null -w 'MC(18920)=%{http_code}\n' http://127.0.0.1:18920 || true
-curl -sS -o /dev/null -w 'chat_proxy(nox)=%{http_code}\n' http://127.0.0.1:18920/chat/nox/ || true
+for i in {1..10}; do
+  code="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18920 || true)"
+  if [[ "$code" == "200" ]]; then
+    echo "MC(18920)=200"
+    break
+  fi
+  echo "MC(18920)=$code (retry $i/10)"
+  sleep 1
+done
+
+for i in {1..20}; do
+  code="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18920/chat/nox/ || true)"
+  if [[ "$code" == "200" ]]; then
+    echo "chat_proxy(nox)=200"
+    break
+  fi
+  echo "chat_proxy(nox)=$code (retry $i/20)"
+  sleep 2
+done
 
 echo "Done. Tokens rotated and services restarted."
 echo "Note: token files are under panopticon/env/*.env (gitignored)."
