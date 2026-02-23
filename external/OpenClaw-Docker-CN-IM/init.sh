@@ -7,6 +7,12 @@ echo "=== OpenClaw 初始化脚本 ==="
 # 创建必要的目录并确保权限正确
 mkdir -p /home/node/.openclaw/workspace
 
+# If a global/community Feishu extension was installed previously, remove it so we use
+# the stock Feishu plugin bundled with OpenClaw (avoids duplicate plugin id warnings).
+if [ -d /home/node/.openclaw/extensions/feishu ]; then
+  rm -rf /home/node/.openclaw/extensions/feishu || true
+fi
+
 # 检查配置文件是否存在，如果不存在则生成
 if [ ! -f /home/node/.openclaw/openclaw.json ]; then
     echo "生成配置文件..."
@@ -283,19 +289,10 @@ EOF
     "installs": {
 EOF
 
-    # 添加飞书插件安装信息（如果提供了 APP_ID 和 APP_SECRET）
+    # NOTE: Feishu is available as a stock plugin in OpenClaw.
+    # We intentionally do NOT add plugins.installs.feishu here to avoid pulling a second
+    # global/community plugin that may cause duplicate plugin id warnings.
     FIRST_INSTALL=true
-    if [ -n "$FEISHU_APP_ID" ] && [ -n "$FEISHU_APP_SECRET" ]; then
-        cat >> /home/node/.openclaw/openclaw.json <<EOF
-      "feishu": {
-        "source": "npm",
-        "spec": "@m1heng-clawd/feishu",
-        "installPath": "/home/node/.openclaw/extensions/feishu",
-        "installedAt": "$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")"
-      }
-EOF
-        FIRST_INSTALL=false
-    fi
 
     # 添加钉钉插件安装信息（如果提供了 CLIENT_ID 和 CLIENT_SECRET）
     if [ -n "$DINGTALK_CLIENT_ID" ] && [ -n "$DINGTALK_CLIENT_SECRET" ]; then
@@ -353,7 +350,50 @@ EOF
 
     echo "✅ 配置文件已生成"
 else
-    echo "配置文件已存在，跳过生成"
+    echo "配置文件已存在，尝试按环境变量合并渠道/插件配置"
+
+    FEISHU_APP_ID="${FEISHU_APP_ID}"
+    FEISHU_APP_SECRET="${FEISHU_APP_SECRET}"
+
+    if [ -n "$FEISHU_APP_ID" ] && [ -n "$FEISHU_APP_SECRET" ]; then
+        python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+path = Path('/home/node/.openclaw/openclaw.json')
+data = json.loads(path.read_text(encoding='utf-8'))
+
+feishu_app_id = os.environ.get('FEISHU_APP_ID', '').strip()
+feishu_app_secret = os.environ.get('FEISHU_APP_SECRET', '').strip()
+
+if feishu_app_id and feishu_app_secret:
+    channels = data.setdefault('channels', {})
+    feishu = channels.setdefault('feishu', {})
+    feishu.update({
+        'enabled': True,
+        'connectionMode': feishu.get('connectionMode', 'websocket'),
+        'dmPolicy': feishu.get('dmPolicy', 'pairing'),
+        'groupPolicy': feishu.get('groupPolicy', 'allowlist'),
+        'requireMention': feishu.get('requireMention', True),
+        'appId': feishu_app_id,
+        'appSecret': feishu_app_secret,
+    })
+
+    plugins = data.setdefault('plugins', {})
+    entries = plugins.setdefault('entries', {})
+    entries.setdefault('feishu', {}).update({'enabled': True})
+
+    # Ensure we use stock:feishu (do not keep an installs entry pointing to a global plugin)
+    installs = plugins.setdefault('installs', {})
+    installs.pop('feishu', None)
+
+path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+PY
+        echo "✅ 已合并飞书渠道配置（stock:feishu）"
+    else
+      echo "ℹ️ 未检测到 FEISHU_APP_ID/FEISHU_APP_SECRET，跳过飞书合并"
+    fi
 fi
 
 # 确保所有文件和目录的权限正确
