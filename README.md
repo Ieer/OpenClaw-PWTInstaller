@@ -37,6 +37,18 @@
 - **自动闭环**：通过定时任务、状态检查、通知回执，让任务从“被动响应”升级为“持续演进”
 - **人保留决策权**：系统负责观察、归纳、建议，人始终位于系统之外的 meta 层
 
+### ✅ 软约束（行为契约）：8-Agent SOUL「PWT 工作契约」
+
+为了让以上 4 条理念可被长期执行（而不是只停留在口号），本仓库在 Panopticon 的 **每个 agent workspace** 内维护了一份 SOUL.md，并增加了 `PWT 工作契约（责任＝数据边界＝权限边界）`：
+
+- 明确 **职责边界**（我负责什么 / 不负责什么）
+- 明确 **数据边界**（只在本 workspace 读写，跨域用显式 handoff）
+- 强制 **持续可见**（任务产物落盘：artifacts/sources/state，可审计可回放）
+- 约定 **自动闭环**（checkpoint + 心跳只做 I/O，无事 HEARTBEAT_OK）
+- 约定 **Review Gate**（所有外部副作用/高风险动作默认进入 Review）
+
+> 说明：这是一套“软约束”（行为契约）。它能显著降低越权与失控风险，但不等同于系统层面的“硬禁止”。硬约束仍需靠容器隔离、配置与权限控制来落地（见下方“安全建议/权限控制”）。
+
 > 💡 目标不是“把人生交给 AI”，而是“把人生重新看清楚，并掌握在自己手里”。
 
 ## 💻 系统要求
@@ -206,6 +218,17 @@ curl -fsSL https://raw.githubusercontent.com/Ieer/OpenClaw-PWTInstaller/main/con
 - 8-Agent 运行编排（Panopticon）：[panopticon/README.md](panopticon/README.md)
 - 无人公司工程落地手册（简中，8-agent）：[docs/unmanned-company-playbook-zh-cn.md](docs/unmanned-company-playbook-zh-cn.md)
 - Mission Control 通用实现草案（英文）：[docs/mission-control.md](docs/mission-control.md)
+
+每个 agent 的 SOUL（含“PWT 工作契约”，简中）：
+
+- nox：[panopticon/workspaces/nox/SOUL.md](panopticon/workspaces/nox/SOUL.md)
+- metrics：[panopticon/workspaces/metrics/SOUL.md](panopticon/workspaces/metrics/SOUL.md)
+- email：[panopticon/workspaces/email/SOUL.md](panopticon/workspaces/email/SOUL.md)
+- growth：[panopticon/workspaces/growth/SOUL.md](panopticon/workspaces/growth/SOUL.md)
+- trades：[panopticon/workspaces/trades/SOUL.md](panopticon/workspaces/trades/SOUL.md)
+- health：[panopticon/workspaces/health/SOUL.md](panopticon/workspaces/health/SOUL.md)
+- writing：[panopticon/workspaces/writing/SOUL.md](panopticon/workspaces/writing/SOUL.md)
+- personal：[panopticon/workspaces/personal/SOUL.md](panopticon/workspaces/personal/SOUL.md)
 
 ## ⚙️ 详细配置
 

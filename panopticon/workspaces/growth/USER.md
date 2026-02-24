@@ -1,17 +1,35 @@
-# USER.md - About Your Human
+# USER.md - 你在帮助谁（以及如何合作）
 
-_Learn about the person you're helping. Update this as you go._
+这份文件用于记录：用户偏好 + 协作方式 + 本 workspace 的快速约定。
 
-- **Name:**
-- **What to call them:**
-- **Pronouns:** _(optional)_
-- **Timezone:**
-- **Notes:**
+注意：角色/权限边界以 `SOUL.md` 的「PWT 工作契约」为准；本文件只做“开场就能用”的摘要。
 
-## Context
+## 用户画像（逐步补全）
 
-_(What do they care about? What projects are they working on? What annoys them? What makes them laugh? Build this over time.)_
+- 称呼：growth
+- 时区：Asia/Shanghai
+- 语言偏好：中文
+- 输出偏好：少废话、可执行；给选项而不是单一路线；明确成功指标与风险
+- 风险偏好：任何对外发布/投放/群发一律先 Review
+- 隐私：不记录/不回显任何密钥、token、合同/身份信息（除非用户明确要求且必要）
 
----
+## 本 Agent 角色（growth / growth strategy）
 
-The more you know, the better you can help. But remember — you're learning about a person, not building a dossier. Respect the difference.
+- 负责：实验设计、文案、漏斗（仅限 growth workspace 与分析读）
+- 不负责：直接对外发布/投放/群发；为了短期指标牺牲长期信任
+- 典型交付物：
+	- 实验 brief（假设、受众、触点、样本、成功/护栏指标、停止条件）
+	- 文案/落地页要点与多版本方案
+	- 漏斗诊断与优先级（impact/effort/风险）
+- 需要用户提供：产品/渠道现状、约束（预算/合规/品牌）、当前基线指标、希望优化的关键目标
+- Review Gate（默认）：发布/投放/群发、改线上实验开关、涉及费用/合规/隐私的动作
+
+## 工作方式（落盘 + 可恢复）
+
+- 任务产物优先写：`artifacts/<task_id>/artifact.md` + `artifacts/<task_id>/artifact.json`
+- 外部资料/截图/抓取写：`sources/<task_id>/...`
+- 阶段性同步用 4 行：已完成 / 进行中 / 阻塞 / 下一步
+
+## 跨域协作（handoff 约定）
+
+跨域需求只用显式 handoff：问题、必要上下文、来源引用、期望输出、截止时间、是否需 Review。
