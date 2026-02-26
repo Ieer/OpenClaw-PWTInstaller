@@ -31,6 +31,16 @@ from .schemas import (
 )
 
 
+ALLOWED_TASK_STATUSES = {"INBOX", "ASSIGNED", "IN PROGRESS", "REVIEW", "DONE"}
+TASK_STATUS_TRANSITIONS = {
+    "INBOX": {"ASSIGNED"},
+    "ASSIGNED": {"IN PROGRESS", "REVIEW"},
+    "IN PROGRESS": {"REVIEW", "DONE"},
+    "REVIEW": {"IN PROGRESS", "DONE"},
+    "DONE": set(),
+}
+
+
 def require_auth(settings: Settings, authorization: str | None = Header(default=None)) -> None:
     if not settings.auth_token:
         return
@@ -122,6 +132,39 @@ def _scan_workspace_skills(settings: Settings, agent_slug: str | None = None) ->
     return groups
 
 
+def _known_agent_slugs(settings: Settings) -> set[str]:
+    root = Path(settings.agent_homes_dir)
+    if not root.exists() or not root.is_dir():
+        return set()
+    return {path.name for path in root.iterdir() if path.is_dir()}
+
+
+def _validate_handoff_payload(payload: dict, known_agents: set[str]) -> list[str]:
+    errors: list[str] = []
+
+    target_agent = str(payload.get("to") or "").strip()
+    if not target_agent:
+        errors.append("payload.to is required")
+    elif known_agents and target_agent not in known_agents:
+        errors.append(f"payload.to agent not found: {target_agent}")
+
+    for field in ("problem", "context", "expected_output"):
+        value = str(payload.get(field) or "").strip()
+        if not value:
+            errors.append(f"payload.{field} is required")
+
+    artifact_refs = payload.get("artifact_refs")
+    if not isinstance(artifact_refs, list) or not artifact_refs:
+        errors.append("payload.artifact_refs must be a non-empty list")
+    elif not all(isinstance(item, str) and item.strip() for item in artifact_refs):
+        errors.append("payload.artifact_refs must contain non-empty strings")
+
+    if not isinstance(payload.get("review_gate"), bool):
+        errors.append("payload.review_gate must be boolean")
+
+    return errors
+
+
 def create_app() -> FastAPI:
     settings = load_settings()
 
@@ -134,6 +177,31 @@ def create_app() -> FastAPI:
     async def get_session():
         async with session_factory() as session:
             yield session
+
+    async def publish_validation_result(
+        *,
+        accepted: bool,
+        body: EventIn,
+        errors: list[str],
+        details: dict | None = None,
+    ) -> None:
+        await publish_event(
+            redis,
+            stream_key=settings.redis_stream_key,
+            event={
+                "id": str(uuid4()),
+                "type": "event.validation",
+                "agent": body.agent,
+                "task_id": str(body.task_id) if body.task_id else None,
+                "payload": {
+                    "event_type": body.type,
+                    "accepted": accepted,
+                    "errors": errors,
+                    "details": details or {},
+                },
+                "created_at": datetime.utcnow().isoformat() + "Z",
+            },
+        )
 
     @app.get("/health", response_model=Health)
     async def healthcheck() -> Health:
@@ -229,6 +297,12 @@ def create_app() -> FastAPI:
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
         session=Depends(get_session),
     ) -> TaskOut:
+        if body.status not in ALLOWED_TASK_STATUSES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"invalid task status: {body.status}; allowed={sorted(ALLOWED_TASK_STATUSES)}",
+            )
+
         task_id = uuid4()
         now = datetime.utcnow()
         stmt = (
@@ -326,10 +400,75 @@ def create_app() -> FastAPI:
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
         session=Depends(get_session),
     ) -> EventOut:
+        validation_errors: list[str] = []
+        validation_details: dict = {}
+
+        if body.type == "task.handoff":
+            if not body.task_id:
+                validation_errors.append("task.handoff requires task_id")
+            known_agents = _known_agent_slugs(settings)
+            validation_errors.extend(_validate_handoff_payload(body.payload, known_agents))
+            validation_details["known_agents_count"] = len(known_agents)
+
+        event_payload = dict(body.payload)
+        if body.type == "task.status":
+            if not body.task_id:
+                validation_errors.append("task.status requires task_id")
+            next_status = str(body.payload.get("new_status") or "").strip().upper()
+            if not next_status:
+                validation_errors.append("payload.new_status is required")
+            elif next_status not in ALLOWED_TASK_STATUSES:
+                validation_errors.append(
+                    f"payload.new_status invalid: {next_status}; allowed={sorted(ALLOWED_TASK_STATUSES)}"
+                )
+
+            current_status = None
+            if body.task_id:
+                current_row = (
+                    await session.execute(
+                        sa.select(tasks.c.id, tasks.c.status).where(tasks.c.id == body.task_id)
+                    )
+                ).first()
+                if not current_row:
+                    validation_errors.append(f"task not found: {body.task_id}")
+                else:
+                    current_status = str(current_row.status)
+
+            if not validation_errors and current_status is not None:
+                allowed = TASK_STATUS_TRANSITIONS.get(current_status, set())
+                if next_status != current_status and next_status not in allowed:
+                    validation_errors.append(
+                        f"invalid status transition: {current_status} -> {next_status}; allowed={sorted(allowed)}"
+                    )
+
+            if not validation_errors and current_status is not None:
+                now = datetime.utcnow()
+                await session.execute(
+                    tasks.update()
+                    .where(tasks.c.id == body.task_id)
+                    .values(status=next_status, updated_at=now)
+                )
+                event_payload["previous_status"] = current_status
+                event_payload["new_status"] = next_status
+                event_payload["transition_applied"] = True
+                validation_details["transition"] = {
+                    "from": current_status,
+                    "to": next_status,
+                }
+
+        if validation_errors:
+            await publish_validation_result(
+                accepted=False,
+                body=body,
+                errors=validation_errors,
+                details=validation_details,
+            )
+            raise HTTPException(status_code=422, detail={"errors": validation_errors})
+
         event_id = uuid4()
         stmt = (
             events.insert()
-            .values(id=event_id, type=body.type, agent=body.agent, task_id=body.task_id, payload=body.payload)
+            .values(id=event_id, type=body.type, agent=body.agent, task_id=body.task_id, payload=event_payload)
             .returning(
                 events.c.id,
                 events.c.type,
@@ -353,6 +492,13 @@ def create_app() -> FastAPI:
                 "payload": row.payload,
                 "created_at": row.created_at.isoformat(),
             },
+        )
+
+        await publish_validation_result(
+            accepted=True,
+            body=body,
+            errors=[],
+            details=validation_details,
         )
 
         return EventOut(**row._asdict())

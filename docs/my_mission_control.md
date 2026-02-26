@@ -73,6 +73,31 @@
 - artifacts/<task_id>/artifact.md：可閱讀版本。
 - sources/<task_id>/：引用索引與（必要時）快照。
 
+### Workspace 狀態全面測試（已落地）
+
+新增測試腳本：
+- [panopticon/tools/test_workspace_contract.py](panopticon/tools/test_workspace_contract.py)
+
+嚴格模式（只檢查，不改目錄）：
+
+```bash
+python panopticon/tools/test_workspace_contract.py \
+	--output panopticon/reports/workspace_contract_report_before.json
+```
+
+自動補齊缺失目錄後復測：
+
+```bash
+python panopticon/tools/test_workspace_contract.py \
+	--auto-create \
+	--output panopticon/reports/workspace_contract_report_after.json
+```
+
+覆蓋內容：
+- 8 個 workspace 的固定子結構：`inbox/outbox/artifacts/state/sources`
+- 每個子結構的可讀寫探針
+- 最小任務生命週期探針：`inbox -> outbox -> artifacts -> state -> sources`
+
 ## Heartbeat 與成本控制（13–17 分鐘抖動）
 - 心跳週期：每 agent 13–17 分鐘 jitter（避免同時喚醒）。
 - 心跳技能嚴禁觸發 LLM：只做查 stream / 更新 last_seen / 檢查任務。
@@ -81,6 +106,37 @@
 ## Handoff（顯式交接）與一次性子代理（Phase 2）
 - Handoff：任何跨域協作必須用 handoff 事件，內容包含：問題、必要上下文、引用 artifacts、期望輸出格式。
 - 一次性子代理：由 Mission Control 用同一 OpenClaw image 啟動短 TTL 子容器（docker run --rm），只掛載該任務的臨時資料夾與最小權限；完成後把 artifacts 回寫主任務。
+
+### 短期落地（已實作）：最小狀態機 + handoff 校驗 + 校驗事件流
+
+已在 `mission_control_api/app/main.py` 的 `/v1/events` 接口增加最小治理能力：
+
+- `task.status` 最小狀態機校驗與落表更新（`INBOX -> ASSIGNED -> IN PROGRESS -> REVIEW -> DONE`，允許 `REVIEW <-> IN PROGRESS` 與 `IN PROGRESS -> DONE`）。
+- `task.handoff` 必填字段校驗：
+	- `to`（目標 agent）
+	- `problem`
+	- `context`
+	- `artifact_refs`（非空 list）
+	- `expected_output`
+	- `review_gate`（boolean）
+- 校驗結果統一寫入 Redis 事件流：`event.validation`（包含 `accepted`、`errors`、`details`），便於 feed 審計與監控告警。
+
+### Agent 事件上報接入（EVENT_HTTP_URL）
+
+已在 `panopticon/templates/agent.env.tpl` 增加 agent 側上報欄位，供 wrapper/skills 直接接入：
+
+- `EVENT_HTTP_URL`
+- `EVENT_HTTP_TOKEN`
+- `EVENT_HTTP_ENABLED`
+- `EVENT_HTTP_TIMEOUT_SECONDS`
+- `EVENT_HTTP_RETRY`
+- `EVENT_REPORT_EVENT_TYPES=artifact.created,task.status,task.review.requested`
+
+已在 `panopticon/tools/comprehensive_assessment.py` 增加對 `EVENT_HTTP_URL` 的可選驗證能力：
+
+- 新增參數：`--event-http-url`、`--event-http-token`
+- 在 `--run-lyric-case` 時，除寫入主 API 外，也會對 `EVENT_HTTP_URL` 驗證關鍵事件上報（`artifact.created` / `task.status` / `task.review.requested`）
+- 報告中新增 `event_http_push` 結果，便於判斷 agent 側上報鏈路是否打通。
 
 ## 通知策略
 - 當任務進入 Review / NeedsInput 時通知你。
@@ -184,3 +240,49 @@ CN-IM 既有欄位（可直接沿用）：
 ## 已落地現況（本 repo）
 - Dash UI 原型已存在於 [MissionControl/app.py](MissionControl/app.py) 並可啟動；Dash 啟動方式已採用相容的新入口（run）。
 - 通用 Mission Control 架構說明已在 [docs/mission-control.md](docs/mission-control.md)。
+
+## 全面評估落地（可執行）
+
+已新增綜合評估腳本：
+- [panopticon/tools/comprehensive_assessment.py](panopticon/tools/comprehensive_assessment.py)
+
+### 基本用法（只讀評估）
+
+```bash
+python panopticon/tools/comprehensive_assessment.py \
+	--api-base http://127.0.0.1:18910 \
+	--ui-base http://127.0.0.1:18920 \
+	--feed-limit 800 \
+	--output panopticon/reports/assessment.json
+```
+
+該命令會同時輸出：
+- 協作評分（Mission Control API/UI/事件指標）
+- workspace 狀態測試（`inbox/outbox/artifacts/state/sources`）
+
+### 協作案例演練（寫入任務/事件）
+
+```bash
+python panopticon/tools/comprehensive_assessment.py \
+	--run-lyric-case \
+	--feed-limit 800 \
+	--workspace-auto-create \
+	--output panopticon/reports/assessment_lyric_case.json
+```
+
+### 指標與評分（腳本內建）
+
+- task_success_rate_pct（權重 20%）：DONE / 全部任務
+- lifecycle_coverage_pct（權重 20%）：任務是否可在 feed 中找到事件證據
+- handoff_completeness_pct（權重 15%）：handoff 關鍵字段完整率
+- heartbeat_continuity_pct（權重 10%）：窗口內心跳覆蓋率
+- feed_freshness_sec（權重 10%，越小越好）：最新事件新鮮度
+- probe_event_latency_sec（權重 15%，越小越好）：探針事件寫入到 feed 可見延遲
+- review_gate_bypass_rate_pct（權重 10%，越小越好）：高風險任務繞過 Review 比例
+
+評分輸出：
+- 終端輸出人可讀摘要
+- `--output` 生成 JSON 報告（便於後續儀表板或 CI 對接）
+- `--feed-limit` 控制 feed 採樣深度（建議 500~1000，避免 lifecycle/handoff 指標低估）
+- `--workspace-auto-create` 在 workspace 測試時自動補齊缺失目錄
+- `--skip-workspace-contract` 只跑協作評分，不跑 workspace 狀態測試
