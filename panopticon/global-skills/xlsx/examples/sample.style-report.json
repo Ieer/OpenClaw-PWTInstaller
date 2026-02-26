@@ -1,0 +1,15 @@
+{
+  "xlsx": "panopticon/global-skills/xlsx/examples/sample.xlsx",
+  "ok": true,
+  "checks": {
+    "has_workbook_xml": true,
+    "has_sheet1_xml": true,
+    "has_styles_xml": true,
+    "has_workbook_rels": true,
+    "has_at_least_one_sheet": true,
+    "has_rows": true,
+    "header_style_applied": true
+  },
+  "warnings": [],
+  "conversion_message": "openpyxl not installed; fallback: converted by built-in OOXML fallback"
+}

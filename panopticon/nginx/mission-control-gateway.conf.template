@@ -7,8 +7,28 @@ map $http_upgrade $connection_upgrade {
   '' close;
 }
 
+map $request_uri $is_chat_request {
+  default 0;
+  ~^/chat/ 1;
+}
+
+log_format chat_access_json escape=json
+  '{'
+    '"time_iso":"$time_iso8601",'
+    '"remote_addr":"$remote_addr",'
+    '"method":"$request_method",'
+    '"uri":"$uri",'
+    '"query":"$args",'
+    '"status":$status,'
+    '"request_time":"$request_time",'
+    '"upstream_status":"$upstream_status",'
+    '"upgrade":"$http_upgrade",'
+    '"user_agent":"$http_user_agent"'
+  '}';
+
 server {
   listen 80;
+  access_log /var/log/nginx/chat_access.log chat_access_json if=$is_chat_request;
 
   resolver 127.0.0.11 ipv6=off;
 

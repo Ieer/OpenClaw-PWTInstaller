@@ -1,0 +1,5 @@
+metric,value,owner,status
+weekly_active_users,18234,growth,ok
+checkout_success_rate,0.971,trades,ok
+api_error_rate,0.014,metrics,watch
+delivery_lead_time_hours,19.5,personal,watch

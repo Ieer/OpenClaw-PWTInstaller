@@ -1,0 +1,555 @@
+{
+  "generated_at": "2026-02-25T12:43:16.078415+00:00",
+  "summary": {
+    "passed_checks": 96,
+    "total_checks": 96,
+    "success_rate_pct": 100.0,
+    "all_passed": true
+  },
+  "agents": [
+    {
+      "agent": "nox",
+      "workspace": "panopticon/workspaces/nox",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260225124316"
+        }
+      ]
+    },
+    {
+      "agent": "metrics",
+      "workspace": "panopticon/workspaces/metrics",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260225124316"
+        }
+      ]
+    },
+    {
+      "agent": "email",
+      "workspace": "panopticon/workspaces/email",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260225124316"
+        }
+      ]
+    },
+    {
+      "agent": "growth",
+      "workspace": "panopticon/workspaces/growth",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260225124316"
+        }
+      ]
+    },
+    {
+      "agent": "trades",
+      "workspace": "panopticon/workspaces/trades",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260225124316"
+        }
+      ]
+    },
+    {
+      "agent": "health",
+      "workspace": "panopticon/workspaces/health",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260225124316"
+        }
+      ]
+    },
+    {
+      "agent": "writing",
+      "workspace": "panopticon/workspaces/writing",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260225124316"
+        }
+      ]
+    },
+    {
+      "agent": "personal",
+      "workspace": "panopticon/workspaces/personal",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "created"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260225124316"
+        }
+      ]
+    }
+  ]
+}

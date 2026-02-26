@@ -1,0 +1,555 @@
+{
+  "generated_at": "2026-02-26T14:39:35.859468+00:00",
+  "summary": {
+    "passed_checks": 96,
+    "total_checks": 96,
+    "success_rate_pct": 100.0,
+    "all_passed": true
+  },
+  "agents": [
+    {
+      "agent": "nox",
+      "workspace": "/home/pi/OpenClaw-PWTInstaller/panopticon/workspaces/nox",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260226143935"
+        }
+      ]
+    },
+    {
+      "agent": "metrics",
+      "workspace": "/home/pi/OpenClaw-PWTInstaller/panopticon/workspaces/metrics",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260226143935"
+        }
+      ]
+    },
+    {
+      "agent": "email",
+      "workspace": "/home/pi/OpenClaw-PWTInstaller/panopticon/workspaces/email",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260226143935"
+        }
+      ]
+    },
+    {
+      "agent": "growth",
+      "workspace": "/home/pi/OpenClaw-PWTInstaller/panopticon/workspaces/growth",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260226143935"
+        }
+      ]
+    },
+    {
+      "agent": "trades",
+      "workspace": "/home/pi/OpenClaw-PWTInstaller/panopticon/workspaces/trades",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260226143935"
+        }
+      ]
+    },
+    {
+      "agent": "health",
+      "workspace": "/home/pi/OpenClaw-PWTInstaller/panopticon/workspaces/health",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260226143935"
+        }
+      ]
+    },
+    {
+      "agent": "writing",
+      "workspace": "/home/pi/OpenClaw-PWTInstaller/panopticon/workspaces/writing",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260226143935"
+        }
+      ]
+    },
+    {
+      "agent": "personal",
+      "workspace": "/home/pi/OpenClaw-PWTInstaller/panopticon/workspaces/personal",
+      "passed": 12,
+      "total": 12,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "outbox_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "artifacts_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "state_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "state_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "sources_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "sources_rw",
+          "ok": true,
+          "detail": "rw ok"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": true,
+          "detail": "assessment-20260226143935"
+        }
+      ]
+    }
+  ]
+}

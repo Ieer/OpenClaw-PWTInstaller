@@ -82,7 +82,7 @@ def render_compose(manifest: dict) -> str:
                 target: /data/global-skills
                 read_only: true
               - type: bind
-                source: ${PANOPTICON_DATA_DIR:-.}/agent-homes
+                source: ${{PANOPTICON_DATA_DIR:-.}}/agent-homes
                 target: /data/agent-homes
             depends_on:
               - mc-redis
@@ -101,6 +101,7 @@ def render_compose(manifest: dict) -> str:
             image: mission-control-ui:local
             env_file:
               - ./env/mission-control-ui.env.example
+              - ./env/mission-control-ui.env
             volumes:
               - type: bind
                 source: ./agents.manifest.yaml
@@ -108,8 +109,54 @@ def render_compose(manifest: dict) -> str:
                 read_only: true
             depends_on:
               - mission-control-api
+            restart: unless-stopped
+            networks:
+              - panopticon
+
+          mission-control-gateway:
+            container_name: mission-control-gateway
+            image: nginx:alpine
+            env_file:
+              - ./env/mission-control-gateway.env
+            volumes:
+              - type: bind
+                source: ./nginx/mission-control-gateway.conf.template
+                target: /etc/nginx/templates/default.conf.template
+                read_only: true
+              - type: bind
+                source: ${{PANOPTICON_DATA_DIR:-.}}/mission-control/gateway-logs
+                target: /var/log/nginx
+            depends_on:
+              - mission-control-ui
             ports:
-              - \"{ui_port}:9090\"
+              - "{ui_port}:80"
+            restart: unless-stopped
+            networks:
+              - panopticon
+
+          mission-control-chat-bridge:
+            container_name: mission-control-chat-bridge
+            image: python:3.12-alpine
+            env_file:
+              - ./env/mission-control.env.example
+            environment:
+              MC_API_URL: http://mission-control-api:9090
+              MC_CHAT_GATEWAY_LOG_FILE: /var/log/nginx/chat_access.log
+              MC_CHAT_BRIDGE_POLL_SECONDS: "0.5"
+              MC_CHAT_BRIDGE_START_MODE: tail
+            volumes:
+              - type: bind
+                source: ./tools/chat_gateway_log_bridge.py
+                target: /app/chat_gateway_log_bridge.py
+                read_only: true
+              - type: bind
+                source: ${{PANOPTICON_DATA_DIR:-.}}/mission-control/gateway-logs
+                target: /var/log/nginx
+                read_only: true
+            command: ["python", "/app/chat_gateway_log_bridge.py"]
+            depends_on:
+              - mission-control-api
+              - mission-control-gateway
             restart: unless-stopped
             networks:
               - panopticon
@@ -161,6 +208,7 @@ def render_compose(manifest: dict) -> str:
                 TERM: xterm-256color
               env_file:
                 - ./env/{slug}.env.example
+                - ./env/{slug}.env
               volumes:
                 - type: bind
                   source: ${{PANOPTICON_DATA_DIR:-.}}/agent-homes/{slug}
@@ -232,6 +280,7 @@ def generate(manifest_path: Path, prune: bool = False) -> None:
         static_files = {
             "mission-control.env.example",
             "mission-control-ui.env.example",
+          "mission-control-gateway.env.example",
         }
         for env_file in ENV_DIR.glob("*.env.example"):
             if env_file.name in static_files:

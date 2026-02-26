@@ -1,0 +1,18 @@
+{
+  "docx": "panopticon/global-skills/docx/examples/sample.docx",
+  "ok": true,
+  "checks": {
+    "has_word_document_xml": true,
+    "has_word_styles_xml": true,
+    "has_document_rels": true,
+    "has_heading_style": true,
+    "has_list_style_or_numpr": true
+  },
+  "used_paragraph_styles": [
+    "Heading1",
+    "Heading2",
+    "Heading3"
+  ],
+  "warnings": [],
+  "conversion_message": "pandoc not found; fallback: python-docx not installed; fallback2: converted by built-in OOXML fallback"
+}

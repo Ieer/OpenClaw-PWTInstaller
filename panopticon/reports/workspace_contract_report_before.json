@@ -1,0 +1,355 @@
+{
+  "generated_at": "2026-02-25T12:43:15.333549+00:00",
+  "summary": {
+    "passed_checks": 8,
+    "total_checks": 56,
+    "success_rate_pct": 14.29,
+    "all_passed": false
+  },
+  "agents": [
+    {
+      "agent": "nox",
+      "workspace": "panopticon/workspaces/nox",
+      "passed": 1,
+      "total": 7,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "state_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "sources_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": false,
+          "detail": "[Errno 2] No such file or directory: 'panopticon/workspaces/nox/inbox/assessment-20260225124315.txt'"
+        }
+      ]
+    },
+    {
+      "agent": "metrics",
+      "workspace": "panopticon/workspaces/metrics",
+      "passed": 1,
+      "total": 7,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "state_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "sources_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": false,
+          "detail": "[Errno 2] No such file or directory: 'panopticon/workspaces/metrics/inbox/assessment-20260225124315.txt'"
+        }
+      ]
+    },
+    {
+      "agent": "email",
+      "workspace": "panopticon/workspaces/email",
+      "passed": 1,
+      "total": 7,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "state_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "sources_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": false,
+          "detail": "[Errno 2] No such file or directory: 'panopticon/workspaces/email/inbox/assessment-20260225124315.txt'"
+        }
+      ]
+    },
+    {
+      "agent": "growth",
+      "workspace": "panopticon/workspaces/growth",
+      "passed": 1,
+      "total": 7,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "state_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "sources_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": false,
+          "detail": "[Errno 2] No such file or directory: 'panopticon/workspaces/growth/inbox/assessment-20260225124315.txt'"
+        }
+      ]
+    },
+    {
+      "agent": "trades",
+      "workspace": "panopticon/workspaces/trades",
+      "passed": 1,
+      "total": 7,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "state_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "sources_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": false,
+          "detail": "[Errno 2] No such file or directory: 'panopticon/workspaces/trades/inbox/assessment-20260225124315.txt'"
+        }
+      ]
+    },
+    {
+      "agent": "health",
+      "workspace": "panopticon/workspaces/health",
+      "passed": 1,
+      "total": 7,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "state_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "sources_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": false,
+          "detail": "[Errno 2] No such file or directory: 'panopticon/workspaces/health/inbox/assessment-20260225124315.txt'"
+        }
+      ]
+    },
+    {
+      "agent": "writing",
+      "workspace": "panopticon/workspaces/writing",
+      "passed": 1,
+      "total": 7,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "state_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "sources_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": false,
+          "detail": "[Errno 2] No such file or directory: 'panopticon/workspaces/writing/inbox/assessment-20260225124315.txt'"
+        }
+      ]
+    },
+    {
+      "agent": "personal",
+      "workspace": "panopticon/workspaces/personal",
+      "passed": 1,
+      "total": 7,
+      "checks": [
+        {
+          "name": "workspace_exists",
+          "ok": true,
+          "detail": "exists"
+        },
+        {
+          "name": "inbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "outbox_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "artifacts_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "state_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "sources_exists",
+          "ok": false,
+          "detail": "missing"
+        },
+        {
+          "name": "lifecycle_probe",
+          "ok": false,
+          "detail": "[Errno 2] No such file or directory: 'panopticon/workspaces/personal/inbox/assessment-20260225124315.txt'"
+        }
+      ]
+    }
+  ]
+}

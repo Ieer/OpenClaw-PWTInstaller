@@ -1,0 +1,231 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-02-26",
+  "notes": [
+    "All templates are SELECT-only and parameterized (%s).",
+    "Replace table/column names to match your schema before production use.",
+    "Keep runtime allowlist (PG_ALLOWED_TABLES) aligned with required_tables."
+  ],
+  "templates": [
+    {
+      "id": "t01_new_users_in_range",
+      "intent": "查询时间区间内新增用户数",
+      "question_examples": [
+        "上周新注册用户有多少？",
+        "查询 2026-02-01 到 2026-02-07 新增用户数"
+      ],
+      "required_tables": ["users"],
+      "sql_template": "SELECT COUNT(*) AS new_user_count FROM users WHERE created_at >= %s AND created_at < %s;",
+      "params_order": ["start_time", "end_time"]
+    },
+    {
+      "id": "t02_new_users_by_region",
+      "intent": "按地区统计新增用户",
+      "question_examples": [
+        "上周各地区新增用户分布",
+        "最近7天北京上海新增用户各多少"
+      ],
+      "required_tables": ["users"],
+      "sql_template": "SELECT COALESCE(region, 'unknown') AS region, COUNT(*) AS user_count FROM users WHERE created_at >= %s AND created_at < %s GROUP BY COALESCE(region, 'unknown') ORDER BY user_count DESC LIMIT %s;",
+      "params_order": ["start_time", "end_time", "top_n"]
+    },
+    {
+      "id": "t03_dau_in_range",
+      "intent": "查询日活用户（DAU）",
+      "question_examples": [
+        "昨天DAU是多少？",
+        "查询某天活跃用户数"
+      ],
+      "required_tables": ["sessions"],
+      "sql_template": "SELECT COUNT(DISTINCT user_id) AS dau FROM sessions WHERE started_at >= %s AND started_at < %s;",
+      "params_order": ["day_start", "day_end"]
+    },
+    {
+      "id": "t04_weekly_active_users",
+      "intent": "查询周活用户（WAU）",
+      "question_examples": [
+        "最近7天活跃用户数",
+        "本周WAU"
+      ],
+      "required_tables": ["sessions"],
+      "sql_template": "SELECT COUNT(DISTINCT user_id) AS wau FROM sessions WHERE started_at >= %s AND started_at < %s;",
+      "params_order": ["week_start", "week_end"]
+    },
+    {
+      "id": "t05_order_count_and_gmv",
+      "intent": "查询订单量与GMV",
+      "question_examples": [
+        "今天订单量和GMV",
+        "上周订单金额汇总"
+      ],
+      "required_tables": ["orders"],
+      "sql_template": "SELECT COUNT(*) AS order_count, COALESCE(SUM(amount), 0) AS gmv FROM orders WHERE created_at >= %s AND created_at < %s AND status IN ('paid','completed');",
+      "params_order": ["start_time", "end_time"]
+    },
+    {
+      "id": "t06_paid_conversion_rate",
+      "intent": "查询支付转化率",
+      "question_examples": [
+        "下单到支付转化率是多少？",
+        "最近一周支付转化"
+      ],
+      "required_tables": ["orders"],
+      "sql_template": "SELECT CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(100.0 * SUM(CASE WHEN status IN ('paid','completed') THEN 1 ELSE 0 END) / COUNT(*), 2) END AS paid_conversion_rate_pct FROM orders WHERE created_at >= %s AND created_at < %s;",
+      "params_order": ["start_time", "end_time"]
+    },
+    {
+      "id": "t07_top_products_by_revenue",
+      "intent": "按收入查询Top商品",
+      "question_examples": [
+        "最近30天收入最高的10个商品",
+        "活动期Top商品"
+      ],
+      "required_tables": ["orders", "order_items", "products"],
+      "sql_template": "SELECT oi.product_id, p.product_name, COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS revenue FROM order_items oi JOIN orders o ON o.id = oi.order_id JOIN products p ON p.id = oi.product_id WHERE o.created_at >= %s AND o.created_at < %s AND o.status IN ('paid','completed') GROUP BY oi.product_id, p.product_name ORDER BY revenue DESC LIMIT %s;",
+      "params_order": ["start_time", "end_time", "top_n"]
+    },
+    {
+      "id": "t08_refund_rate",
+      "intent": "查询退款率",
+      "question_examples": [
+        "最近7天退款率",
+        "活动期间退款情况"
+      ],
+      "required_tables": ["orders", "refunds"],
+      "sql_template": "SELECT CASE WHEN total_orders = 0 THEN 0 ELSE ROUND(100.0 * refunded_orders / total_orders, 2) END AS refund_rate_pct FROM ( SELECT COUNT(DISTINCT o.id) AS total_orders, COUNT(DISTINCT r.order_id) AS refunded_orders FROM orders o LEFT JOIN refunds r ON r.order_id = o.id AND r.created_at >= %s AND r.created_at < %s WHERE o.created_at >= %s AND o.created_at < %s ) t;",
+      "params_order": ["refund_start", "refund_end", "order_start", "order_end"]
+    },
+    {
+      "id": "t09_error_rate_by_service",
+      "intent": "按服务统计错误率",
+      "question_examples": [
+        "最近1小时各服务错误率",
+        "网关和支付服务错误率对比"
+      ],
+      "required_tables": ["error_logs", "request_logs"],
+      "sql_template": "SELECT r.service, CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(100.0 * SUM(CASE WHEN e.id IS NOT NULL THEN 1 ELSE 0 END) / COUNT(*), 2) END AS error_rate_pct FROM request_logs r LEFT JOIN error_logs e ON e.request_id = r.id WHERE r.created_at >= %s AND r.created_at < %s GROUP BY r.service ORDER BY error_rate_pct DESC LIMIT %s;",
+      "params_order": ["start_time", "end_time", "top_n"]
+    },
+    {
+      "id": "t10_funnel_step_conversion",
+      "intent": "查询漏斗步骤转化",
+      "question_examples": [
+        "注册到下单的转化率",
+        "A步骤到B步骤转化"
+      ],
+      "required_tables": ["events"],
+      "sql_template": "WITH step_a AS ( SELECT DISTINCT user_id FROM events WHERE event_name = %s AND created_at >= %s AND created_at < %s ), step_b AS ( SELECT DISTINCT user_id FROM events WHERE event_name = %s AND created_at >= %s AND created_at < %s ) SELECT CASE WHEN (SELECT COUNT(*) FROM step_a) = 0 THEN 0 ELSE ROUND(100.0 * (SELECT COUNT(*) FROM step_b WHERE user_id IN (SELECT user_id FROM step_a)) / (SELECT COUNT(*) FROM step_a), 2) END AS conversion_rate_pct;",
+      "params_order": ["step_a_event", "start_time", "end_time", "step_b_event", "start_time", "end_time"]
+    },
+    {
+      "id": "t11_active_campaign_participants",
+      "intent": "查询活动参与人数",
+      "question_examples": [
+        "某活动参与了多少人",
+        "本周活动参与人数"
+      ],
+      "required_tables": ["campaign_participants"],
+      "sql_template": "SELECT COUNT(DISTINCT user_id) AS participant_count FROM campaign_participants WHERE campaign_id = %s AND joined_at >= %s AND joined_at < %s;",
+      "params_order": ["campaign_id", "start_time", "end_time"]
+    },
+    {
+      "id": "t12_retention_d1_d7",
+      "intent": "查询D1/D7留存",
+      "question_examples": [
+        "昨天新增用户D1留存",
+        "上周新增用户D7留存"
+      ],
+      "required_tables": ["users", "sessions"],
+      "sql_template": "WITH cohort AS ( SELECT id AS user_id, DATE(created_at) AS signup_date FROM users WHERE created_at >= %s AND created_at < %s ), active_days AS ( SELECT DISTINCT s.user_id, DATE(s.started_at) AS active_date FROM sessions s ) SELECT CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(100.0 * SUM(CASE WHEN EXISTS ( SELECT 1 FROM active_days a WHERE a.user_id = c.user_id AND a.active_date = c.signup_date + (%s || ' day')::interval ) THEN 1 ELSE 0 END) / COUNT(*), 2) END AS retention_pct FROM cohort c;",
+      "params_order": ["cohort_start", "cohort_end", "retention_day_offset"]
+    },
+    {
+      "id": "t13_top_channels_by_signup",
+      "intent": "按渠道统计注册量",
+      "question_examples": [
+        "最近一周各渠道注册量",
+        "注册量最高的渠道"
+      ],
+      "required_tables": ["users", "channel_attribution"],
+      "sql_template": "SELECT ca.channel, COUNT(*) AS signup_count FROM users u JOIN channel_attribution ca ON ca.user_id = u.id WHERE u.created_at >= %s AND u.created_at < %s GROUP BY ca.channel ORDER BY signup_count DESC LIMIT %s;",
+      "params_order": ["start_time", "end_time", "top_n"]
+    },
+    {
+      "id": "t14_arppu",
+      "intent": "查询ARPPU",
+      "question_examples": [
+        "本月ARPPU是多少",
+        "最近30天付费用户平均收入"
+      ],
+      "required_tables": ["payments"],
+      "sql_template": "SELECT CASE WHEN COUNT(DISTINCT user_id) = 0 THEN 0 ELSE ROUND(SUM(amount) / COUNT(DISTINCT user_id), 2) END AS arppu FROM payments WHERE paid_at >= %s AND paid_at < %s AND status = 'success';",
+      "params_order": ["start_time", "end_time"]
+    },
+    {
+      "id": "t15_support_ticket_backlog",
+      "intent": "查询工单积压",
+      "question_examples": [
+        "当前未关闭工单数",
+        "按优先级看工单积压"
+      ],
+      "required_tables": ["support_tickets"],
+      "sql_template": "SELECT priority, COUNT(*) AS open_ticket_count FROM support_tickets WHERE status IN ('open','pending','in_progress') GROUP BY priority ORDER BY open_ticket_count DESC LIMIT %s;",
+      "params_order": ["top_n"]
+    },
+    {
+      "id": "t16_inventory_low_stock",
+      "intent": "查询低库存商品",
+      "question_examples": [
+        "库存低于阈值的商品有哪些",
+        "低库存告警"
+      ],
+      "required_tables": ["inventory", "products"],
+      "sql_template": "SELECT i.product_id, p.product_name, i.stock_qty FROM inventory i JOIN products p ON p.id = i.product_id WHERE i.stock_qty < %s ORDER BY i.stock_qty ASC LIMIT %s;",
+      "params_order": ["stock_threshold", "top_n"]
+    },
+    {
+      "id": "t17_coupon_usage_rate",
+      "intent": "查询优惠券使用率",
+      "question_examples": [
+        "某批优惠券使用率",
+        "最近一周优惠券核销率"
+      ],
+      "required_tables": ["coupons"],
+      "sql_template": "SELECT CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(100.0 * SUM(CASE WHEN used_at IS NOT NULL THEN 1 ELSE 0 END) / COUNT(*), 2) END AS coupon_usage_rate_pct FROM coupons WHERE batch_id = %s AND issued_at >= %s AND issued_at < %s;",
+      "params_order": ["batch_id", "start_time", "end_time"]
+    },
+    {
+      "id": "t18_feature_adoption",
+      "intent": "查询功能采用率",
+      "question_examples": [
+        "新功能采用率是多少",
+        "某功能被多少活跃用户使用"
+      ],
+      "required_tables": ["feature_usage", "sessions"],
+      "sql_template": "WITH active_users AS ( SELECT DISTINCT user_id FROM sessions WHERE started_at >= %s AND started_at < %s ), feature_users AS ( SELECT DISTINCT user_id FROM feature_usage WHERE feature_key = %s AND used_at >= %s AND used_at < %s ) SELECT CASE WHEN (SELECT COUNT(*) FROM active_users) = 0 THEN 0 ELSE ROUND(100.0 * (SELECT COUNT(*) FROM feature_users WHERE user_id IN (SELECT user_id FROM active_users)) / (SELECT COUNT(*) FROM active_users), 2) END AS adoption_rate_pct;",
+      "params_order": ["active_start", "active_end", "feature_key", "usage_start", "usage_end"]
+    },
+    {
+      "id": "t19_experiment_variant_compare",
+      "intent": "查询实验分组效果对比",
+      "question_examples": [
+        "A/B实验各分组转化率",
+        "实验ID=xxx 的结果"
+      ],
+      "required_tables": ["experiment_results"],
+      "sql_template": "SELECT variant, COUNT(*) AS sample_size, ROUND(100.0 * AVG(CASE WHEN converted THEN 1 ELSE 0 END), 2) AS conversion_rate_pct FROM experiment_results WHERE experiment_id = %s AND observed_at >= %s AND observed_at < %s GROUP BY variant ORDER BY variant ASC;",
+      "params_order": ["experiment_id", "start_time", "end_time"]
+    },
+    {
+      "id": "t20_recent_high_value_orders",
+      "intent": "查询近期大额订单",
+      "question_examples": [
+        "最近24小时大额订单",
+        "金额超过5000的订单明细"
+      ],
+      "required_tables": ["orders", "users"],
+      "sql_template": "SELECT o.id AS order_id, o.user_id, u.region, o.amount, o.created_at FROM orders o LEFT JOIN users u ON u.id = o.user_id WHERE o.created_at >= %s AND o.created_at < %s AND o.amount >= %s AND o.status IN ('paid','completed') ORDER BY o.amount DESC LIMIT %s;",
+      "params_order": ["start_time", "end_time", "amount_threshold", "top_n"]
+    }
+  ]
+}

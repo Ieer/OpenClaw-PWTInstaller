@@ -1,0 +1,81 @@
+{
+  "taskId": "lyrics-collaboration-2026-02-25",
+  "theme": "智能体人类新时代",
+  "type": "歌词创作",
+  "status": "completed",
+  "createdAt": "2026-02-25T16:45:00Z",
+  "agent": "nox",
+  "role": "product ops / roadmap",
+  "options": [
+    {
+      "id": "option-01",
+      "name": "协作共生（流行电子）",
+      "score": 4.7,
+      "style": "流行电子 / Future Bass",
+      "emotion": "乐观、振奋",
+      "targetAudience": "18-35岁主流年轻用户",
+      "传播潜力": "最高"
+    },
+    {
+      "id": "option-02",
+      "name": "反思与探索（独立流行）",
+      "score": 4.1,
+      "style": "独立流行 / 民谣电子",
+      "emotion": "内敛、诗意",
+      "targetAudience": "25-35岁深度思考型用户",
+      "传播潜力": "口碑导向"
+    },
+    {
+      "id": "option-03",
+      "name": "讽刺与隐喻（说唱）",
+      "score": 3.6,
+      "style": "说唱 / 实验电子",
+      "emotion": "机智、锐利",
+      "targetAudience": "18-30岁反主流用户",
+      "传播潜力": "小众易出圈"
+    }
+  ],
+  "recommendedRoutes": [
+    {
+      "id": "route-01",
+      "name": "主流传播路线",
+      "description": "方案01为主，方案02为辅",
+      "strategy": "先用方案01打开市场，用方案02建立深度口碑"
+    },
+    {
+      "id": "route-02",
+      "name": "精品路线",
+      "description": "方案02单独推进",
+      "strategy": "集中资源打造有深度、有口碑的作品"
+    },
+    {
+      "id": "route-03",
+      "name": "破圈路线",
+      "description": "方案03单独推进",
+      "strategy": "用争议性和话题性引爆传播"
+    }
+  ],
+  "files": {
+    "marketInsights": "sources/lyrics-collaboration-2026-02-25/market-insights.md",
+    "artifacts": [
+      "artifacts/lyrics-collaboration-2026-02-25/option-01-collaboration.md",
+      "artifacts/lyrics-collaboration-2026-02-25/option-02-reflection.md",
+      "artifacts/lyrics-collaboration-2026-02-25/option-03-satire.md",
+      "artifacts/lyrics-collaboration-2026-02-25/artifact.md",
+      "artifacts/lyrics-collaboration-2026-02-25/artifact.json"
+    ]
+  },
+  "nextSteps": [
+    "等待用户选择路线",
+    "根据反馈调整歌词",
+    "提供音乐制作建议",
+    "提供发行策略建议"
+  ],
+  "reviewPoints": [
+    "路线选择：路线一/路线二/路线三/需要更多信息？",
+    "预算范围：约多少制作预算？",
+    "时间要求：期望何时完成？",
+    "使用场景：商业发布/个人创作/品牌配乐？",
+    "发行平台：主要面向哪些平台？"
+  ]
+}

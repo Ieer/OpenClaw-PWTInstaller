@@ -16,6 +16,104 @@
 - Mission Control env_file： [panopticon/env/mission-control.env.example](panopticon/env/mission-control.env.example)
 - Mission Control UI env_file： [panopticon/env/mission-control-ui.env.example](panopticon/env/mission-control-ui.env.example)
 
+## 项目整体框架（架构图 + 说明）
+
+```mermaid
+flowchart LR
+  U[用户浏览器]
+
+  subgraph G[统一入口层]
+    GW[mission-control-gateway\nNginx :18920]
+  end
+
+  subgraph MC[Mission Control 层]
+    UI[mission-control-ui]
+    API[mission-control-api :18910]
+    HB[mc-heartbeat]
+    BR[mission-control-chat-bridge]
+    PG[(mc-postgres)]
+    RD[(mc-redis)]
+  end
+
+  subgraph AG[Agent 执行层（8 个 OpenClaw）]
+    A1[openclaw-nox]
+    A2[openclaw-metrics]
+    A3[openclaw-email]
+    A4[openclaw-growth]
+    A5[openclaw-trades]
+    A6[openclaw-health]
+    A7[openclaw-writing]
+    A8[openclaw-personal]
+  end
+
+  subgraph DATA[数据目录（PANOPTICON_DATA_DIR）]
+    AH[agent-homes/*]
+    WS[workspaces/*]
+    MD[mission-control/*]
+    GL[gateway-logs/chat_access.log]
+  end
+
+  U -->|HTTP| GW
+  GW -->|/| UI
+  GW -->|/chat/<agent>/| A1
+  GW -->|/chat/<agent>/| A2
+  GW -->|/chat/<agent>/| A3
+  GW -->|/chat/<agent>/| A4
+  GW -->|/chat/<agent>/| A5
+  GW -->|/chat/<agent>/| A6
+  GW -->|/chat/<agent>/| A7
+  GW -->|/chat/<agent>/| A8
+  GW -->|写入 chat access log| GL
+
+  UI -->|REST/WebSocket| API
+  HB -->|POST /v1/events| API
+  BR -->|读取 chat_access.log| GL
+  BR -->|POST chat.gateway.access| API
+
+  API --> PG
+  API --> RD
+
+  A1 --- AH
+  A2 --- AH
+  A3 --- AH
+  A4 --- AH
+  A5 --- AH
+  A6 --- AH
+  A7 --- AH
+  A8 --- AH
+  A1 --- WS
+  A2 --- WS
+  A3 --- WS
+  A4 --- WS
+  A5 --- WS
+  A6 --- WS
+  A7 --- WS
+  A8 --- WS
+  PG --- MD
+  RD --- MD
+```
+
+### 分层说明
+
+- 统一入口层（Gateway）：`mission-control-gateway` 对外暴露 `18920`，负责同源入口与 `/chat/<agent>/` 反向代理，保障 Web Chat / WebSocket 稳定。
+- Mission Control 层：`mission-control-ui` 提供控制台页面，`mission-control-api` 提供看板/任务/事件接口，`mc-heartbeat` 定时上报心跳事件。
+- Agent 执行层：8 个 `openclaw-*` 容器彼此隔离，每个 agent 拥有独立 home 与 workspace。
+- 数据持久层：统一落盘到 `PANOPTICON_DATA_DIR` 下（Postgres/Redis 数据、agent homes、workspaces、gateway logs）。
+
+### 核心链路（从请求到可观测）
+
+1. 用户从 `http://127.0.0.1:18920/chat/<agent>/` 访问 Chat。
+1. Gateway 将请求直连到目标 `openclaw-<agent>`（减少中间层干扰，优先保证会话稳定）。
+1. Gateway 同时把 chat 请求写入 `chat_access.log`（JSON）。
+1. `mission-control-chat-bridge` 持续消费日志并上报 `chat.gateway.access` 到 `/v1/events`。
+1. 事件进入 Mission Control feed，可用于看板、审计与稳定性观察。
+
+### 配置/生成关系（避免手改回滚）
+
+- 单一来源是 [panopticon/agents.manifest.yaml](panopticon/agents.manifest.yaml)。
+- 通过 [panopticon/tools/generate_panopticon.py](panopticon/tools/generate_panopticon.py) 生成 compose 与 env 模板；变更应优先改 manifest/生成器，再执行生成。
+- 生成后建议执行：`validate_panopticon.py` + `validate_skills_template.py` + `docker compose config` 三步校验。
+
 ## 快速启动
 
 推荐流程（Manifest 驱动）：
@@ -202,6 +300,58 @@ docker exec openclaw-$AGENT sh -lc 'find / -maxdepth 6 -type f \( -name pending.
 ```bash
 HOST=localhost HTTP_TIMEOUT=8 TCP_TIMEOUT=5 bash panopticon/tools/check_agent_endpoints.sh
 ```
+
+一键测试 8 个 workspace 固定状态目录（`inbox/outbox/artifacts/state/sources`）：
+
+```bash
+# 严格模式（只检查）
+python panopticon/tools/test_workspace_contract.py \
+  --output panopticon/reports/workspace_contract_report_before.json
+
+# 自动补齐缺失目录并复测
+python panopticon/tools/test_workspace_contract.py \
+  --auto-create \
+  --output panopticon/reports/workspace_contract_report_after.json
+```
+
+综合评估（8-agent 协作 + Mission Control UI 监控）：
+
+```bash
+python panopticon/tools/comprehensive_assessment.py \
+  --api-base http://127.0.0.1:18910 \
+  --ui-base http://127.0.0.1:18920 \
+  --feed-limit 800 \
+  --output panopticon/reports/assessment.json
+```
+
+说明：该命令现在会**同时**执行：
+- 协作评分（API/UI/事件链路/探针时延等）
+- workspace 状态测试（`inbox/outbox/artifacts/state/sources`）
+- 任务状态全面测试（`INBOX / ASSIGNED / IN PROGRESS / REVIEW / DONE`）
+
+Chat 事件桥接（网关日志方案）：
+- 网关保持 `/chat/<agent>/` 直连（保障 WebSocket 稳定），并将 chat 请求写入 `chat_access.log`（JSON）。
+- `mission-control-chat-bridge` 持续消费该日志并上报 `chat.gateway.access` 到 Mission Control API。
+- 默认以 `tail` 模式启动（仅消费新日志），不会回灌旧请求。
+
+可选：执行“歌词任务”协作演练（metrics -> growth -> writing）并写入评估事件：
+
+```bash
+python panopticon/tools/comprehensive_assessment.py \
+  --run-lyric-case \
+  --feed-limit 800 \
+  --workspace-auto-create \
+  --output panopticon/reports/assessment_lyric_case.json
+```
+
+说明：
+- 该脚本默认只读采集（health / board / feed / 网关可达性），并计算综合得分。
+- `--run-lyric-case` 会向 `/v1/tasks` 与 `/v1/events` 写入演练数据。
+- `--feed-limit` 可提升历史事件覆盖（默认 500，建议 500~1000）。
+- `--workspace-auto-create` 会在 workspace 状态测试阶段自动补齐缺失目录。
+- `--skip-workspace-contract` 可仅执行协作评分，不执行 workspace 状态测试。
+- `--skip-status-test` 可跳过任务状态全面测试。
+- 如 API 启用了鉴权，可通过 `--auth-token` 或环境变量 `MC_AUTH_TOKEN` 提供 token。
 
 ### 一键轮换 Gateway Token + 重启全栈
 

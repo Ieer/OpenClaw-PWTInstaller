@@ -29,6 +29,9 @@ MISSION_CONTROL_CHAT_HOST = (os.getenv("MISSION_CONTROL_CHAT_HOST") or "127.0.0.
 MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT = int((os.getenv("MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT") or "26216").strip())
 MISSION_CONTROL_CHAT_AUTH_SCHEME = (os.getenv("MISSION_CONTROL_CHAT_AUTH_SCHEME") or "Bearer").strip() or "Bearer"
 MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP = (os.getenv("MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP") or "").strip()
+MISSION_CONTROL_CHAT_EVENT_BRIDGE_ENABLED = (
+    (os.getenv("MISSION_CONTROL_CHAT_EVENT_BRIDGE_ENABLED") or "1").strip().lower() in {"1", "true", "yes", "on"}
+)
 
 
 def _load_static_agent_names() -> list[str]:
@@ -373,6 +376,30 @@ def api_patch_json(path: str, body: dict, *, timeout: float = 5.0):
     return resp.json()
 
 
+def api_post_json(path: str, body: dict, *, timeout: float = 3.0):
+    url = MISSION_CONTROL_API_URL.rstrip("/") + path
+    resp = requests.post(url, headers=_api_headers(), json=body, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def emit_chat_event(agent_slug: str, event_type: str, payload: dict):
+    if not MISSION_CONTROL_CHAT_EVENT_BRIDGE_ENABLED:
+        return
+    try:
+        api_post_json(
+            "/v1/events",
+            {
+                "type": event_type,
+                "agent": agent_slug,
+                "payload": payload,
+            },
+            timeout=1.5,
+        )
+    except Exception:
+        return
+
+
 def api_patch_json(path: str, body: dict, *, timeout: float = 5.0):
     url = MISSION_CONTROL_API_URL.rstrip("/") + path
     resp = requests.patch(url, headers=_api_headers(), json=body, timeout=timeout)
@@ -475,6 +502,8 @@ def _convert_feed(feed: list[dict]) -> list[dict]:
             category = "tasks"
         elif evt_type.startswith("comment."):
             category = "comments"
+        elif evt_type.startswith("chat."):
+            category = "chat"
 
         if evt_type == "comment.created":
             action = f"commented on task {short_task}" if short_task else "commented"
@@ -486,6 +515,16 @@ def _convert_feed(feed: list[dict]) -> list[dict]:
         elif evt_type == "agent.heartbeat":
             status = "ok" if payload.get("ok") is True else "signal"
             action = f"heartbeat ({status})"
+        elif evt_type == "chat.message.sent":
+            method = str(payload.get("method") or "-")
+            path = str(payload.get("path") or "")
+            action = f"chat sent {method} {path}".strip()
+        elif evt_type == "chat.message.received":
+            status_code = payload.get("status_code")
+            action = f"chat received (HTTP {status_code})" if status_code is not None else "chat received"
+        elif evt_type == "chat.proxy.error":
+            error_type = str(payload.get("error_type") or "proxy_error")
+            action = f"chat proxy error: {error_type}"
         else:
             action = f"event: {evt_type}"
 
@@ -530,7 +569,7 @@ def _sanitize_feed_filter(value: str | None) -> str:
     legacy_map = {"decisions": "system"}
     key = (value or "all").lower().strip()
     key = legacy_map.get(key, key)
-    allowed = {"all", "tasks", "comments", "system"}
+    allowed = {"all", "tasks", "comments", "chat", "system"}
     return key if key in allowed else "all"
 
 
@@ -687,6 +726,21 @@ def chat_reverse_proxy(agent_slug: str, proxy_path: str):
         forward_headers["Authorization"] = auth_value
 
     body = request.get_data() if request.method in {"POST", "PUT", "PATCH", "DELETE"} else None
+    request_query_keys = sorted(list(request.args.keys()))
+    is_ws_upgrade = request.headers.get("Upgrade", "").lower() == "websocket"
+
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} or is_ws_upgrade:
+        emit_chat_event(
+            agent_slug,
+            "chat.message.sent",
+            {
+                "method": request.method,
+                "path": f"/{proxy_path.lstrip('/')}" if proxy_path else "/",
+                "query_keys": request_query_keys,
+                "is_ws_upgrade": is_ws_upgrade,
+                "content_length": len(body) if body else 0,
+            },
+        )
 
     try:
         upstream_resp = requests.request(
@@ -699,7 +753,30 @@ def chat_reverse_proxy(agent_slug: str, proxy_path: str):
             timeout=20,
         )
     except Exception as e:
+        emit_chat_event(
+            agent_slug,
+            "chat.proxy.error",
+            {
+                "method": request.method,
+                "path": f"/{proxy_path.lstrip('/')}" if proxy_path else "/",
+                "query_keys": request_query_keys,
+                "error_type": e.__class__.__name__,
+            },
+        )
         return Response(f"Upstream unavailable: {e}", status=502)
+
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} or is_ws_upgrade:
+        emit_chat_event(
+            agent_slug,
+            "chat.message.received",
+            {
+                "method": request.method,
+                "path": f"/{proxy_path.lstrip('/')}" if proxy_path else "/",
+                "query_keys": request_query_keys,
+                "is_ws_upgrade": is_ws_upgrade,
+                "status_code": upstream_resp.status_code,
+            },
+        )
 
     excluded_resp_headers = {
         "content-length",
@@ -858,6 +935,7 @@ app.layout = html.Div(
                                         html.Button("All", id="feed-filter-all", className="filter-chip active"),
                                         html.Button("Tasks", id="feed-filter-tasks", className="filter-chip"),
                                         html.Button("Comments", id="feed-filter-comments", className="filter-chip"),
+                                        html.Button("Chat", id="feed-filter-chat", className="filter-chip"),
                                         html.Button("System", id="feed-filter-system", className="filter-chip"),
                                     ],
                                 ),
@@ -1036,6 +1114,7 @@ def update_clock(_):
     Input("feed-filter-all", "n_clicks"),
     Input("feed-filter-tasks", "n_clicks"),
     Input("feed-filter-comments", "n_clicks"),
+    Input("feed-filter-chat", "n_clicks"),
     Input("feed-filter-system", "n_clicks"),
     Input("clear-filters", "n_clicks"),
     State("ui-state", "data"),
@@ -1056,6 +1135,7 @@ def update_ui_state(*args):
         "feed-filter-all": "all",
         "feed-filter-tasks": "tasks",
         "feed-filter-comments": "comments",
+        "feed-filter-chat": "chat",
         "feed-filter-system": "system",
     }
 
@@ -1480,6 +1560,7 @@ def render_chat_modal(_, chat_ui):
     Output("feed-filter-all", "className"),
     Output("feed-filter-tasks", "className"),
     Output("feed-filter-comments", "className"),
+    Output("feed-filter-chat", "className"),
     Output("feed-filter-system", "className"),
     Input("ui-state", "data"),
 )
@@ -1493,6 +1574,7 @@ def sync_filter_chip_classes(state):
         _chip_class(feed_filter, "all"),
         _chip_class(feed_filter, "tasks"),
         _chip_class(feed_filter, "comments"),
+        _chip_class(feed_filter, "chat"),
         _chip_class(feed_filter, "system"),
     )
 
