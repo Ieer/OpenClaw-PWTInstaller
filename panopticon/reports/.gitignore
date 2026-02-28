@@ -1,0 +1,8 @@
+# Runtime assessment outputs (do not commit by default)
+*.json
+
+# Keep documentation and curated samples
+!.gitignore
+!README.md
+!samples/
+!samples/*.json
