@@ -34,6 +34,34 @@ MISSION_CONTROL_CHAT_EVENT_BRIDGE_ENABLED = (
 )
 
 
+def _normalize_text(text: str | None) -> str:
+    return str(text or "").strip().lower()
+
+
+def _format_mapping_failure_summary(failed: list[dict], *, limit: int = 8) -> str:
+    if not failed:
+        return ""
+
+    reason_map = {
+        "unknown_agent": "unknown agent",
+        "unknown_global_skill": "unknown global skill",
+        "already_mapped": "already mapped",
+        "not_mapped": "not mapped",
+    }
+
+    lines: list[str] = []
+    for item in failed[:limit]:
+        action = str(item.get("action") or "update")
+        agent = str(item.get("agent_slug") or "-")
+        skill = str(item.get("skill_slug") or "-")
+        reason = reason_map.get(str(item.get("reason") or ""), str(item.get("reason") or "unknown error"))
+        lines.append(f"{action} {agent}/{skill} ({reason})")
+
+    hidden = len(failed) - len(lines)
+    suffix = f"; +{hidden} more" if hidden > 0 else ""
+    return "Failed items: " + "; ".join(lines) + suffix
+
+
 def _load_static_agent_names() -> list[str]:
     names: list[str] = []
     seen: set[str] = set()
@@ -979,6 +1007,19 @@ app.layout = html.Div(
                                     className="skills-col",
                                     children=[
                                         html.Div("Global Skills", className="skills-col-title"),
+                                        html.Div(
+                                            className="skills-toolbar",
+                                            children=[
+                                                dcc.Input(
+                                                    id="skills-global-search",
+                                                    type="text",
+                                                    placeholder="Search global skills",
+                                                    className="skills-search-input",
+                                                ),
+                                                html.Button("Select All", id="skills-global-select-all", className="ghost-button"),
+                                                html.Button("Clear", id="skills-global-clear", className="ghost-button"),
+                                            ],
+                                        ),
                                         dcc.Checklist(id="skills-global-checklist", options=[], value=[]),
                                     ],
                                 ),
@@ -986,6 +1027,19 @@ app.layout = html.Div(
                                     className="skills-col",
                                     children=[
                                         html.Div("Agents (multi-select)", className="skills-col-title"),
+                                        html.Div(
+                                            className="skills-toolbar",
+                                            children=[
+                                                dcc.Input(
+                                                    id="skills-agent-search",
+                                                    type="text",
+                                                    placeholder="Search agents",
+                                                    className="skills-search-input",
+                                                ),
+                                                html.Button("Select All", id="skills-agent-select-all", className="ghost-button"),
+                                                html.Button("Clear", id="skills-agent-clear", className="ghost-button"),
+                                            ],
+                                        ),
                                         dcc.Checklist(id="skills-agent-checklist", options=[], value=[]),
                                         html.Div(
                                             className="skills-actions",
@@ -994,6 +1048,7 @@ app.layout = html.Div(
                                                 html.Button("Remove Skills", id="skills-remove", className="ghost-button"),
                                             ],
                                         ),
+                                        html.Div(id="skills-selection-summary", className="skills-selection-summary"),
                                         html.Div(
                                             "Changes are saved immediately. Restart affected agent containers to apply.",
                                             className="skills-hint",
@@ -1300,13 +1355,56 @@ def patch_skill_mappings(add_clicks, remove_clicks, skill_slugs, agent_slugs, da
     try:
         resp = api_patch_json("/v1/skills/mappings", body)
         updated = int(resp.get("updated") or 0)
-        data["message"] = f"Saved. {updated} mapping change(s) applied. Restart affected agents to take effect."
+        failed = resp.get("failed") or []
+        action = "added" if trigger == "skills-add" else "removed"
+        base_message = (
+            f"Saved. {updated} mapping change(s) applied ({action} {len(selected_skills)} skill(s) across "
+            f"{len(selected_agents)} agent(s)). Restart affected agents to take effect."
+        )
+        failure_summary = _format_mapping_failure_summary(failed)
+        data["message"] = f"{base_message} {failure_summary}".strip()
         data["message_tone"] = "ok"
+        if failed and updated == 0:
+            data["message_tone"] = "warn"
         data["revision"] = int(data.get("revision") or 0) + 1
     except Exception as e:
         data["message"] = f"Update failed: {e}"
         data["message_tone"] = "error"
     return data
+
+
+@app.callback(
+    Output("skills-global-checklist", "value", allow_duplicate=True),
+    Input("skills-global-select-all", "n_clicks"),
+    Input("skills-global-clear", "n_clicks"),
+    State("skills-global-checklist", "options"),
+    State("skills-global-checklist", "value"),
+    prevent_initial_call=True,
+)
+def bulk_select_global_skills(_, __, options, current):
+    trigger = ctx.triggered_id
+    if trigger == "skills-global-clear":
+        return []
+    if trigger == "skills-global-select-all":
+        return [str(opt.get("value")) for opt in (options or []) if opt.get("value")]
+    return current or []
+
+
+@app.callback(
+    Output("skills-agent-checklist", "value", allow_duplicate=True),
+    Input("skills-agent-select-all", "n_clicks"),
+    Input("skills-agent-clear", "n_clicks"),
+    State("skills-agent-checklist", "options"),
+    State("skills-agent-checklist", "value"),
+    prevent_initial_call=True,
+)
+def bulk_select_agents(_, __, options, current):
+    trigger = ctx.triggered_id
+    if trigger == "skills-agent-clear":
+        return []
+    if trigger == "skills-agent-select-all":
+        return [str(opt.get("value")) for opt in (options or []) if opt.get("value")]
+    return current or []
 
 
 @app.callback(
@@ -1317,15 +1415,18 @@ def patch_skill_mappings(add_clicks, remove_clicks, skill_slugs, agent_slugs, da
     Output("skills-agent-checklist", "value"),
     Output("skills-mapping-view", "children"),
     Output("skills-workspace-view", "children"),
+    Output("skills-selection-summary", "children"),
     Output("skills-notice", "children"),
     Output("skills-notice", "className"),
     Input("refresh", "n_intervals"),
     Input("skills-ui", "data"),
+    Input("skills-global-search", "value"),
+    Input("skills-agent-search", "value"),
     State("skills-global-checklist", "value"),
     State("skills-agent-checklist", "value"),
     prevent_initial_call=False,
 )
-def render_skills_modal(_, skills_ui, selected_skill_slugs, selected_agent_slugs):
+def render_skills_modal(_, skills_ui, global_search, agent_search, selected_skill_slugs, selected_agent_slugs):
     skills_ui = skills_ui or {}
     is_open = bool(skills_ui.get("open"))
 
@@ -1338,6 +1439,7 @@ def render_skills_modal(_, skills_ui, selected_skill_slugs, selected_agent_slugs
             [],
             html.Div("Open Skills to load mappings.", className="column-empty"),
             html.Div("Open Skills to load workspace skills.", className="column-empty"),
+            "Select one or more global skills and agents to prepare a batch change.",
             "",
             "skills-notice",
         )
@@ -1356,11 +1458,12 @@ def render_skills_modal(_, skills_ui, selected_skill_slugs, selected_agent_slugs
             [],
             html.Div(msg, className="column-empty"),
             html.Div(msg, className="column-empty"),
+            "",
             msg,
             "skills-notice error",
         )
 
-    global_options = [
+    all_global_options = [
         {
             "label": f"{item.get('slug', '-')}: {item.get('description') or item.get('name') or ''}".strip(),
             "value": item.get("slug"),
@@ -1368,8 +1471,17 @@ def render_skills_modal(_, skills_ui, selected_skill_slugs, selected_agent_slugs
         for item in global_skills
         if item.get("slug")
     ]
-    global_values_allowed = {opt["value"] for opt in global_options}
+    global_values_allowed = {opt["value"] for opt in all_global_options}
     selected_skill_slugs = [s for s in (selected_skill_slugs or []) if s in global_values_allowed]
+
+    global_query = _normalize_text(global_search)
+    global_options = [
+        opt
+        for opt in all_global_options
+        if not global_query
+        or global_query in _normalize_text(opt.get("label"))
+        or global_query in _normalize_text(opt.get("value"))
+    ]
 
     agent_pool = sorted({str(m.get("agent_slug")) for m in mappings if m.get("agent_slug")})
     if not agent_pool:
@@ -1377,8 +1489,17 @@ def render_skills_modal(_, skills_ui, selected_skill_slugs, selected_agent_slugs
     if not agent_pool:
         agent_pool = list(STATIC_AGENT_NAMES)
 
-    agent_options = [{"label": a, "value": a} for a in agent_pool]
+    all_agent_options = [{"label": a, "value": a} for a in agent_pool]
     selected_agent_slugs = [a for a in (selected_agent_slugs or []) if a in set(agent_pool)]
+
+    agent_query = _normalize_text(agent_search)
+    agent_options = [
+        opt
+        for opt in all_agent_options
+        if not agent_query
+        or agent_query in _normalize_text(opt.get("label"))
+        or agent_query in _normalize_text(opt.get("value"))
+    ]
 
     mapping_by_agent: dict[str, list[str]] = {}
     for row in mappings:
@@ -1436,6 +1557,16 @@ def render_skills_modal(_, skills_ui, selected_skill_slugs, selected_agent_slugs
     if tone in {"ok", "warn", "error"}:
         notice_class = f"skills-notice {tone}"
 
+    visible_global_count = len(global_options)
+    total_global_count = len(all_global_options)
+    visible_agent_count = len(agent_options)
+    total_agent_count = len(all_agent_options)
+    selection_summary = (
+        f"Ready to apply: {len(selected_skill_slugs)} skill(s) × {len(selected_agent_slugs)} agent(s). "
+        f"Visible now: {visible_global_count}/{total_global_count} global skills, "
+        f"{visible_agent_count}/{total_agent_count} agents."
+    )
+
     return (
         "skills-modal open",
         global_options,
@@ -1444,6 +1575,7 @@ def render_skills_modal(_, skills_ui, selected_skill_slugs, selected_agent_slugs
         selected_agent_slugs,
         mapping_children,
         workspace_children,
+        selection_summary,
         message,
         notice_class,
     )

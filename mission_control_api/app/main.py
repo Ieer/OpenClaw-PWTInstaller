@@ -23,6 +23,7 @@ from .schemas import (
     EventOut,
     Health,
     SkillItem,
+    SkillsMappingFailureItem,
     SkillsMappingPatchIn,
     SkillsMappingPatchOut,
     TaskCreate,
@@ -130,6 +131,13 @@ def _scan_workspace_skills(settings: Settings, agent_slug: str | None = None) ->
 
         groups.append(WorkspaceSkillGroup(agent_slug=slug, skills=skill_items))
     return groups
+
+
+def _scan_agent_slugs(settings: Settings) -> list[str]:
+    root = Path(settings.agent_homes_dir)
+    if not root.exists() or not root.is_dir():
+        return []
+    return sorted(path.name for path in root.iterdir() if path.is_dir())
 
 
 def _known_agent_slugs(settings: Settings) -> set[str]:
@@ -252,19 +260,93 @@ def create_app() -> FastAPI:
         if not add_skill_slugs and not remove_skill_slugs:
             raise HTTPException(status_code=400, detail="nothing to update")
 
+        failed: list[SkillsMappingFailureItem] = []
+        known_agents = set(_scan_agent_slugs(settings))
+        valid_agents = agent_slugs
+        if known_agents:
+            unknown_agents = [slug for slug in agent_slugs if slug not in known_agents]
+            valid_agents = [slug for slug in agent_slugs if slug in known_agents]
+            for agent in unknown_agents:
+                for skill in add_skill_slugs:
+                    failed.append(
+                        SkillsMappingFailureItem(
+                            action="add",
+                            agent_slug=agent,
+                            skill_slug=skill,
+                            reason="unknown_agent",
+                        )
+                    )
+                for skill in remove_skill_slugs:
+                    failed.append(
+                        SkillsMappingFailureItem(
+                            action="remove",
+                            agent_slug=agent,
+                            skill_slug=skill,
+                            reason="unknown_agent",
+                        )
+                    )
+
         known_global = {item.slug for item in _scan_global_skills(settings)}
         unknown_add = [slug for slug in add_skill_slugs if slug not in known_global]
         unknown_remove = [slug for slug in remove_skill_slugs if slug not in known_global]
-        unknown = sorted(set(unknown_add + unknown_remove))
-        if unknown:
-            raise HTTPException(status_code=400, detail=f"unknown global skill slug(s): {', '.join(unknown)}")
+        valid_add_skill_slugs = [slug for slug in add_skill_slugs if slug in known_global]
+        valid_remove_skill_slugs = [slug for slug in remove_skill_slugs if slug in known_global]
+
+        for skill in unknown_add:
+            for agent in valid_agents:
+                failed.append(
+                    SkillsMappingFailureItem(
+                        action="add",
+                        agent_slug=agent,
+                        skill_slug=skill,
+                        reason="unknown_global_skill",
+                    )
+                )
+        for skill in unknown_remove:
+            for agent in valid_agents:
+                failed.append(
+                    SkillsMappingFailureItem(
+                        action="remove",
+                        agent_slug=agent,
+                        skill_slug=skill,
+                        reason="unknown_global_skill",
+                    )
+                )
+
+        if not valid_agents:
+            return SkillsMappingPatchOut(
+                updated=0,
+                affected_agents=[],
+                restart_hint="No valid mappings were updated.",
+                failed=failed,
+            )
 
         updated = 0
-        if add_skill_slugs:
+        if valid_add_skill_slugs:
+            target_pairs = {(agent, skill) for agent in valid_agents for skill in valid_add_skill_slugs}
+            existing_stmt = sa.select(
+                agent_skill_mappings.c.agent_slug,
+                agent_skill_mappings.c.skill_slug,
+            ).where(
+                agent_skill_mappings.c.agent_slug.in_(valid_agents),
+                agent_skill_mappings.c.skill_slug.in_(valid_add_skill_slugs),
+            )
+            existing_rows = (await session.execute(existing_stmt)).all()
+            existing_pairs = {(str(row.agent_slug), str(row.skill_slug)) for row in existing_rows}
+
+            for agent, skill in sorted(existing_pairs):
+                failed.append(
+                    SkillsMappingFailureItem(
+                        action="add",
+                        agent_slug=agent,
+                        skill_slug=skill,
+                        reason="already_mapped",
+                    )
+                )
+
             rows = [
                 {"id": uuid4(), "agent_slug": agent, "skill_slug": skill}
-                for agent in agent_slugs
-                for skill in add_skill_slugs
+                for (agent, skill) in sorted(target_pairs - existing_pairs)
             ]
             if rows:
                 insert_stmt = pg_insert(agent_skill_mappings).values(rows)
@@ -275,20 +357,47 @@ def create_app() -> FastAPI:
                 result = await session.execute(insert_stmt)
                 updated += len(result.scalars().all())
 
-        if remove_skill_slugs:
-            delete_stmt = agent_skill_mappings.delete().where(
-                agent_skill_mappings.c.agent_slug.in_(agent_slugs),
-                agent_skill_mappings.c.skill_slug.in_(remove_skill_slugs),
+        if valid_remove_skill_slugs:
+            target_pairs = {(agent, skill) for agent in valid_agents for skill in valid_remove_skill_slugs}
+            existing_stmt = sa.select(
+                agent_skill_mappings.c.id,
+                agent_skill_mappings.c.agent_slug,
+                agent_skill_mappings.c.skill_slug,
+            ).where(
+                agent_skill_mappings.c.agent_slug.in_(valid_agents),
+                agent_skill_mappings.c.skill_slug.in_(valid_remove_skill_slugs),
             )
-            result = await session.execute(delete_stmt)
-            updated += int(result.rowcount or 0)
+            existing_rows = (await session.execute(existing_stmt)).all()
+            existing_pairs = {(str(row.agent_slug), str(row.skill_slug)) for row in existing_rows}
+
+            missing_pairs = sorted(target_pairs - existing_pairs)
+            for agent, skill in missing_pairs:
+                failed.append(
+                    SkillsMappingFailureItem(
+                        action="remove",
+                        agent_slug=agent,
+                        skill_slug=skill,
+                        reason="not_mapped",
+                    )
+                )
+
+            if existing_rows:
+                existing_ids = [row.id for row in existing_rows]
+                delete_stmt = agent_skill_mappings.delete().where(agent_skill_mappings.c.id.in_(existing_ids))
+                result = await session.execute(delete_stmt)
+                updated += int(result.rowcount or 0)
 
         await session.commit()
 
         return SkillsMappingPatchOut(
             updated=updated,
-            affected_agents=agent_slugs,
-            restart_hint="Configuration saved. Restart affected agent containers to apply changes.",
+            affected_agents=valid_agents,
+            restart_hint=(
+                "Configuration saved. Restart affected agent containers to apply changes."
+                if updated > 0
+                else "No mapping changes were applied."
+            ),
+            failed=failed,
         )
 
     @app.post("/v1/tasks", response_model=TaskOut)

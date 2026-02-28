@@ -545,6 +545,29 @@ body {
   margin-bottom: 8px;
 }
 
+.skills-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.skills-search-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.skills-search-input:focus {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
 .skills-actions {
   margin-top: 10px;
   display: flex;
@@ -554,6 +577,12 @@ body {
 .skills-hint {
   margin-top: 8px;
   font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.skills-selection-summary {
+  margin-top: 8px;
+  font-size: 12px;
   color: var(--ink-soft);
 }
 

@@ -92,7 +92,15 @@ class SkillsMappingPatchIn(BaseModel):
     remove_skill_slugs: list[str] = Field(default_factory=list)
 
 
+class SkillsMappingFailureItem(BaseModel):
+    action: str
+    agent_slug: str
+    skill_slug: str
+    reason: str
+
+
 class SkillsMappingPatchOut(BaseModel):
     updated: int
     affected_agents: list[str]
     restart_hint: str
+    failed: list[SkillsMappingFailureItem] = Field(default_factory=list)
