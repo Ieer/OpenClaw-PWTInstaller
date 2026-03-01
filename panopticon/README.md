@@ -1,6 +1,6 @@
 # 8-Agent Personal Panopticon（Docker Compose）
 
-这是一份 **8-service** 的 Docker Compose 模板，用于启动 8 个隔离的 OpenClaw agent（nox/metrics/email/growth/trades/health/writing/personal），并对齐 CN-IM 镜像的 **env → openclaw.json** 生成方式。
+这是一份 **8-agent + Mission Control** 的 Docker Compose 模板，用于启动 8 个隔离的 OpenClaw agent（nox/metrics/email/growth/trades/health/writing/personal），并对齐 CN-IM 镜像的 **env → openclaw.json** 生成方式。
 
 入口文件：
 
@@ -31,8 +31,13 @@ flowchart LR
     API[mission-control-api :18910]
     HB[mc-heartbeat]
     BR[mission-control-chat-bridge]
+    VB[mission-control-voice-bridge\nprofile: voice]
     PG[(mc-postgres)]
     RD[(mc-redis)]
+  end
+
+  subgraph VOICE[语音引擎层（可选）]
+    ROS[ROS Topics\n/wakeup /asr /text_response /tts_topic]
   end
 
   subgraph AG[Agent 执行层（8 个 OpenClaw）]
@@ -69,6 +74,8 @@ flowchart LR
   HB -->|POST /v1/events| API
   BR -->|读取 chat_access.log| GL
   BR -->|POST chat.gateway.access| API
+  ROS -->|发布语音 topic| VB
+  VB -->|POST voice.* 事件| API
 
   API --> PG
   API --> RD
@@ -96,17 +103,26 @@ flowchart LR
 ### 分层说明
 
 - 统一入口层（Gateway）：`mission-control-gateway` 对外暴露 `18920`，负责同源入口与 `/chat/<agent>/` 反向代理，保障 Web Chat / WebSocket 稳定。
-- Mission Control 层：`mission-control-ui` 提供控制台页面，`mission-control-api` 提供看板/任务/事件接口，`mc-heartbeat` 定时上报心跳事件。
+- Mission Control 层：`mission-control-ui` 提供控制台页面，`mission-control-api` 提供看板/任务/事件接口，`mc-heartbeat` 定时上报心跳事件，`mission-control-chat-bridge`/`mission-control-voice-bridge` 负责把外部观测信号汇聚为统一事件流。
+- 语音引擎层（可选）：语音服务通过 ROS topics 输出状态与文本；`mission-control-voice-bridge` 订阅并标准化为 `voice.*` 事件写入 Mission Control。
 - Agent 执行层：8 个 `openclaw-*` 容器彼此隔离，每个 agent 拥有独立 home 与 workspace。
 - 数据持久层：统一落盘到 `PANOPTICON_DATA_DIR` 下（Postgres/Redis 数据、agent homes、workspaces、gateway logs）。
 
 ### 核心链路（从请求到可观测）
 
+Chat 链路：
+
 1. 用户从 `http://127.0.0.1:18920/chat/<agent>/` 访问 Chat。
 1. Gateway 将请求直连到目标 `openclaw-<agent>`（减少中间层干扰，优先保证会话稳定）。
 1. Gateway 同时把 chat 请求写入 `chat_access.log`（JSON）。
 1. `mission-control-chat-bridge` 持续消费日志并上报 `chat.gateway.access` 到 `/v1/events`。
-1. 事件进入 Mission Control feed，可用于看板、审计与稳定性观察。
+
+Voice 链路（可选，启用 `voice` profile）：
+
+1. 语音引擎通过 ROS topics 发布唤醒/识别/回复/播报事件。
+1. `mission-control-voice-bridge` 订阅 topics 并映射为 `voice.listening` / `voice.thinking` / `voice.speaking` 等标准事件。
+1. bridge 将标准化事件 POST 到 `mission-control-api /v1/events`。
+1. 事件进入 Mission Control feed 与 overlay，可用于实时状态展示、审计与稳定性观察。
 
 ### 配置/生成关系（避免手改回滚）
 
