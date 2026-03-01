@@ -1,37 +1,16 @@
 # Mission Control gateway (nginx) - routes:
 # - /         -> mission-control-ui (Dash)
-# - /chat/<agent>/... -> openclaw-<agent>:26216 (Control UI + WS)
+# - /chat/... -> mission-control-api (FastAPI gateway)
 
 map $http_upgrade $connection_upgrade {
   default upgrade;
   '' close;
 }
 
-map $request_uri $is_chat_request {
-  default 0;
-  ~^/chat/ 1;
-}
-
-log_format chat_access_json escape=json
-  '{'
-    '"time_iso":"$time_iso8601",'
-    '"remote_addr":"$remote_addr",'
-    '"method":"$request_method",'
-    '"uri":"$uri",'
-    '"query":"$args",'
-    '"status":$status,'
-    '"request_time":"$request_time",'
-    '"upstream_status":"$upstream_status",'
-    '"upgrade":"$http_upgrade",'
-    '"user_agent":"$http_user_agent"'
-  '}';
-
 server {
   listen 80;
-  access_log /var/log/nginx/chat_access.log chat_access_json if=$is_chat_request;
-
+  
   resolver 127.0.0.11 ipv6=off;
-
   client_max_body_size 50m;
 
   location / {
@@ -44,182 +23,20 @@ server {
     proxy_pass http://mission-control-ui:9090;
   }
 
-  # OpenClaw Control UI expects token from localStorage (and uses it in WS connect payload),
-  # so we inject a small bootstrap snippet into HTML to set basePath + token automatically.
-  # This avoids putting the token in URL, and removes the manual “paste token” step.
-  #
-  # Note: tokens are rendered into nginx config via envsubst (container-local).
-
-  location = /chat/nox { return 301 /chat/nox/; }
-  location ^~ /chat/nox/ {
+  location /chat/ {
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
 
     proxy_set_header Host $host;
-    proxy_set_header X-Real-IP 127.0.0.1;
-    proxy_set_header X-Forwarded-For 127.0.0.1;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header Accept-Encoding "";
 
-    proxy_set_header Authorization "Bearer ${TOKEN_NOX}";
-
-    proxy_hide_header X-Frame-Options;
-    proxy_hide_header Content-Security-Policy;
-
-    sub_filter_once on;
-    sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/nox";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/nox/";v.token="${TOKEN_NOX}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
-
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
-    proxy_pass http://openclaw-nox:26216/;
-  }
-
-  location = /chat/metrics { return 301 /chat/metrics/; }
-  location ^~ /chat/metrics/ {
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP 127.0.0.1;
-    proxy_set_header X-Forwarded-For 127.0.0.1;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header Accept-Encoding "";
-    proxy_set_header Authorization "Bearer ${TOKEN_METRICS}";
-    proxy_hide_header X-Frame-Options;
-    proxy_hide_header Content-Security-Policy;
-    sub_filter_once on;
-    sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/metrics";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/metrics/";v.token="${TOKEN_METRICS}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
-    proxy_read_timeout 3600s;
-    proxy_send_timeout 3600s;
-    proxy_pass http://openclaw-metrics:26216/;
-  }
-
-  location = /chat/email { return 301 /chat/email/; }
-  location ^~ /chat/email/ {
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP 127.0.0.1;
-    proxy_set_header X-Forwarded-For 127.0.0.1;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header Accept-Encoding "";
-    proxy_set_header Authorization "Bearer ${TOKEN_EMAIL}";
-    proxy_hide_header X-Frame-Options;
-    proxy_hide_header Content-Security-Policy;
-    sub_filter_once on;
-    sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/email";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/email/";v.token="${TOKEN_EMAIL}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
-    proxy_read_timeout 3600s;
-    proxy_send_timeout 3600s;
-    proxy_pass http://openclaw-email:26216/;
-  }
-
-  location = /chat/growth { return 301 /chat/growth/; }
-  location ^~ /chat/growth/ {
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP 127.0.0.1;
-    proxy_set_header X-Forwarded-For 127.0.0.1;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header Accept-Encoding "";
-    proxy_set_header Authorization "Bearer ${TOKEN_GROWTH}";
-    proxy_hide_header X-Frame-Options;
-    proxy_hide_header Content-Security-Policy;
-    sub_filter_once on;
-    sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/growth";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/growth/";v.token="${TOKEN_GROWTH}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
-    proxy_read_timeout 3600s;
-    proxy_send_timeout 3600s;
-    proxy_pass http://openclaw-growth:26216/;
-  }
-
-  location = /chat/trades { return 301 /chat/trades/; }
-  location ^~ /chat/trades/ {
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP 127.0.0.1;
-    proxy_set_header X-Forwarded-For 127.0.0.1;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header Accept-Encoding "";
-    proxy_set_header Authorization "Bearer ${TOKEN_TRADES}";
-    proxy_hide_header X-Frame-Options;
-    proxy_hide_header Content-Security-Policy;
-    sub_filter_once on;
-    sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/trades";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/trades/";v.token="${TOKEN_TRADES}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
-    proxy_read_timeout 3600s;
-    proxy_send_timeout 3600s;
-    proxy_pass http://openclaw-trades:26216/;
-  }
-
-  location = /chat/health { return 301 /chat/health/; }
-  location ^~ /chat/health/ {
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP 127.0.0.1;
-    proxy_set_header X-Forwarded-For 127.0.0.1;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header Accept-Encoding "";
-    proxy_set_header Authorization "Bearer ${TOKEN_HEALTH}";
-    proxy_hide_header X-Frame-Options;
-    proxy_hide_header Content-Security-Policy;
-    sub_filter_once on;
-    sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/health";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/health/";v.token="${TOKEN_HEALTH}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
-    proxy_read_timeout 3600s;
-    proxy_send_timeout 3600s;
-    proxy_pass http://openclaw-health:26216/;
-  }
-
-  location = /chat/writing { return 301 /chat/writing/; }
-  location ^~ /chat/writing/ {
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP 127.0.0.1;
-    proxy_set_header X-Forwarded-For 127.0.0.1;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header Accept-Encoding "";
-    proxy_set_header Authorization "Bearer ${TOKEN_WRITING}";
-    proxy_hide_header X-Frame-Options;
-    proxy_hide_header Content-Security-Policy;
-    sub_filter_once on;
-    sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/writing";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/writing/";v.token="${TOKEN_WRITING}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
-    proxy_read_timeout 3600s;
-    proxy_send_timeout 3600s;
-    proxy_pass http://openclaw-writing:26216/;
-  }
-
-  location = /chat/personal { return 301 /chat/personal/; }
-  location ^~ /chat/personal/ {
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP 127.0.0.1;
-    proxy_set_header X-Forwarded-For 127.0.0.1;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header Accept-Encoding "";
-    proxy_set_header Authorization "Bearer ${TOKEN_PERSONAL}";
-    proxy_hide_header X-Frame-Options;
-    proxy_hide_header Content-Security-Policy;
-    sub_filter_once on;
-    sub_filter_types text/html;
-    sub_filter 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="/chat/personal";(function(){try{const k="openclaw.control.settings.v1";const raw=localStorage.getItem(k);let v={};try{v=raw?JSON.parse(raw):{};}catch{};v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/chat/personal/";v.token="${TOKEN_PERSONAL}";localStorage.setItem(k,JSON.stringify(v));}catch(e){}})();';
-    proxy_read_timeout 3600s;
-    proxy_send_timeout 3600s;
-    proxy_pass http://openclaw-personal:26216/;
+    
+    proxy_pass http://mission-control-api:9090/chat/;
   }
 }

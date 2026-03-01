@@ -32,8 +32,8 @@ flowchart LR
   subgraph MC[Mission Control 层]
     UI[mission-control-ui]
     API[mission-control-api :18910]
+    FEED[event feed / overlay]
     HB[mc-heartbeat]
-    BR[mission-control-chat-bridge]
     VB[mission-control-voice-bridge\nprofile: voice]
     PG[(mc-postgres)]
     RD[(mc-redis)]
@@ -58,27 +58,27 @@ flowchart LR
     AH[agent-homes/*]
     WS[workspaces/*]
     MD[mission-control/*]
-    GL[gateway-logs/chat_access.log]
+    GL[gateway-logs/*]
   end
 
   U -->|HTTP| GW
   GW -->|/| UI
-  GW -->|/chat/<agent>/| A1
-  GW -->|/chat/<agent>/| A2
-  GW -->|/chat/<agent>/| A3
-  GW -->|/chat/<agent>/| A4
-  GW -->|/chat/<agent>/| A5
-  GW -->|/chat/<agent>/| A6
-  GW -->|/chat/<agent>/| A7
-  GW -->|/chat/<agent>/| A8
-  GW -->|写入 chat access log| GL
+  GW -->|/chat/agent/| API
+  GW -->|写入 access/error log（可选）| GL
 
   UI -->|REST/WebSocket| API
   HB -->|POST /v1/events| API
-  BR -->|读取 chat_access.log| GL
-  BR -->|POST chat.gateway.access| API
   ROS -->|发布语音 topic| VB
   VB -->|POST voice.* 事件| API
+  API -->|/chat/agent HTTP/WS 代理| A1
+  API -->|/chat/agent HTTP/WS 代理| A2
+  API -->|/chat/agent HTTP/WS 代理| A3
+  API -->|/chat/agent HTTP/WS 代理| A4
+  API -->|/chat/agent HTTP/WS 代理| A5
+  API -->|/chat/agent HTTP/WS 代理| A6
+  API -->|/chat/agent HTTP/WS 代理| A7
+  API -->|/chat/agent HTTP/WS 代理| A8
+  API -->|写入 chat.gateway.access 事件| FEED
 
   API --> PG
   API --> RD
@@ -105,8 +105,8 @@ flowchart LR
 
 ### 分层说明
 
-- 统一入口层（Gateway）：`mission-control-gateway` 对外暴露 `18920`，负责同源入口与 `/chat/<agent>/` 反向代理，保障 Web Chat / WebSocket 稳定。
-- Mission Control 层：`mission-control-ui` 提供控制台页面，`mission-control-api` 提供看板/任务/事件接口，`mc-heartbeat` 定时上报心跳事件，`mission-control-chat-bridge`/`mission-control-voice-bridge` 负责把外部观测信号汇聚为统一事件流。
+- 统一入口层（Gateway）：`mission-control-gateway` 对外暴露 `18920`，统一承载同源入口，并将 `/` 转发给 `mission-control-ui`、`/chat/<agent>/...` 转发给 `mission-control-api`。
+- Mission Control 层：`mission-control-ui` 提供控制台页面，`mission-control-api` 提供看板/任务/事件接口，同时承担 Chat 的 HTTP/WebSocket 统一代理；`mc-heartbeat` 定时上报心跳事件，`mission-control-voice-bridge` 负责语音事件汇聚。
 - 语音引擎层（可选）：语音服务通过 ROS topics 输出状态与文本；`mission-control-voice-bridge` 订阅并标准化为 `voice.*` 事件写入 Mission Control。
 - Agent 执行层：8 个 `openclaw-*` 容器彼此隔离，每个 agent 拥有独立 home 与 workspace。
 - 数据持久层：统一落盘到 `PANOPTICON_DATA_DIR` 下（Postgres/Redis 数据、agent homes、workspaces、gateway logs）。
@@ -116,9 +116,10 @@ flowchart LR
 Chat 链路：
 
 1. 用户从 `http://127.0.0.1:18920/chat/<agent>/` 访问 Chat。
-1. Gateway 将请求直连到目标 `openclaw-<agent>`（减少中间层干扰，优先保证会话稳定）。
-1. Gateway 同时把 chat 请求写入 `chat_access.log`（JSON）。
-1. `mission-control-chat-bridge` 持续消费日志并上报 `chat.gateway.access` 到 `/v1/events`。
+1. Gateway 将请求同源转发到 `mission-control-api /chat/{agent}/...`。
+1. `mission-control-api` 统一处理 Control UI 注入、鉴权补强与 HTTP/WebSocket 代理，再转发到目标 `openclaw-<agent>`。
+1. `mission-control-api` 在代理入口直接写入 `chat.gateway.access` 事件（不再依赖日志桥接）。
+1. 事件进入 Mission Control feed 与 overlay，用于实时观察与审计。
 
 Voice 链路（可选，启用 `voice` profile）：
 
@@ -300,7 +301,7 @@ bash panopticon/tools/check_agent_endpoints.sh
 
 ## Control UI（Web Chat）推荐入口与 1008 排障
 
-在 Panopticon 模式下，推荐一律从 Mission Control Gateway 的同源入口打开每个 agent 的 Control UI（它会注入 Authorization + LocalStorage 配置）：
+在 Panopticon 模式下，推荐一律从 Mission Control Gateway 的同源入口打开每个 agent 的 Control UI（由 `mission-control-api` 代理层注入 Authorization + LocalStorage 配置）：
 
 ```text
 http://127.0.0.1:18920/chat/<agent>/
@@ -315,7 +316,7 @@ bash panopticon/tools/rotate_gateway_tokens.sh
 ```
 
 如果看到 `pairing required`（OpenClaw 新版设备配对机制）：
-- 本仓库通过同源网关 + 信任代理配置来让 webchat 自动完成 silent pairing。
+- 本仓库通过同源网关（`18920`）+ API 统一代理 + 信任代理配置来让 webchat 自动完成 silent pairing。
 - 若你改过 Nginx 模板或 openclaw.json，确保 `/chat/<agent>/` 的反代配置仍然生效，并重建 `mission-control-gateway`：
 
 ```bash
@@ -382,10 +383,10 @@ python panopticon/tools/comprehensive_assessment.py \
 - workspace 状态测试（`inbox/outbox/artifacts/state/sources`）
 - 任务状态全面测试（`INBOX / ASSIGNED / IN PROGRESS / REVIEW / DONE`）
 
-Chat 事件桥接（网关日志方案）：
-- 网关保持 `/chat/<agent>/` 直连（保障 WebSocket 稳定），并将 chat 请求写入 `chat_access.log`（JSON）。
-- `mission-control-chat-bridge` 持续消费该日志并上报 `chat.gateway.access` 到 Mission Control API。
-- 默认以 `tail` 模式启动（仅消费新日志），不会回灌旧请求。
+Chat 访问事件（API 代理方案）：
+- 网关将 `/chat/<agent>/...` 同源转发到 `mission-control-api /chat/{agent}/...`。
+- `mission-control-api` 统一处理注入/鉴权补强与 HTTP+WebSocket 代理，并直接写入 `chat.gateway.access` 事件。
+- 网关日志仍可用于运维排障，但 Chat 事件链路不再依赖日志桥接。
 
 可选：执行“歌词任务”协作演练（metrics -> growth -> writing）并写入评估事件：
 
@@ -469,21 +470,21 @@ Mission Control：
 
 Mission Control UI 已支持 `Chat` 按钮（与 `Skills` 同级）。点击后会打开内嵌 Chat 弹窗，可在 8 个 agent 间切换：
 
-- nox → `http://127.0.0.1:18801`
-- metrics → `http://127.0.0.1:18811`
-- email → `http://127.0.0.1:18821`
-- growth → `http://127.0.0.1:18831`
-- trades → `http://127.0.0.1:18841`
-- health → `http://127.0.0.1:18851`
-- writing → `http://127.0.0.1:18861`
-- personal → `http://127.0.0.1:18871`
+- nox → `http://127.0.0.1:18920/chat/nox/`
+- metrics → `http://127.0.0.1:18920/chat/metrics/`
+- email → `http://127.0.0.1:18920/chat/email/`
+- growth → `http://127.0.0.1:18920/chat/growth/`
+- trades → `http://127.0.0.1:18920/chat/trades/`
+- health → `http://127.0.0.1:18920/chat/health/`
+- writing → `http://127.0.0.1:18920/chat/writing/`
+- personal → `http://127.0.0.1:18920/chat/personal/`
 
 交互说明：
 
 - `Maximize`：应用内最大化 Chat 窗口。
 - `Chat Only`：隐藏左侧选择区，仅保留对话区。
-- `Open External`：若 iframe 因浏览器策略（例如 X-Frame-Options/CSP）无法显示，可一键外部打开。
-- iframe 内嵌默认走 Mission Control 同域代理路径：`/chat/<agent>/...`（由 UI 容器转发到对应 agent 网关），用于规避目标网关返回的 `X-Frame-Options` 限制。
+- `Open External`：若 iframe 因浏览器策略（例如 X-Frame-Options/CSP）无法显示，可一键外部打开同源入口。
+- iframe 内嵌默认走 Mission Control 同域代理路径：`/chat/<agent>/...`（由 gateway 转发到 `mission-control-api`，再代理到对应 agent），用于规避目标网关返回的 `X-Frame-Options` 限制。
 
 安全说明：
 
@@ -495,8 +496,9 @@ Mission Control UI 已支持 `Chat` 按钮（与 `Skills` 同级）。点击后�
 实现说明（推荐）：
 
 - 为了支持 Control UI 的 WebSocket（并稳定内嵌），18920 端口由 `mission-control-gateway`（nginx）对外提供。
-- 该网关会将 `/` 转发到 `mission-control-ui`，并将 `/chat/<agent>/...` 转发到对应 `openclaw-<agent>:26216`，同时按 agent 注入 `Authorization`。
-- token 建议放在本地文件 `panopticon/env/mission-control-gateway.env` 与 `panopticon/env/mission-control-ui.env`（已在 `.gitignore` 忽略，避免提交密钥）。
+- 该网关会将 `/` 转发到 `mission-control-ui`，并将 `/chat/<agent>/...` 转发到 `mission-control-api:9090/chat/<agent>/...`。
+- `mission-control-api` 再代理到对应 `openclaw-<agent>:26216`，并按 agent 注入 `Authorization`。
+- token 建议放在本地文件 `panopticon/env/mission-control.env` 与 `panopticon/env/mission-control-ui.env`（已在 `.gitignore` 忽略，避免提交密钥）。
 
 Mission Control API（示例）：
 

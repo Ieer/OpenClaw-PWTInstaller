@@ -1316,7 +1316,7 @@ app.layout = html.Div(
                                             className="ghost-button docs-link chat-external-link",
                                         ),
                                         html.Div(
-                                            "For security, Mission Control does not inject gateway tokens. Login/pair in the target chat page if prompted.",
+                                            "Mission Control now routes chat via the unified gateway. If a browser policy blocks iframe rendering, use Open External.",
                                             className="chat-hint",
                                         ),
                                     ],
@@ -2026,7 +2026,6 @@ def render_chat_modal(_, chat_ui):
     # Prefer the same-origin proxy path for external open as well.
     # Direct 188xx gateway URLs do not inject token into localStorage and will prompt for manual token paste.
     external_url = embed_url or (CHAT_AGENT_URL_MAP.get(selected, "") or "#")
-    probe_url = CHAT_AGENT_PROXY_TARGET_URL_MAP.get(selected, "")
     iframe_src = embed_url or "about:blank"
 
     notice = ""
@@ -2038,17 +2037,8 @@ def render_chat_modal(_, chat_ui):
         notice = "Selected agent has no chat URL mapping."
         notice_class = "chat-notice warn"
     else:
-        try:
-            resp = requests.get(probe_url or external_url, timeout=2.0)
-            if 200 <= resp.status_code < 400:
-                notice = "Embedded chat via same-origin proxy is enabled. If target flow blocks in-frame, click Open External."
-                notice_class = "chat-notice ok"
-            else:
-                notice = f"Agent endpoint reachable with HTTP {resp.status_code}. If embed fails, use Open External."
-                notice_class = "chat-notice warn"
-        except Exception:
-            notice = "Agent endpoint appears offline from Mission Control. Check container status or use Open External."
-            notice_class = "chat-notice error"
+        notice = "Embedded chat is enabled. If your browser blocks in-frame rendering, click Open External."
+        notice_class = "chat-notice ok"
 
     modal_class = "chat-modal open" if is_open else "chat-modal"
     card_classes = ["chat-modal-card"]

@@ -11,10 +11,19 @@ class Settings(BaseModel):
     redis_stream_key: str = "mc:events"
     global_skills_dir: str = "/data/global-skills"
     agent_homes_dir: str = "/data/agent-homes"
+    agent_token_map: dict[str, str] = {}
 
 
 def load_settings() -> Settings:
     import os
+    
+    token_map_str = os.getenv("MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP", "")
+    agent_token_map = {}
+    if token_map_str:
+        for pair in token_map_str.split(","):
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                agent_token_map[k.strip()] = v.strip()
 
     return Settings(
         auth_token=os.getenv("MC_AUTH_TOKEN") or None,
@@ -24,4 +33,5 @@ def load_settings() -> Settings:
         redis_stream_key=os.getenv("MC_REDIS_STREAM_KEY") or "mc:events",
         global_skills_dir=os.getenv("MC_GLOBAL_SKILLS_DIR") or "/data/global-skills",
         agent_homes_dir=os.getenv("MC_AGENT_HOMES_DIR") or "/data/agent-homes",
+        agent_token_map=agent_token_map,
     )

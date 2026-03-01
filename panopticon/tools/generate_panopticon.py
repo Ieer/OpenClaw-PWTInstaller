@@ -73,6 +73,7 @@ def render_compose(manifest: dict) -> str:
             image: mission-control-api:local
             env_file:
               - ./env/mission-control.env.example
+              - ./env/mission-control-ui.env
             environment:
               MC_GLOBAL_SKILLS_DIR: /data/global-skills
               MC_AGENT_HOMES_DIR: /data/agent-homes
@@ -123,40 +124,10 @@ def render_compose(manifest: dict) -> str:
                 source: ./nginx/mission-control-gateway.conf.template
                 target: /etc/nginx/templates/default.conf.template
                 read_only: true
-              - type: bind
-                source: ${{PANOPTICON_DATA_DIR:-.}}/mission-control/gateway-logs
-                target: /var/log/nginx
             depends_on:
               - mission-control-ui
             ports:
               - "{ui_port}:80"
-            restart: unless-stopped
-            networks:
-              - panopticon
-
-          mission-control-chat-bridge:
-            container_name: mission-control-chat-bridge
-            image: python:3.12-alpine
-            env_file:
-              - ./env/mission-control.env.example
-            environment:
-              MC_API_URL: http://mission-control-api:9090
-              MC_CHAT_GATEWAY_LOG_FILE: /var/log/nginx/chat_access.log
-              MC_CHAT_BRIDGE_POLL_SECONDS: "0.5"
-              MC_CHAT_BRIDGE_START_MODE: tail
-            volumes:
-              - type: bind
-                source: ./tools/chat_gateway_log_bridge.py
-                target: /app/chat_gateway_log_bridge.py
-                read_only: true
-              - type: bind
-                source: ${{PANOPTICON_DATA_DIR:-.}}/mission-control/gateway-logs
-                target: /var/log/nginx
-                read_only: true
-            command: ["python", "/app/chat_gateway_log_bridge.py"]
-            depends_on:
-              - mission-control-api
-              - mission-control-gateway
             restart: unless-stopped
             networks:
               - panopticon

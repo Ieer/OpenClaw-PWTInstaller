@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import HTMLResponse, Response
+import httpx
+import asyncio
 from redis.asyncio import Redis
 
 from .config import Settings, load_settings
@@ -41,6 +45,115 @@ TASK_STATUS_TRANSITIONS = {
     "REVIEW": {"IN PROGRESS", "DONE"},
     "DONE": set(),
 }
+
+
+def _rewrite_avatar_paths(obj, agent: str):
+    if isinstance(obj, str):
+        if obj.startswith("/avatar/"):
+            return f"/chat/{agent}{obj}"
+        return obj
+    if isinstance(obj, list):
+        return [_rewrite_avatar_paths(item, agent) for item in obj]
+    if isinstance(obj, dict):
+        return {k: _rewrite_avatar_paths(v, agent) for k, v in obj.items()}
+    return obj
+
+
+def _build_chat_inject_script(agent: str, token: str | None) -> str:
+    base_path = f"/chat/{agent}"
+    token_json = json.dumps(token or "", ensure_ascii=False)
+    return (
+        f'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="{base_path}";'
+        "(function(){"
+        "try{localStorage.removeItem(\"openclaw.device.auth.v1\");"
+        "localStorage.removeItem(\"openclaw-device-identity-v1\");}catch(e){}"
+        "try{"
+        "const k=\"openclaw.control.settings.v1\";"
+        "const raw=localStorage.getItem(k);"
+        "let v={};"
+        "try{v=raw?JSON.parse(raw):{};}catch{}"
+        f"v.gatewayUrl=(location.protocol===\"https:\"?\"wss\":\"ws\")+\"://\"+location.host+\"{base_path}/\";"
+        f"v.token={token_json};"
+        "localStorage.setItem(k,JSON.stringify(v));"
+        "}catch(e){}"
+        "try{"
+        f"const p=\"{base_path}\";"
+        "const scan=()=>{"
+        "document.querySelectorAll('img.chat-avatar.assistant[src^=\"/avatar/\"]').forEach((img)=>{"
+        "const s=img.getAttribute(\"src\")||\"\";"
+        "if(s.startsWith(\"/avatar/\"))img.setAttribute(\"src\",p+s);"
+        "});"
+        "};"
+        "scan();"
+        "const mo=new MutationObserver(()=>scan());"
+        "mo.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:[\"src\"]});"
+        "window.addEventListener(\"beforeunload\",()=>mo.disconnect(),{once:true});"
+        "}catch(e){}"
+        "})();"
+    )
+
+
+def _normalize_control_ui_origin(origin: str | None) -> str | None:
+    if not origin:
+        return None
+    if origin.startswith("http://127.0.0.1:"):
+        return origin.replace("http://127.0.0.1", "http://localhost", 1)
+    if origin.startswith("https://127.0.0.1:"):
+        return origin.replace("https://127.0.0.1", "https://localhost", 1)
+    return origin
+
+
+def _augment_connect_auth(message: str, token: str | None) -> str:
+    try:
+        req = json.loads(message)
+    except Exception:
+        return message
+
+    if not isinstance(req, dict):
+        return message
+    if req.get("type") != "req" or req.get("method") != "connect":
+        return message
+    if not isinstance(req.get("params"), dict):
+        return message
+
+    params = req["params"]
+    auth = params.get("auth")
+    if not isinstance(auth, dict):
+        auth = {}
+    if token and not auth.get("token"):
+        auth["token"] = token
+    if auth:
+        params["auth"] = auth
+    req["params"] = params
+    return json.dumps(req, ensure_ascii=False)
+
+
+def _rewrite_avatar_meta(content: bytes, agent: str, query: str) -> bytes:
+    try:
+        payload = json.loads(content.decode("utf-8", errors="replace"))
+    except Exception:
+        return content
+
+    avatar_url = payload.get("avatarUrl") if isinstance(payload, dict) else None
+    if isinstance(avatar_url, str) and avatar_url.startswith("/avatar/"):
+        rewritten = f"/chat/{agent}{avatar_url}"
+        if query:
+            rewritten = f"{rewritten}?{query}"
+        payload["avatarUrl"] = rewritten
+        return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    return content
+
+
+def _avatar_fallback_svg(agent: str) -> bytes:
+    label = (agent[:1] or "A").upper()
+    return (
+        "<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'>"
+        "<rect width='96' height='96' rx='48' fill='#2f3747'/>"
+        "<text x='50%' y='54%' dominant-baseline='middle' text-anchor='middle' "
+        "font-family='system-ui, -apple-system, Segoe UI, Roboto, sans-serif' "
+        "font-size='42' fill='#ffffff'>"
+        f"{label}</text></svg>"
+    ).encode("utf-8")
 
 
 def require_auth(settings: Settings, authorization: str | None = Header(default=None)) -> None:
@@ -702,6 +815,172 @@ def create_app() -> FastAPI:
                         await websocket.send_text(event_json)
         except WebSocketDisconnect:
             return
+
+    
+    @app.api_route("/chat/{agent}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
+    async def chat_proxy(agent: str, path: str, request: Request):
+        upgrade = request.headers.get("upgrade", "").lower() == "websocket"
+        if not upgrade:
+            payload = {
+                "path": f"/{path}",
+                "query": str(request.url.query)[:256],
+                "method": request.method,
+                "status_code": 0,
+                "request_time": "0.0",
+                "upstream_status": "proxy",
+                "is_ws_upgrade": False,
+                "source": "api_gateway_proxy",
+                "ts": datetime.utcnow().isoformat() + "Z",
+            }
+            await publish_event(
+                redis,
+                stream_key=settings.redis_stream_key,
+                event={
+                    "type": "chat.gateway.access",
+                    "agent": agent,
+                    "payload": payload,
+                },
+            )
+            
+        target_url = f"http://openclaw-{agent}:26216/{path}"
+        query = request.url.query
+        if query:
+            target_url += f"?{query}"
+            
+        async with httpx.AsyncClient(timeout=3600.0) as client:
+            headers = dict(request.headers.items())
+            headers.pop("host", None)
+            
+            token = settings.agent_token_map.get(agent)
+            if token:
+                headers["authorization"] = f"Bearer {token}"
+                
+            req = client.build_request(
+                request.method,
+                target_url,
+                headers=headers,
+                content=request.stream(),
+            )
+            
+            try:
+                resp = await client.send(req, stream=True)
+            except Exception as e:
+                raise HTTPException(status_code=502, detail=f"Proxy error: {e}")
+            
+            is_html = "text/html" in resp.headers.get("content-type", "")
+            if is_html:
+                content = await resp.aread()
+                text = content.decode("utf-8", errors="replace")
+                
+                inject_script = _build_chat_inject_script(agent, token)
+                
+                text = text.replace('window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";', inject_script)
+                text = re.sub(
+                    r'window\.__OPENCLAW_ASSISTANT_AVATAR__=("|\')/avatar/[^"\']*("|\')',
+                    'window.__OPENCLAW_ASSISTANT_AVATAR__=""',
+                    text,
+                )
+                await resp.aclose()
+                
+                return HTMLResponse(content=text, status_code=resp.status_code)
+
+            content = await resp.aread()
+            await resp.aclose()
+
+            if request.method.upper() == "GET" and path.startswith("avatar/"):
+                is_meta = request.query_params.get("meta") == "1"
+
+                if is_meta and resp.status_code == 200 and "application/json" in resp.headers.get("content-type", ""):
+                    content = _rewrite_avatar_meta(content, agent, query)
+
+                if not is_meta and resp.status_code == 404:
+                    svg = _avatar_fallback_svg(agent)
+                    return Response(content=svg, status_code=200, media_type="image/svg+xml")
+
+            r = Response(content=content, status_code=resp.status_code)
+            for k, v in resp.headers.items():
+                if k.lower() not in ("content-length", "transfer-encoding", "connection"):
+                    r.headers[k] = v
+            return r
+
+    @app.websocket("/chat/{agent}/{path:path}")
+    async def chat_ws_proxy(agent: str, path: str, websocket: WebSocket):
+        await websocket.accept()
+        
+        payload = {
+            "path": f"/{path}",
+            "query": "",
+            "method": "GET",
+            "status_code": 101,
+            "request_time": "0.0",
+            "upstream_status": "proxy",
+            "is_ws_upgrade": True,
+            "source": "api_gateway_proxy",
+            "ts": datetime.utcnow().isoformat() + "Z",
+        }
+        await publish_event(
+            redis,
+            stream_key=settings.redis_stream_key,
+            event={
+                "type": "chat.gateway.access",
+                "agent": agent,
+                "payload": payload,
+            },
+        )
+            
+        target_ws_url = f"ws://openclaw-{agent}:26216/{path}"
+        ws_query = websocket.scope.get("query_string", b"")
+        if isinstance(ws_query, (bytes, bytearray)) and ws_query:
+            target_ws_url = f"{target_ws_url}?{ws_query.decode('utf-8', errors='ignore')}"
+        import websockets
+        from websockets.exceptions import ConnectionClosed
+        
+        token = settings.agent_token_map.get(agent)
+        headers = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        upstream_origin = _normalize_control_ui_origin(websocket.headers.get("origin"))
+            
+        try:
+            async with websockets.connect(
+                target_ws_url,
+                extra_headers=headers or None,
+                origin=upstream_origin or None,
+            ) as upstream_ws:
+                async def forward_to_upstream():
+                    try:
+                        while True:
+                            msg = await websocket.receive_text()
+                            msg = _augment_connect_auth(msg, token)
+                            await upstream_ws.send(msg)
+                    except WebSocketDisconnect:
+                        pass
+                    except Exception:
+                        pass
+                        
+                async def forward_to_client():
+                    try:
+                        while True:
+                            msg = await upstream_ws.recv()
+                            if isinstance(msg, str) and "/avatar/" in msg:
+                                try:
+                                    payload = json.loads(msg)
+                                    rewritten = _rewrite_avatar_paths(payload, agent)
+                                    msg = json.dumps(rewritten, ensure_ascii=False)
+                                except Exception:
+                                    pass
+                            await websocket.send_text(msg)
+                    except ConnectionClosed:
+                        pass
+                    except Exception:
+                        pass
+                        
+                await asyncio.gather(
+                    forward_to_upstream(),
+                    forward_to_client()
+                )
+        except Exception as e:
+            await websocket.close(code=1011, reason=str(e))
 
     @app.on_event("startup")
     async def _startup():

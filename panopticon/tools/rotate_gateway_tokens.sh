@@ -87,9 +87,9 @@ print('ok')
 PY
 
 echo "[2/4] Force-recreating services to load new env"
-# Recreate UI/gateway and agents so env_file changes are applied.
+# Recreate API/UI/gateway and agents so env_file changes are applied.
 docker compose -f "$COMPOSE_FILE" up -d --no-build --force-recreate \
-  mission-control-ui mission-control-gateway \
+  mission-control-api mission-control-ui mission-control-gateway \
   openclaw-nox openclaw-metrics openclaw-email openclaw-growth openclaw-trades openclaw-health openclaw-writing openclaw-personal
 
 echo "[3/4] Waiting for gateways to become reachable"
