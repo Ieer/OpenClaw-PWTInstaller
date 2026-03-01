@@ -1,0 +1,29 @@
+{
+  "lastChecks": {
+    "queue": null,
+    "state": null,
+    "daily": null,
+    "weekly": null
+  },
+  "runtime": {
+    "lastCheck": "2026-03-01T10:59:00Z",
+    "taskQueue": {
+      "completed": 1,
+      "pending": 0,
+      "blocked": 0,
+      "lastCompleted": "2026-02-25T16:45:00Z",
+      "details": "lyrics-collaboration-2026-02-25 (completed, awaiting user decision)"
+    },
+    "state": {
+      "pendingHandoffs": 0,
+      "pendingReviews": 0
+    },
+    "inbox": {
+      "items": 0
+    },
+    "outbox": {
+      "items": 0
+    },
+    "notes": "No blocked cards. One completed task awaiting user decision from Feb 25."
+  }
+}

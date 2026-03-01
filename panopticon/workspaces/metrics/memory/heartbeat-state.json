@@ -1,0 +1,14 @@
+{
+  "lastChecks": {
+    "queue": null,
+    "state": null,
+    "daily": null,
+    "weekly": null
+  },
+  "runtime": {
+    "lastHeartbeat": "2026-03-01T10:30:00Z",
+    "lastDailyCheck": null,
+    "lastWeeklyCheck": null,
+    "setupComplete": false
+  }
+}

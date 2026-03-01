@@ -26,6 +26,25 @@ You wake up fresh each session. These files are your continuity:
 
 Capture what matters. Decisions, context, things to remember. Skip the secrets unless asked to keep them.
 
+### Memory Layers (Structured, Not a Junk Drawer)
+
+Use this fixed structure:
+
+- `MEMORY.md` — long-term index only (key facts + links to detailed files)
+- `memory/projects.md` — project status and open threads
+- `memory/infra.md` — environment/tooling/integration notes
+- `memory/lessons.md` — mistakes, fixes, and reusable heuristics
+- `memory/YYYY-MM-DD.md` — daily log (raw timeline)
+
+Write short, link often, avoid duplication.
+
+### memorySearch Usage
+
+- Search first, then write.
+- Prefer semantic recall via `memorySearch` when available.
+- If semantic search is unavailable in current runtime, do keyword scan over `memory/` and keep file links in output.
+- Every important claim should map to at least one memory/artifact/source path.
+
 ### 🧠 MEMORY.md - Your Long-Term Memory
 
 - **ONLY load in main session** (direct chats with your human)
@@ -117,6 +136,26 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
 
+### Skill Extension Rule (Workspace)
+
+When creating/updating a skill, keep `SKILL.md` explicit on:
+
+- Trigger conditions (when this skill should run)
+- Execution steps (deterministic, auditable)
+- Output schema (where to write artifacts/sources/state)
+
+If a skill can cause external side effects, it must route to Review first.
+
+## Model Tier Routing (Policy-Only)
+
+Use this document-level routing to control cost/quality:
+
+- `small`: classification, extraction, formatting, short rewrites
+- `medium`: analysis, planning, cross-source synthesis
+- `large`: long-form generation, complex reasoning, high-stakes review drafts
+
+Default to the smallest tier that can safely complete the task. Escalate only when blocked by context depth or quality requirements.
+
 **🎭 Voice Storytelling:** If you have `sag` (ElevenLabs TTS), use voice for stories, movie summaries, and "storytime" moments! Way more engaging than walls of text. Surprise people with funny voices.
 
 **📝 Platform Formatting:**
@@ -125,87 +164,20 @@ Skills provide your tools. When you need one, check its `SKILL.md`. Keep local n
 - **Discord links:** Wrap multiple links in `<>` to suppress embeds: `<https://example.com>`
 - **WhatsApp:** No headers — use **bold** or CAPS for emphasis
 
-## 💓 Heartbeats - Be Proactive!
+## 💓 Heartbeats - I/O-Only
 
-When you receive a heartbeat poll (message matches the configured heartbeat prompt), don't just reply `HEARTBEAT_OK` every time. Use heartbeats productively!
+When a heartbeat poll arrives, do only lightweight checks defined in `HEARTBEAT.md`.
 
-Default heartbeat prompt:
-`Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.`
+Hard rule:
 
-You are free to edit `HEARTBEAT.md` with a short checklist or reminders. Keep it small to limit token burn.
+- No planning deep dives.
+- No heavy generation.
+- No speculative side tasks.
+- No external side effects.
 
-### Heartbeat vs Cron: When to Use Each
+If no actionable signal is found, return exactly: `HEARTBEAT_OK`.
 
-**Use heartbeat when:**
-
-- Multiple checks can batch together (inbox + calendar + notifications in one turn)
-- You need conversational context from recent messages
-- Timing can drift slightly (every ~30 min is fine, not exact)
-- You want to reduce API calls by combining periodic checks
-
-**Use cron when:**
-
-- Exact timing matters ("9:00 AM sharp every Monday")
-- Task needs isolation from main session history
-- You want a different model or thinking level for the task
-- One-shot reminders ("remind me in 20 minutes")
-- Output should deliver directly to a channel without main session involvement
-
-**Tip:** Batch similar periodic checks into `HEARTBEAT.md` instead of creating multiple cron jobs. Use cron for precise schedules and standalone tasks.
-
-**Things to check (rotate through these, 2-4 times per day):**
-
-- **Emails** - Any urgent unread messages?
-- **Calendar** - Upcoming events in next 24-48h?
-- **Mentions** - Twitter/social notifications?
-- **Weather** - Relevant if your human might go out?
-
-**Track your checks** in `memory/heartbeat-state.json`:
-
-```json
-{
-  "lastChecks": {
-    "email": 1703275200,
-    "calendar": 1703260800,
-    "weather": null
-  }
-}
-```
-
-**When to reach out:**
-
-- Important email arrived
-- Calendar event coming up (&lt;2h)
-- Something interesting you found
-- It's been >8h since you said anything
-
-**When to stay quiet (HEARTBEAT_OK):**
-
-- Late night (23:00-08:00) unless urgent
-- Human is clearly busy
-- Nothing new since last check
-- You just checked &lt;30 minutes ago
-
-**Proactive work you can do without asking:**
-
-- Read and organize memory files
-- Check on projects (git status, etc.)
-- Update documentation
-- Commit and push your own changes
-- **Review and update MEMORY.md** (see below)
-
-### 🔄 Memory Maintenance (During Heartbeats)
-
-Periodically (every few days), use a heartbeat to:
-
-1. Read through recent `memory/YYYY-MM-DD.md` files
-2. Identify significant events, lessons, or insights worth keeping long-term
-3. Update `MEMORY.md` with distilled learnings
-4. Remove outdated info from MEMORY.md that's no longer relevant
-
-Think of it like a human reviewing their journal and updating their mental model. Daily files are raw notes; MEMORY.md is curated wisdom.
-
-The goal: Be helpful without being annoying. Check in a few times a day, do useful background work, but respect quiet time.
+Heartbeat is for liveness + queue checks. Real work starts only after explicit task claim/assignment.
 
 ## Make It Yours
 

@@ -1,0 +1,13 @@
+{
+  "lastChecks": {
+    "queue": null,
+    "state": null,
+    "daily": null,
+    "weekly": null
+  },
+  "runtime": {
+    "last_heartbeat_utc": "2026-03-01T11:01:00Z",
+    "status": "ok",
+    "notes": "heartbeat check complete; state/ empty (no pending reviews); daily log exists but no sleep/training/recovery logs yet"
+  }
+}

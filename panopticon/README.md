@@ -10,6 +10,9 @@
 - 生成工具： [panopticon/tools/generate_panopticon.py](panopticon/tools/generate_panopticon.py)
 - 校验工具： [panopticon/tools/validate_panopticon.py](panopticon/tools/validate_panopticon.py)
 - Skills 模板校验： [panopticon/tools/validate_skills_template.py](panopticon/tools/validate_skills_template.py)
+- Workspace 文档基线模板： [panopticon/templates/workspace-doc-baseline.md](panopticon/templates/workspace-doc-baseline.md)
+- Workspace 可复制骨架包： [panopticon/templates/workspace-skeleton/README.md](panopticon/templates/workspace-skeleton/README.md)
+- Workspace 一键脚手架： [panopticon/tools/scaffold_workspace_docs.py](panopticon/tools/scaffold_workspace_docs.py)
 
 另外新增：
 
