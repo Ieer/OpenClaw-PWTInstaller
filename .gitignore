@@ -79,6 +79,8 @@ panopticon/mission-control/postgres-data/
 panopticon/agent-homes/
 panopticon/workspaces/*/.git/
 panopticon/workspaces/*/.openclaw/
+panopticon/workspaces/*/memory/heartbeat-state.json
+panopticon/workspaces/*/memory/20??-??-??.md
 
 # Panopticon local env overrides (contain secrets; do not commit)
 panopticon/env/*.env
