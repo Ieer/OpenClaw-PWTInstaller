@@ -772,6 +772,144 @@ body {
   background: var(--paper);
 }
 
+.voice-overlay {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 54;
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.voice-overlay.open {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.voice-overlay.disabled {
+  display: none;
+}
+
+.voice-overlay-card {
+  width: min(420px, 88vw);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 14px 32px var(--shadow);
+  padding: 12px;
+}
+
+.voice-overlay-pulse {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+}
+
+.voice-overlay-pulse .status-dot {
+  width: 10px;
+  height: 10px;
+  animation: voice-breathing 1.6s ease-in-out infinite;
+}
+
+.voice-overlay-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.voice-overlay-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.voice-overlay-subtitle {
+  font-size: 11px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.voice-overlay-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.voice-overlay-actions .ghost-button {
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+.voice-overlay-card.state-listening .voice-overlay-title,
+.voice-overlay-card.state-listening .status-dot {
+  color: var(--teal);
+  background: var(--teal);
+}
+
+.voice-overlay-card.state-listening {
+  border-color: color-mix(in srgb, var(--teal) 32%, var(--border));
+}
+
+.voice-overlay-card.state-thinking .voice-overlay-title,
+.voice-overlay-card.state-thinking .status-dot {
+  color: var(--amber);
+  background: var(--amber);
+}
+
+.voice-overlay-card.state-thinking {
+  border-color: color-mix(in srgb, var(--amber) 32%, var(--border));
+}
+
+.voice-overlay-card.state-speaking .voice-overlay-title,
+.voice-overlay-card.state-speaking .status-dot {
+  color: var(--rust);
+  background: var(--rust);
+}
+
+.voice-overlay-card.state-speaking {
+  border-color: color-mix(in srgb, var(--rust) 32%, var(--border));
+}
+
+.voice-overlay-card.state-error .voice-overlay-title,
+.voice-overlay-card.state-error .status-dot {
+  color: var(--rust);
+  background: var(--rust);
+}
+
+.voice-overlay-card.state-error {
+  border-color: color-mix(in srgb, var(--rust) 42%, var(--border));
+}
+
+@keyframes voice-breathing {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 178, 115, 0.22);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(59, 178, 115, 0.06);
+    transform: scale(1.06);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-overlay,
+  .voice-overlay-pulse .status-dot {
+    transition: none;
+    animation: none;
+  }
+}
+
 @media (max-width: 1200px) {
   .main {
     grid-template-columns: 1fr;
@@ -814,5 +952,15 @@ body {
 
   .chat-iframe {
     min-height: 58vh;
+  }
+
+  .voice-overlay {
+    right: 10px;
+    left: 10px;
+    bottom: 10px;
+  }
+
+  .voice-overlay-card {
+    width: 100%;
   }
 }

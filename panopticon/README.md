@@ -205,10 +205,26 @@ $dirs | ForEach-Object {
 - [panopticon/env/writing.env.example](panopticon/env/writing.env.example)
 - [panopticon/env/personal.env.example](panopticon/env/personal.env.example)
 
+可选：如果要启用“语音引擎内置桥接（ROS topic -> Mission Control events）”，再编辑：
+
+- [panopticon/env/mission-control-voice-bridge.env.example](panopticon/env/mission-control-voice-bridge.env.example)
+
 1. 启动：
 
 ```bash
 docker compose -f panopticon/docker-compose.panopticon.yml up -d
+```
+
+可选：启用语音桥接 profile（默认不启动）：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml --profile voice up -d mission-control-voice-bridge
+```
+
+可选：语音桥接一键 E2E 验证（发布 ROS 测试 topic 并检查 `voice.*` 事件入库）：
+
+```bash
+bash panopticon/tools/test_voice_bridge_e2e.sh
 ```
 
 1. 查看日志：
@@ -225,6 +241,12 @@ docker compose -f panopticon/docker-compose.panopticon.yml logs -f --tail=200
 bash panopticon/tools/setup_mission_control_autostart.sh
 ```
 
+启用并包含语音桥接 profile（开机自动拉起 `mission-control-voice-bridge`）：
+
+```bash
+bash panopticon/tools/setup_mission_control_autostart.sh --with-voice
+```
+
 停用（移除 systemd 服务）：
 
 ```bash
@@ -237,6 +259,18 @@ bash panopticon/tools/setup_mission_control_autostart.sh --disable
 
 ```bash
 bash panopticon/tools/check_panopticon_services.sh
+```
+
+说明：该巡检已集成 voice-bridge E2E（统一入口）。
+
+- 默认 `CHECK_VOICE_E2E=auto`：仅当 `mission-control-voice-bridge` 运行时才执行 E2E。
+- `CHECK_VOICE_E2E=1`：强制执行 voice E2E（容器未运行将直接失败）。
+- `CHECK_VOICE_E2E=0`：跳过 voice E2E，仅检查服务运行状态。
+
+示例：
+
+```bash
+CHECK_VOICE_E2E=1 bash panopticon/tools/check_panopticon_services.sh
 ```
 
 一键巡检 8 个 Agent 端点（Gateway 按 HTTP、Bridge 按 TCP）：

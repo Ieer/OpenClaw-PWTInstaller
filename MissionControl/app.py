@@ -32,6 +32,14 @@ MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP = (os.getenv("MISSION_CONTROL_CHAT_AGENT_TO
 MISSION_CONTROL_CHAT_EVENT_BRIDGE_ENABLED = (
     (os.getenv("MISSION_CONTROL_CHAT_EVENT_BRIDGE_ENABLED") or "1").strip().lower() in {"1", "true", "yes", "on"}
 )
+MISSION_CONTROL_VOICE_OVERLAY_ENABLED = (
+    (os.getenv("MISSION_CONTROL_VOICE_OVERLAY_ENABLED") or "1").strip().lower() in {"1", "true", "yes", "on"}
+)
+
+try:
+    MISSION_CONTROL_WS_TICK_MS = max(80, int((os.getenv("MISSION_CONTROL_WS_TICK_MS") or "150").strip()))
+except ValueError:
+    MISSION_CONTROL_WS_TICK_MS = 150
 
 
 def _normalize_text(text: str | None) -> str:
@@ -266,6 +274,11 @@ WS_STATE = {
     "connected": False,
     "revision": 0,
     "last_error": "",
+    "last_event_type": "",
+    "last_event_agent": "",
+    "last_event_id": "",
+    "last_event_created_at": "",
+    "last_event_payload": {},
 }
 WS_THREAD_STARTED = False
 
@@ -297,6 +310,11 @@ def _get_ws_state() -> dict:
             "connected": bool(WS_STATE.get("connected")),
             "revision": int(WS_STATE.get("revision") or 0),
             "last_error": str(WS_STATE.get("last_error") or ""),
+            "last_event_type": str(WS_STATE.get("last_event_type") or ""),
+            "last_event_agent": str(WS_STATE.get("last_event_agent") or ""),
+            "last_event_id": str(WS_STATE.get("last_event_id") or ""),
+            "last_event_created_at": str(WS_STATE.get("last_event_created_at") or ""),
+            "last_event_payload": WS_STATE.get("last_event_payload") if isinstance(WS_STATE.get("last_event_payload"), dict) else {},
         }
 
 
@@ -304,6 +322,38 @@ def _ws_headers() -> list[str]:
     if not MISSION_CONTROL_AUTH_TOKEN:
         return []
     return [f"Authorization: Bearer {MISSION_CONTROL_AUTH_TOKEN}"]
+
+
+def _on_ws_message(raw_msg: str) -> None:
+    event_type = ""
+    event_agent = ""
+    event_id = ""
+    event_created_at = ""
+    event_payload: dict = {}
+
+    try:
+        import json
+
+        parsed = json.loads(raw_msg)
+        if isinstance(parsed, dict):
+            event_type = str(parsed.get("type") or "")
+            event_agent = str(parsed.get("agent") or "")
+            event_id = str(parsed.get("id") or "")
+            event_created_at = str(parsed.get("created_at") or "")
+            payload = parsed.get("payload")
+            if isinstance(payload, dict):
+                event_payload = payload
+    except Exception:
+        pass
+
+    _update_ws_state(
+        last_event_type=event_type,
+        last_event_agent=event_agent,
+        last_event_id=event_id,
+        last_event_created_at=event_created_at,
+        last_event_payload=event_payload,
+    )
+    _bump_ws_revision()
 
 
 def _ws_subscriber_loop():
@@ -316,7 +366,7 @@ def _ws_subscriber_loop():
                 ws_url,
                 header=headers,
                 on_open=lambda _ws: _update_ws_state(connected=True, last_error=""),
-                on_message=lambda _ws, _msg: _bump_ws_revision(),
+                on_message=lambda _ws, _msg: _on_ws_message(_msg),
                 on_error=lambda _ws, err: _update_ws_state(connected=False, last_error=str(err)),
                 on_close=lambda _ws, _code, _msg: _update_ws_state(connected=False),
             )
@@ -367,6 +417,67 @@ def _human_age(dt: datetime | None) -> str:
         return f"{hours} hr ago"
     days = hours // 24
     return f"{days} day ago" if days == 1 else f"{days} days ago"
+
+
+def _state_label_for_overlay(state: str) -> str:
+    mapping = {
+        "listening": "Listening",
+        "thinking": "Thinking",
+        "speaking": "Speaking",
+        "error": "Attention",
+        "idle": "Ready",
+    }
+    return mapping.get((state or "idle").lower(), "Ready")
+
+
+def _overlay_duration_seconds(state: str) -> float:
+    key = (state or "idle").lower()
+    if key == "listening":
+        return 2.0
+    if key == "thinking":
+        return 3.0
+    if key == "speaking":
+        return 4.0
+    if key == "error":
+        return 5.0
+    return 2.0
+
+
+def _voice_overlay_default() -> dict:
+    now = time.time()
+    return {
+        "enabled": bool(MISSION_CONTROL_VOICE_OVERLAY_ENABLED),
+        "visible": False,
+        "state": "idle",
+        "title": "",
+        "subtitle": "",
+        "agent": "",
+        "last_event_id": "",
+        "last_event_type": "",
+        "updated_at_epoch": now,
+        "expires_at_epoch": now,
+        "cooldown_until_epoch": 0.0,
+        "manual_dismiss_until_epoch": 0.0,
+    }
+
+
+def _voice_state_from_event(event_type: str, payload: dict | None) -> str | None:
+    event_type = str(event_type or "").strip().lower()
+    payload = payload if isinstance(payload, dict) else {}
+
+    if event_type == "chat.proxy.error" or event_type == "voice.error":
+        return "error"
+    if event_type == "chat.message.received" or event_type == "voice.tts.start":
+        return "speaking"
+    if event_type == "chat.message.sent" or event_type == "voice.asr.final":
+        return "thinking"
+    if event_type == "voice.state":
+        state = str(payload.get("state") or "").strip().lower()
+        if state in {"listening", "thinking", "speaking", "error", "idle"}:
+            return state
+    if event_type == "voice.llm.first_token":
+        return "speaking"
+    return None
 
 
 def _api_headers() -> dict[str, str]:
@@ -523,7 +634,12 @@ def _convert_feed(feed: list[dict]) -> list[dict]:
         short_task = task_id[:8] if task_id else ""
         payload = evt.get("payload")
         if not isinstance(payload, dict):
-            payload = {}
+            payload = {
+                "method": evt.get("method"),
+                "path": evt.get("path"),
+                "status_code": evt.get("status_code"),
+                "error_type": evt.get("error_type"),
+            }
 
         category = "system"
         if evt_type.startswith("task."):
@@ -710,6 +826,64 @@ def feed_item(item):
 app = Dash(__name__)
 app.title = APP_TITLE
 
+app.clientside_callback(
+    """
+    function(voiceUi, current) {
+        const state = voiceUi || {};
+        const prev = current || {
+            samples: [],
+            last_event_id: "",
+            last_visible_latency_ms: 0,
+            p50_ms: 0,
+            p95_ms: 0,
+            samples_count: 0
+        };
+
+        if (!state.enabled || !state.visible) {
+            return prev;
+        }
+
+        const eventId = String(state.last_event_id || "");
+        if (!eventId || eventId === String(prev.last_event_id || "")) {
+            return prev;
+        }
+
+        const sentMs = Number(state.trigger_client_sent_ms || 0);
+        if (!Number.isFinite(sentMs) || sentMs <= 0) {
+            return {
+                ...prev,
+                last_event_id: eventId
+            };
+        }
+
+        const nowMs = Date.now();
+        const latency = Math.max(0, nowMs - sentMs);
+
+        const samples = (Array.isArray(prev.samples) ? prev.samples.slice(-199) : []);
+        samples.push(latency);
+        const sorted = samples.slice().sort((a, b) => a - b);
+
+        const pick = function(arr, p) {
+            if (!arr.length) return 0;
+            const idx = Math.max(0, Math.min(arr.length - 1, Math.floor((arr.length - 1) * p)));
+            return Number(arr[idx] || 0);
+        };
+
+        return {
+            samples: samples,
+            last_event_id: eventId,
+            last_visible_latency_ms: Number(latency.toFixed(1)),
+            p50_ms: Number(pick(sorted, 0.50).toFixed(1)),
+            p95_ms: Number(pick(sorted, 0.95).toFixed(1)),
+            samples_count: samples.length
+        };
+    }
+    """,
+    Output("voice-metrics", "data"),
+    Input("voice-ui", "data"),
+    State("voice-metrics", "data"),
+)
+
 
 def _rewrite_location_for_proxy(location_value: str, agent_slug: str, upstream_base: str) -> str:
     if not location_value:
@@ -831,19 +1005,13 @@ app.layout = html.Div(
     children=[
         dcc.Location(id="url", refresh=False),
         dcc.Interval(id="refresh", interval=5_000, n_intervals=0),
-        dcc.Interval(id="ws-tick", interval=1_000, n_intervals=0),
+        dcc.Interval(id="ws-tick", interval=MISSION_CONTROL_WS_TICK_MS, n_intervals=0),
         dcc.Interval(id="clock-tick", interval=1_000, n_intervals=0),
         dcc.Store(
             id="ui-state",
             data={
                 "board_filter": "all",
                 "feed_filter": "all",
-            },
-        ),
-        dcc.Store(
-            id="ws-meta",
-            data={
-                "revision": 0,
             },
         ),
         dcc.Store(
@@ -865,6 +1033,18 @@ app.layout = html.Div(
                 "panel_mode": "split",
                 "iframe_status": "idle",
                 "error_message": "",
+            },
+        ),
+        dcc.Store(id="voice-ui", data=_voice_overlay_default()),
+        dcc.Store(
+            id="voice-metrics",
+            data={
+                "samples": [],
+                "last_event_id": "",
+                "last_visible_latency_ms": 0,
+                "p50_ms": 0,
+                "p95_ms": 0,
+                "samples_count": 0,
             },
         ),
         html.Div(
@@ -909,6 +1089,7 @@ app.layout = html.Div(
                         html.Button("Chat", id="open-chat", className="ghost-button"),
                         html.Button("Skills", id="open-skills", className="ghost-button"),
                         html.Button("Clear Filters", id="clear-filters", className="ghost-button"),
+                        html.Div("Overlay n/a", id="voice-latency-pill", className="status-pill status-unknown"),
                         html.Div("-", id="api-status", className="status-pill status-unknown"),
                         html.Div("--:--:--", id="clock", className="clock"),
                     ],
@@ -1152,6 +1333,33 @@ app.layout = html.Div(
                 ),
             ],
         ),
+        html.Div(
+            id="voice-overlay",
+            className="voice-overlay",
+            children=[
+                html.Div(
+                    id="voice-overlay-card",
+                    className="voice-overlay-card state-idle",
+                    children=[
+                        html.Div(className="voice-overlay-pulse", children=[html.Span(className="status-dot")]),
+                        html.Div(
+                            className="voice-overlay-content",
+                            children=[
+                                html.Div("Ready", id="voice-overlay-title", className="voice-overlay-title"),
+                                html.Div("Awaiting wakeup event", id="voice-overlay-subtitle", className="voice-overlay-subtitle"),
+                            ],
+                        ),
+                        html.Div(
+                            className="voice-overlay-actions",
+                            children=[
+                                html.Button("Open", id="voice-overlay-open-chat", className="ghost-button"),
+                                html.Button("Close", id="voice-overlay-close", className="ghost-button"),
+                            ],
+                        ),
+                    ],
+                )
+            ],
+        ),
     ],
 )
 
@@ -1235,17 +1443,214 @@ def sync_url_with_filters(state, current_search):
 
 
 @app.callback(
-    Output("ws-meta", "data"),
+    Output("voice-ui", "data"),
     Input("ws-tick", "n_intervals"),
-    State("ws-meta", "data"),
+    State("voice-ui", "data"),
+    prevent_initial_call=False,
 )
-def poll_ws_meta(_, current):
-    current = current or {"revision": 0}
-    ws_state = _get_ws_state()
-    revision = int(ws_state.get("revision") or 0)
-    if int(current.get("revision") or 0) == revision:
+def update_voice_overlay_from_event(_, voice_ui):
+    state = _voice_overlay_default()
+    if isinstance(voice_ui, dict):
+        state.update(voice_ui)
+
+    if not state.get("enabled"):
+        if state != (voice_ui or {}):
+            return state
         return no_update
-    return {"revision": revision}
+
+    ws_state = _get_ws_state()
+    event_type = str(ws_state.get("last_event_type") or "")
+    event_id = str(ws_state.get("last_event_id") or "")
+    event_agent = str(ws_state.get("last_event_agent") or "")
+    payload = ws_state.get("last_event_payload") if isinstance(ws_state.get("last_event_payload"), dict) else {}
+
+    if not event_type:
+        return no_update
+    if event_id and event_id == str(state.get("last_event_id") or ""):
+        return no_update
+
+    next_voice_state = _voice_state_from_event(event_type, payload)
+    if not next_voice_state:
+        if event_id:
+            state["last_event_id"] = event_id
+            state["last_event_type"] = event_type
+            return state
+        return no_update
+
+    now = time.time()
+    if now < float(state.get("manual_dismiss_until_epoch") or 0.0) and next_voice_state != "error":
+        state["last_event_id"] = event_id
+        state["last_event_type"] = event_type
+        return state
+
+    current_state = str(state.get("state") or "idle")
+    same_state = current_state == next_voice_state and str(state.get("agent") or "") == event_agent
+    if same_state and now < float(state.get("cooldown_until_epoch") or 0.0):
+        state["last_event_id"] = event_id
+        state["last_event_type"] = event_type
+        return state
+
+    subtitle = ""
+    if next_voice_state == "listening":
+        subtitle = "Wake word captured"
+    elif next_voice_state == "thinking":
+        subtitle = "Understanding request"
+    elif next_voice_state == "speaking":
+        subtitle = "Delivering response"
+    elif next_voice_state == "error":
+        subtitle = "Please check service health"
+
+    if event_agent:
+        subtitle = f"{event_agent}: {subtitle}" if subtitle else event_agent
+
+    state["visible"] = True
+    state["state"] = next_voice_state
+    state["title"] = _state_label_for_overlay(next_voice_state)
+    state["subtitle"] = subtitle
+    state["agent"] = event_agent
+    state["last_event_id"] = event_id
+    state["last_event_type"] = event_type
+    trigger_sent_ms = payload.get("client_sent_ms")
+    try:
+        state["trigger_client_sent_ms"] = float(trigger_sent_ms) if trigger_sent_ms is not None else 0.0
+    except (TypeError, ValueError):
+        state["trigger_client_sent_ms"] = 0.0
+    state["updated_at_epoch"] = now
+    state["expires_at_epoch"] = now + _overlay_duration_seconds(next_voice_state)
+    state["cooldown_until_epoch"] = now + (0.8 if next_voice_state != "error" else 0.0)
+    return state
+
+
+@app.callback(
+    Output("voice-ui", "data", allow_duplicate=True),
+    Input("clock-tick", "n_intervals"),
+    State("voice-ui", "data"),
+    prevent_initial_call=True,
+)
+def auto_fade_voice_overlay(_, voice_ui):
+    state = _voice_overlay_default()
+    if isinstance(voice_ui, dict):
+        state.update(voice_ui)
+
+    if not state.get("enabled"):
+        return state
+    if not state.get("visible"):
+        return no_update
+
+    now = time.time()
+    if now < float(state.get("expires_at_epoch") or 0.0):
+        return no_update
+
+    state["visible"] = False
+    state["state"] = "idle"
+    state["title"] = ""
+    state["subtitle"] = ""
+    state["updated_at_epoch"] = now
+    return state
+
+
+@app.callback(
+    Output("voice-ui", "data", allow_duplicate=True),
+    Input("voice-overlay-close", "n_clicks"),
+    State("voice-ui", "data"),
+    prevent_initial_call=True,
+)
+def close_voice_overlay(_, voice_ui):
+    state = _voice_overlay_default()
+    if isinstance(voice_ui, dict):
+        state.update(voice_ui)
+
+    now = time.time()
+    state["visible"] = False
+    state["state"] = "idle"
+    state["title"] = ""
+    state["subtitle"] = ""
+    state["manual_dismiss_until_epoch"] = now + 2.0
+    state["updated_at_epoch"] = now
+    return state
+
+
+@app.callback(
+    Output("chat-ui", "data", allow_duplicate=True),
+    Input("voice-overlay-open-chat", "n_clicks"),
+    State("chat-ui", "data"),
+    State("voice-ui", "data"),
+    prevent_initial_call=True,
+)
+def open_chat_from_voice_overlay(_, chat_ui, voice_ui):
+    data = chat_ui or {
+        "open": False,
+        "selected_agent": "",
+        "last_agent": "",
+        "window_mode": "floating",
+        "panel_mode": "split",
+        "iframe_status": "idle",
+        "error_message": "",
+    }
+    voice_state = voice_ui if isinstance(voice_ui, dict) else {}
+
+    available_slugs = [str(item.get("slug")) for item in CHAT_AGENT_CONFIGS if item.get("slug")]
+    preferred_agent = str(voice_state.get("agent") or "").strip()
+    if preferred_agent not in available_slugs:
+        preferred_agent = data.get("selected_agent") or data.get("last_agent") or (available_slugs[0] if available_slugs else "")
+
+    data["open"] = True
+    data["selected_agent"] = str(preferred_agent or "")
+    data["last_agent"] = str(preferred_agent or "")
+    data["iframe_status"] = "loading"
+    data["error_message"] = ""
+    return data
+
+
+@app.callback(
+    Output("voice-overlay", "className"),
+    Output("voice-overlay-card", "className"),
+    Output("voice-overlay-title", "children"),
+    Output("voice-overlay-subtitle", "children"),
+    Input("voice-ui", "data"),
+    prevent_initial_call=False,
+)
+def render_voice_overlay(voice_ui):
+    state = _voice_overlay_default()
+    if isinstance(voice_ui, dict):
+        state.update(voice_ui)
+
+    if not state.get("enabled"):
+        return "voice-overlay disabled", "voice-overlay-card state-idle", "", ""
+
+    visible = bool(state.get("visible"))
+    voice_state = str(state.get("state") or "idle").lower()
+    title = str(state.get("title") or _state_label_for_overlay(voice_state))
+    subtitle = str(state.get("subtitle") or "")
+
+    overlay_class = "voice-overlay open" if visible else "voice-overlay"
+    card_class = f"voice-overlay-card state-{voice_state}"
+    return overlay_class, card_class, title, subtitle
+
+
+@app.callback(
+    Output("voice-latency-pill", "children"),
+    Output("voice-latency-pill", "className"),
+    Input("voice-metrics", "data"),
+    prevent_initial_call=False,
+)
+def render_voice_latency_pill(metrics):
+    data = metrics if isinstance(metrics, dict) else {}
+    count = int(data.get("samples_count") or 0)
+    if count <= 0:
+        return "Overlay n/a", "status-pill status-unknown"
+
+    p50 = float(data.get("p50_ms") or 0.0)
+    p95 = float(data.get("p95_ms") or 0.0)
+    text = f"Overlay p50 {p50:.0f}ms · p95 {p95:.0f}ms"
+
+    if p95 <= 800:
+        tone = "status-online"
+    elif p95 <= 1500:
+        tone = "status-unknown"
+    else:
+        tone = "status-offline"
+    return text, f"status-pill {tone}"
 
 
 @app.callback(
@@ -1721,20 +2126,18 @@ def sync_filter_chip_classes(state):
     Output("api-status", "children"),
     Output("api-status", "className"),
     Input("refresh", "n_intervals"),
-    Input("ws-meta", "data"),
     Input("ui-state", "data"),
     prevent_initial_call=False,
 )
-def refresh_data(n_intervals, ws_meta, state):
+def refresh_data(n_intervals, state):
     _ = n_intervals
-    _ = ws_meta
     state = state or {}
     board_filter = (state.get("board_filter") or "all").lower()
     feed_filter = (state.get("feed_filter") or "all").lower()
 
     try:
         board_json = api_get_json("/v1/boards/default")
-        feed_json = api_get_json("/v1/feed?limit=50")
+        feed_json = api_get_json("/v1/feed-lite?limit=80")
 
         columns = _convert_board(board_json)
         feed = _convert_feed(feed_json)

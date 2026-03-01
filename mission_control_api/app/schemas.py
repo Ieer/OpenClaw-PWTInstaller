@@ -56,6 +56,20 @@ class EventOut(BaseModel):
     created_at: datetime
 
 
+class EventLiteOut(BaseModel):
+    id: UUID
+    type: str
+    agent: str | None
+    task_id: UUID | None
+    created_at: datetime
+    method: str | None = None
+    path: str | None = None
+    status_code: int | None = None
+    error_type: str | None = None
+    test_id: str | None = None
+    round: int | None = None
+
+
 class BoardColumn(BaseModel):
     title: str
     count: int

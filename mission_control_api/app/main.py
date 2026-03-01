@@ -20,6 +20,7 @@ from .schemas import (
     CommentCreate,
     CommentOut,
     EventIn,
+    EventLiteOut,
     EventOut,
     Health,
     SkillItem,
@@ -633,6 +634,32 @@ def create_app() -> FastAPI:
         rows = (await session.execute(stmt)).all()
         return [EventOut(**r._asdict()) for r in rows]
 
+    @app.get("/v1/feed-lite", response_model=list[EventLiteOut])
+    async def get_feed_lite(
+        limit: int = 50,
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> list[EventLiteOut]:
+        stmt = (
+            sa.select(
+                events.c.id,
+                events.c.type,
+                events.c.agent,
+                events.c.task_id,
+                events.c.created_at,
+                sa.func.jsonb_extract_path_text(events.c.payload, "method").label("method"),
+                sa.func.jsonb_extract_path_text(events.c.payload, "path").label("path"),
+                sa.cast(sa.func.nullif(sa.func.jsonb_extract_path_text(events.c.payload, "status_code"), ""), sa.Integer).label("status_code"),
+                sa.func.jsonb_extract_path_text(events.c.payload, "error_type").label("error_type"),
+                sa.func.jsonb_extract_path_text(events.c.payload, "test_id").label("test_id"),
+                sa.cast(sa.func.nullif(sa.func.jsonb_extract_path_text(events.c.payload, "round"), ""), sa.Integer).label("round"),
+            )
+            .order_by(events.c.created_at.desc())
+            .limit(min(limit, 500))
+        )
+        rows = (await session.execute(stmt)).all()
+        return [EventLiteOut(**r._asdict()) for r in rows]
+
     @app.websocket("/ws/events")
     async def ws_events(websocket: WebSocket):
         await websocket.accept()
@@ -648,7 +675,17 @@ def create_app() -> FastAPI:
                 await websocket.close(code=4403)
                 return
 
-        last_id = "0-0"
+        # Start from the latest stream ID to avoid replaying long history on each
+        # new websocket connection, which can significantly increase perceived
+        # real-time latency on the dashboard.
+        last_id = "$"
+        try:
+            latest = await redis.xrevrange(settings.redis_stream_key, count=1)
+            if latest:
+                last_id = str(latest[0][0])
+        except Exception:
+            # Fall back to '$' (new entries only).
+            last_id = "$"
         try:
             while True:
                 result = await redis.xread({settings.redis_stream_key: last_id}, block=25_000, count=50)
@@ -669,6 +706,22 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def _startup():
         async with engine.begin() as conn:
+            await conn.execute(
+                sa.text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_events_created_at_desc
+                    ON events(created_at DESC);
+                    """
+                )
+            )
+            await conn.execute(
+                sa.text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_events_type_created_at_desc
+                    ON events(type, created_at DESC);
+                    """
+                )
+            )
             await conn.execute(
                 sa.text(
                     """

@@ -181,6 +181,25 @@ def render_compose(manifest: dict) -> str:
             restart: unless-stopped
             networks:
               - panopticon
+
+          mission-control-voice-bridge:
+            container_name: mission-control-voice-bridge
+            image: ros:humble-ros-base
+            profiles: ["voice"]
+            env_file:
+              - ./env/mission-control.env.example
+              - ./env/mission-control-voice-bridge.env.example
+            volumes:
+              - type: bind
+                source: ./tools/voice_ros_event_bridge.py
+                target: /app/voice_ros_event_bridge.py
+                read_only: true
+            command: ["python3", "/app/voice_ros_event_bridge.py"]
+            depends_on:
+              - mission-control-api
+            restart: unless-stopped
+            networks:
+              - panopticon
         """
     ).format(api_port=mission_control["api_port"], ui_port=mission_control["ui_port"], agent_slugs=agent_slugs)
 
