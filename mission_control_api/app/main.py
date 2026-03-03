@@ -65,8 +65,6 @@ def _build_chat_inject_script(agent: str, token: str | None) -> str:
     return (
         f'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="{base_path}";'
         "(function(){"
-        "try{localStorage.removeItem(\"openclaw.device.auth.v1\");"
-        "localStorage.removeItem(\"openclaw-device-identity-v1\");}catch(e){}"
         "try{"
         "const k=\"openclaw.control.settings.v1\";"
         "const raw=localStorage.getItem(k);"
@@ -103,7 +101,7 @@ def _normalize_control_ui_origin(origin: str | None) -> str | None:
     return origin
 
 
-def _augment_connect_auth(message: str, token: str | None) -> str:
+def _sanitize_connect_auth(message: str, token: str | None) -> str:
     try:
         req = json.loads(message)
     except Exception:
@@ -117,13 +115,18 @@ def _augment_connect_auth(message: str, token: str | None) -> str:
         return message
 
     params = req["params"]
+
     auth = params.get("auth")
     if not isinstance(auth, dict):
         auth = {}
+
     if token and not auth.get("token"):
         auth["token"] = token
+
     if auth:
         params["auth"] = auth
+    else:
+        params.pop("auth", None)
     req["params"] = params
     return json.dumps(req, ensure_ascii=False)
 
@@ -850,6 +853,8 @@ def create_app() -> FastAPI:
         async with httpx.AsyncClient(timeout=3600.0) as client:
             headers = dict(request.headers.items())
             headers.pop("host", None)
+            headers["x-real-ip"] = "127.0.0.1"
+            headers["x-forwarded-for"] = "127.0.0.1"
             
             token = settings.agent_token_map.get(agent)
             if token:
@@ -873,8 +878,17 @@ def create_app() -> FastAPI:
                 text = content.decode("utf-8", errors="replace")
                 
                 inject_script = _build_chat_inject_script(agent, token)
-                
-                text = text.replace('window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";', inject_script)
+
+                if 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' in text:
+                    text = text.replace('window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";', inject_script)
+                else:
+                    injected = f"<script>{inject_script}</script>"
+                    if "</head>" in text:
+                        text = text.replace("</head>", f"{injected}</head>", 1)
+                    elif "<body>" in text:
+                        text = text.replace("<body>", f"<body>{injected}", 1)
+                    else:
+                        text = f"{injected}{text}"
                 text = re.sub(
                     r'window\.__OPENCLAW_ASSISTANT_AVATAR__=("|\')/avatar/[^"\']*("|\')',
                     'window.__OPENCLAW_ASSISTANT_AVATAR__=""',
@@ -903,8 +917,7 @@ def create_app() -> FastAPI:
                     r.headers[k] = v
             return r
 
-    @app.websocket("/chat/{agent}/{path:path}")
-    async def chat_ws_proxy(agent: str, path: str, websocket: WebSocket):
+    async def _chat_ws_proxy_impl(agent: str, path: str, websocket: WebSocket):
         await websocket.accept()
         
         payload = {
@@ -939,6 +952,8 @@ def create_app() -> FastAPI:
         headers = {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
+        headers["X-Real-IP"] = "127.0.0.1"
+        headers["X-Forwarded-For"] = "127.0.0.1"
         upstream_origin = _normalize_control_ui_origin(websocket.headers.get("origin"))
             
         try:
@@ -951,7 +966,7 @@ def create_app() -> FastAPI:
                     try:
                         while True:
                             msg = await websocket.receive_text()
-                            msg = _augment_connect_auth(msg, token)
+                            msg = _sanitize_connect_auth(msg, token)
                             await upstream_ws.send(msg)
                     except WebSocketDisconnect:
                         pass
@@ -981,6 +996,14 @@ def create_app() -> FastAPI:
                 )
         except Exception as e:
             await websocket.close(code=1011, reason=str(e))
+
+    @app.websocket("/chat/{agent}")
+    async def chat_ws_proxy_root(agent: str, websocket: WebSocket):
+        await _chat_ws_proxy_impl(agent, "", websocket)
+
+    @app.websocket("/chat/{agent}/{path:path}")
+    async def chat_ws_proxy(agent: str, path: str, websocket: WebSocket):
+        await _chat_ws_proxy_impl(agent, path, websocket)
 
     @app.on_event("startup")
     async def _startup():

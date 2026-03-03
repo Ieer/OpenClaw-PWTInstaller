@@ -1324,7 +1324,12 @@ app.layout = html.Div(
                                 html.Div(
                                     className="chat-main",
                                     children=[
-                                        html.Iframe(id="chat-iframe", src="about:blank", className="chat-iframe"),
+                                        html.Iframe(
+                                            id="chat-iframe",
+                                            src="about:blank",
+                                            className="chat-iframe",
+                                            allow="camera; microphone; display-capture; autoplay; clipboard-read; clipboard-write; fullscreen"
+                                        ),
                                     ],
                                 ),
                             ],

@@ -80,7 +80,7 @@ check_port "27217" "OpenClaw Bridge"
 echo
 echo -e "${CYAN}=== HTTP健康检查 ===${NC}"
 check_http "http://127.0.0.1:18910/health" "Mission Control API /health"
-check_http "http://127.0.0.1:18920" "Mission Control UI"
+check_http "http://localhost:18920" "Mission Control UI"
 
 echo
 if [[ "$FAILED" -eq 0 ]]; then
