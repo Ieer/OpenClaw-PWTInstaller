@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #ffffff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  width: 720pt;
+  height: 40pt;
+  background: #181B24;
+  display: flex;
+  align-items: center;
+  padding-left: 20pt;
+  box-sizing: border-box;
+}
+.header h1 {
+  color: #B165FB;
+  font-size: 18pt;
+  margin: 0;
+}
+.content {
+  width: 720pt;
+  height: 365pt;
+  padding: 12pt 20pt;
+  display: flex;
+  gap: 12pt;
+  box-sizing: border-box;
+}
+.left-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8pt;
+}
+.right-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8pt;
+}
+.agent-box {
+  background: #40695B;
+  padding: 10pt;
+  border-radius: 6pt;
+  color: #ffffff;
+  flex: 1;
+  box-sizing: border-box;
+}
+.agent-box h2 {
+  font-size: 16pt;
+  margin: 0 0 8pt 0;
+  
+  padding-bottom: 5pt;
+}
+.agent-box ul {
+  margin: 0;
+  padding-left: 14pt;
+}
+.agent-box li {
+  font-size: 11pt;
+  margin-bottom: 4pt;
+}
+.cycle-box {
+  background: #f8f9fa;
+  padding: 8pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #B165FB;
+  flex: 1;
+  box-sizing: border-box;
+}
+.cycle-box h2 {
+  color: #181B24;
+  font-size: 14pt;
+  margin: 0 0 6pt 0;
+}
+.cycle-box ul {
+  margin: 0;
+  padding-left: 14pt;
+  color: #40695B;
+}
+.cycle-box li {
+  font-size: 10pt;
+  margin-bottom: 3pt;
+}
+.impact-box {
+  background: #e7f3ff;
+  padding: 8pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #40695B;
+  flex: 1;
+  box-sizing: border-box;
+}
+.impact-box h2 {
+  color: #181B24;
+  font-size: 14pt;
+  margin: 0 0 6pt 0;
+}
+.impact-box ul {
+  margin: 0;
+  padding-left: 14pt;
+  color: #181B24;
+}
+.impact-box li {
+  font-size: 10pt;
+  margin-bottom: 4pt;
+}
+.impact-box strong {
+  color: #40695B;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>AutoGPT & BabyAGI - 自主规划 Agent</h1>
+</div>
+<div class="content">
+  <div class="left-col">
+    <div class="agent-box">
+      <h2>AutoGPT (2023.04)</h2>
+      <ul>
+        <li><strong>自主循环：</strong>思考 → 规划 → 行动 → 观察</li>
+        <li><strong>工具集成：</strong>搜索、代码、文件操作</li>
+        <li>从"工具"到"自主实体"</li>
+      </ul>
+    </div>
+    <div class="cycle-box">
+      <h2>自主循环</h2>
+      <ul>
+        <li><strong>1. 思考 (Thought)</strong></li>
+        <li><strong>2. 规划 (Plan)</strong></li>
+        <li><strong>3. 行动 (Action)</strong></li>
+        <li><strong>4. 观察 (Observation)</strong></li>
+        <li><strong>5. 反思 (Reflection)</strong></li>
+      </ul>
+    </div>
+  </div>
+  <div class="right-col">
+    <div class="impact-box">
+      <h2>影响</h2>
+      <ul>
+        <li>Agent 框架兴起（LangChain、CrewAI）</li>
+        <li>从"工具"到"自主实体"</li>
+        <li>范式转变确立</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>

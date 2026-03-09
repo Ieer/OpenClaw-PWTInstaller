@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #ffffff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  width: 720pt;
+  height: 40pt;
+  background: #181B24;
+  display: flex;
+  align-items: center;
+  padding-left: 20pt;
+  box-sizing: border-box;
+}
+.header h1 {
+  color: #B165FB;
+  font-size: 20pt;
+  margin: 0;
+}
+.content {
+  width: 720pt;
+  height: 365pt;
+  padding: 12pt 15pt;
+  display: flex;
+  gap: 8pt;
+  box-sizing: border-box;
+}
+.framework-box {
+  flex: 1;
+  background: #f8f9fa;
+  padding: 8pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #B165FB;
+  box-sizing: border-box;
+}
+.framework-box h2 {
+  color: #181B24;
+  font-size: 14pt;
+  margin: 0 0 4pt 0;
+}
+.framework-box p {
+  color: #40695B;
+  font-size: 10pt;
+  margin: 3px 0;
+}
+.framework-box strong {
+  color: #B165FB;
+}
+.mode-box {
+  background: #40695B;
+  padding: 8pt;
+  border-radius: 6pt;
+  color: #ffffff;
+  flex: 1;
+  box-sizing: border-box;
+}
+.mode-box h2 {
+  font-size: 14pt;
+  margin: 0 0 4pt 0;
+  
+  padding-bottom: 4pt;
+}
+.mode-box ul {
+  margin: 0;
+  padding-left: 14pt;
+}
+.mode-box li {
+  font-size: 10pt;
+  margin-bottom: 3pt;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>多 Agent 协作 - 框架与平台</h1>
+</div>
+<div class="content">
+  <div class="framework-box">
+    <h2>LangChain</h2>
+    <p>Chain 编排，Agent 抽象，工具生态</p>
+  </div>
+  <div class="framework-box">
+    <h2>AutoGen</h2>
+    <p>多 Agent 对话，可编程对话模式</p>
+  </div>
+  <div class="framework-box">
+    <h2>CrewAI</h2>
+    <p>Agent 团队设计，角色分工，任务分配</p>
+  </div>
+  <div class="framework-box">
+    <h2>OpenAI Swarm</h2>
+    <p>轻量级多 Agent，handoff 机制</p>
+  </div>
+  <div class="mode-box">
+    <h2>协作模式</h2>
+    <ul>
+      <li><strong>竞争：</strong>多个 Agent 提出方案，择优</li>
+      <li><strong>合作：</strong>不同专长 Agent 协同</li>
+      <li><strong>监督：</strong>管理者 Agent 协调</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

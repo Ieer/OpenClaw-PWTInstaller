@@ -13,6 +13,11 @@
 - 环境配置：`memory/infra.md`
 - 经验教训：`memory/lessons.md`
 - 每日日志：`memory/YYYY-MM-DD.md`
+- PPTX 技能优化（v2.1）：`memory/2026-03-05.md`
+- PPTX 测试报告（2026-03-05）：`memory/pptx_test_report_2026-03-05.md`
+- PPTX AI Agent History 报告：`memory/ai_agent_history_ppt_report_2026-03-05.md`
+- PPTX 优化完整报告：`artifacts/pptx_optimization_complete_report.md`
+- 缩略图生成报告：`memory/thumbnail_generation_report_2026-03-05.md`
 
 ## Update Rule
 

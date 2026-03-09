@@ -1,0 +1,109 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body {
+  width: 720pt; height: 405pt;
+  background: #F8F9FA;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+/* Design System CSS Variables */
+:root {
+  /* Colors */
+  --color-primary: #B165FB;
+  --color-secondary: #40695B;
+  --color-accent: #FF6B9D;
+  --color-success: #28A745;
+  --color-warning: #FFC107;
+  --color-danger: #DC3545;
+  --color-light: #F8F9FA;
+  --color-dark: #181B24;
+
+  /* Typography - Sizes */
+  --font-h1-size: 48pt;
+  --font-h2-size: 36pt;
+  --font-h3-size: 28pt;
+  --font-body-size: 18pt;
+  --font-small-size: 14pt;
+
+  /* Typography - Weights */
+  --font-h1-weight: bold;
+  --font-h2-weight: bold;
+  --font-h3-weight: semibold;
+  --font-body-weight: normal;
+  --font-small-weight: normal;
+
+  /* Typography - Line Heights */
+  --font-h1-line-height: 1.1;
+  --font-h2-line-height: 1.2;
+  --font-h3-line-height: 1.3;
+  --font-body-line-height: 1.5;
+  --font-small-line-height: 1.4;
+
+  /* Spacing */
+  --spacing-xs: 8pt;
+  --spacing-sm: 16pt;
+  --spacing-md: 24pt;
+  --spacing-lg: 32pt;
+  --spacing-xl: 48pt;
+  --spacing-xxl: 64pt;
+
+  /* Effects */
+  --border-radius: 12px;
+  --box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.header {
+  background: var(--color-dark);
+  padding: var(--spacing-md) var(--spacing-lg);
+}
+.header h1 {
+  font-size: var(--font-h1-size);
+  font-weight: var(--font-h1-weight);
+  line-height: var(--font-h1-line-height);
+  color: var(--color-primary);
+  margin: 0;
+}
+.content {
+  padding: var(--spacing-lg);
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.card {
+  background: white;
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
+  padding: var(--spacing-xl);
+  width: 500pt;
+}
+.card h2 {
+  font-size: var(--font-h2-size);
+  font-weight: var(--font-h2-weight);
+  color: var(--color-secondary);
+  margin: 0 0 var(--spacing-md) 0;
+}
+.card p {
+  font-size: var(--font-body-size);
+  font-weight: var(--font-body-weight);
+  line-height: var(--font-body-line-height);
+  color: var(--color-dark);
+  margin: 0;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Design System</h1>
+</div>
+<div class="content">
+  <div class="card">
+    <h2>Tech Modern Theme</h2>
+    <p>Using CSS variables for consistent styling across all slides.</p>
+  </div>
+</div>
+</body>
+</html>

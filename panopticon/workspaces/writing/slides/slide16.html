@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #ffffff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  width: 720pt;
+  height: 40pt;
+  background: #181B24;
+  display: flex;
+  align-items: center;
+  padding-left: 20pt;
+  box-sizing: border-box;
+}
+.header h1 {
+  color: #B165FB;
+  font-size: 24pt;
+  margin: 0;
+}
+.content {
+  width: 720pt;
+  height: 365pt;
+  padding: 12pt 20pt;
+  display: flex;
+  gap: 12pt;
+  box-sizing: border-box;
+}
+.left-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8pt;
+}
+.right-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8pt;
+}
+.trend-box {
+  background: #f8f9fa;
+  padding: 8pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #B165FB;
+  box-sizing: border-box;
+}
+.trend-box h2 {
+  color: #181B24;
+  font-size: 14pt;
+  margin: 0 0 6pt 0;
+}
+.trend-box ul {
+  margin: 0;
+  padding-left: 14pt;
+  color: #40695B;
+}
+.trend-box li {
+  font-size: 10pt;
+  margin-bottom: 3pt;
+}
+.trend-box strong {
+  color: #B165FB;
+}
+.future-box {
+  background: #40695B;
+  padding: 10pt;
+  border-radius: 6pt;
+  color: #ffffff;
+  flex: 1;
+  box-sizing: border-box;
+}
+.future-box h2 {
+  font-size: 16pt;
+  margin: 0 0 8pt 0;
+  
+  padding-bottom: 5pt;
+}
+.future-box ul {
+  margin: 0;
+  padding-left: 14pt;
+}
+.future-box li {
+  font-size: 10pt;
+  margin-bottom: 4pt;
+}
+.future-box strong {
+  font-size: 11pt;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>未来趋势</h1>
+</div>
+<div class="content">
+  <div class="left-col">
+    <div class="trend-box">
+      <h2>具身智能</h2>
+      <ul>
+        <li>Agent 拥有物理身体</li>
+        <li>在真实世界学习与操作</li>
+        <li>应用：机器人、自动驾驶</li>
+      </ul>
+    </div>
+    <div class="trend-box">
+      <h2>持续学习</h2>
+      <ul>
+        <li>在线更新知识</li>
+        <li>不再需要重新训练</li>
+        <li>适应动态环境</li>
+      </ul>
+    </div>
+    <div class="trend-box">
+      <h2>更长上下文</h2>
+      <ul>
+        <li>百万级 token 上下文</li>
+        <li>长记忆（Memory）机制</li>
+        <li>个性化 Agent</li>
+      </ul>
+    </div>
+  </div>
+  <div class="right-col">
+    <div class="future-box">
+      <h2>自主性提升</h2>
+      <ul>
+        <li><strong>长期目标规划</strong></li>
+        <li><strong>自我反思与修正</strong></li>
+        <li><strong>元认知能力</strong></li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>

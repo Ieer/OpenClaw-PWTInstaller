@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #ffffff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  width: 720pt;
+  height: 40pt;
+  background: #181B24;
+  display: flex;
+  align-items: center;
+  padding-left: 20pt;
+  box-sizing: border-box;
+}
+.header h1 {
+  color: #B165FB;
+  font-size: 22pt;
+  margin: 0;
+}
+.content {
+  width: 720pt;
+  height: 365pt;
+  padding: 15pt 20pt;
+  display: flex;
+  flex-direction: column;
+  gap: 10pt;
+  box-sizing: border-box;
+}
+.problem-box {
+  background: #fff3cd;
+  padding: 10pt 15pt;
+  border-radius: 6pt;
+  border-left: 5pt solid #ffc107;
+  box-sizing: border-box;
+}
+.problem-box h3 {
+  color: #856404;
+  font-size: 16pt;
+  margin: 0 0 8pt 0;
+}
+.problem-box ul {
+  margin: 0;
+  padding-left: 16pt;
+  color: #856404;
+}
+.problem-box li {
+  font-size: 12pt;
+  margin-bottom: 5pt;
+}
+.example-box {
+  background: #d1ecf1;
+  padding: 10pt 15pt;
+  border-radius: 6pt;
+  border-left: 5pt solid #17a2b8;
+  box-sizing: border-box;
+}
+.example-box h3 {
+  color: #0c5460;
+  font-size: 16pt;
+  margin: 0 0 8pt 0;
+}
+.example-box p {
+  color: #0c5460;
+  font-size: 11pt;
+  margin: 5px 0;
+  font-family: 'Courier New', monospace;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>符号主义的局限</h1>
+</div>
+<div class="content">
+  <div class="problem-box">
+    <h3>核心问题</h3>
+    <ul>
+      <li><strong>规则爆炸：</strong>知识需人工编码，冲突难管理</li>
+      <li><strong>缺乏学习能力：</strong>无法提取模式，需专家维护</li>
+      <li><strong>脆弱性：</strong>输入微小变化 → 完全失效</li>
+      <li><strong>知识表示瓶颈：</strong>常识难形式化，语境弱</li>
+    </ul>
+  </div>
+  <div class="example-box">
+    <h3>示例</h3>
+    <p>IF 用户说"我很难过" THEN 回复"为什么会难过？"</p>
+    <p>ELSE IF 用户说"我很好" THEN 回复"太好了！"</p>
+    <p>→ 无法理解"我不太好"、"还行吧"等变体</p>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #ffffff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  width: 720pt;
+  height: 40pt;
+  background: #181B24;
+  display: flex;
+  align-items: center;
+  padding-left: 20pt;
+  box-sizing: border-box;
+}
+.header h1 {
+  color: #B165FB;
+  font-size: 22pt;
+  margin: 0;
+}
+.content {
+  width: 720pt;
+  height: 365pt;
+  padding: 10pt 15pt;
+  display: flex;
+  gap: 10pt;
+  box-sizing: border-box;
+}
+.left-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8pt;
+}
+.right-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8pt;
+}
+.challenge-box {
+  background: #fff3cd;
+  padding: 8pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #ffc107;
+  box-sizing: border-box;
+}
+.challenge-box h2 {
+  color: #856404;
+  font-size: 14pt;
+  margin: 0 0 5pt 0;
+}
+.challenge-box ul {
+  margin: 0;
+  padding-left: 14pt;
+  color: #856404;
+}
+.challenge-box li {
+  font-size: 10pt;
+  margin-bottom: 3pt;
+}
+.challenge-box strong {
+  color: #d9534f;
+}
+.ethic-box {
+  background: #f8d7da;
+  padding: 8pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #dc3545;
+  box-sizing: border-box;
+}
+.ethic-box h2 {
+  color: #721c24;
+  font-size: 14pt;
+  margin: 0 0 5pt 0;
+}
+.ethic-box ul {
+  margin: 0;
+  padding-left: 14pt;
+  color: #721c24;
+}
+.ethic-box li {
+  font-size: 10pt;
+  margin-bottom: 3pt;
+}
+.impact-box {
+  background: #d1ecf1;
+  padding: 8pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #17a2b8;
+  box-sizing: border-box;
+}
+.impact-box h2 {
+  color: #0c5460;
+  font-size: 14pt;
+  margin: 0 0 5pt 0;
+}
+.impact-box ul {
+  margin: 0;
+  padding-left: 14pt;
+  color: #0c5460;
+}
+.impact-box li {
+  font-size: 10pt;
+  margin-bottom: 3pt;
+}
+.need-box {
+  background: #40695B;
+  padding: 8pt;
+  border-radius: 6pt;
+  color: #ffffff;
+  flex: 1;
+  box-sizing: border-box;
+}
+.need-box h2 {
+  font-size: 14pt;
+  margin: 0 0 6pt 0;
+  
+  padding-bottom: 4pt;
+}
+.need-box ul {
+  margin: 0;
+  padding-left: 14pt;
+}
+.need-box li {
+  font-size: 11pt;
+  margin-bottom: 4pt;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>挑战与风险</h1>
+</div>
+<div class="content">
+  <div class="left-col">
+    <div class="challenge-box">
+      <h2>技术挑战</h2>
+      <ul>
+        <li><strong>安全性：</strong>避免 Agent 被操纵或越狱</li>
+        <li><strong>可控性：</strong>确保行为符合人类价值观</li>
+        <li><strong>鲁棒性：</strong>处理边缘情况和未知输入</li>
+      </ul>
+    </div>
+    <div class="ethic-box">
+      <h2>伦理问题</h2>
+      <ul>
+        <li><strong>责任归属：</strong>Agent 错误谁负责？</li>
+        <li><strong>隐私：</strong>数据收集与使用边界</li>
+        <li><strong>偏见：</strong>继承训练数据的偏见</li>
+      </ul>
+    </div>
+  </div>
+  <div class="right-col">
+    <div class="impact-box">
+      <h2>社会影响</h2>
+      <ul>
+        <li><strong>就业：</strong>自动化带来的工作变化</li>
+        <li><strong>信息环境：</strong>Deepfakes、虚假信息</li>
+        <li><strong>权力集中：</strong>技术掌控在少数公司</li>
+      </ul>
+    </div>
+    <div class="need-box">
+      <h2>需要</h2>
+      <ul>
+        <li>透明度与可解释性</li>
+        <li>监管框架</li>
+        <li>伦理审查机制</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>

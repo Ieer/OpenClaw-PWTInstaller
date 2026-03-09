@@ -20,6 +20,18 @@ REQUIRED_DIRS = ["inbox", "outbox", "artifacts", "state", "sources"]
 DEFAULT_AGENTS = ["email", "growth", "health", "metrics", "nox", "personal", "trades", "writing"]
 
 
+def resolve_default_workspaces_root() -> str:
+    explicit = os.getenv("PANOPTICON_WORKSPACES_ROOT", "").strip()
+    if explicit:
+        return explicit
+
+    data_root = os.getenv("PANOPTICON_DATA_DIR", "").strip()
+    if data_root:
+        return str(Path(data_root).expanduser() / "workspaces")
+
+    return "panopticon/workspaces"
+
+
 @dataclass
 class AgentResult:
     agent: str
@@ -256,7 +268,7 @@ def print_human(report: dict[str, Any]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="全面测试每个 workspace 的固定子结构与状态读写")
-    parser.add_argument("--workspaces-root", default="panopticon/workspaces")
+    parser.add_argument("--workspaces-root", default=resolve_default_workspaces_root())
     parser.add_argument("--manifest", default="panopticon/agents.manifest.yaml")
     parser.add_argument("--agents", default="", help="逗号分隔，仅测试指定 agent")
     parser.add_argument("--auto-create", action="store_true", help="缺失目录时自动创建")

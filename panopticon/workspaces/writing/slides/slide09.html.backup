@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #ffffff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  width: 720pt;
+  height: 40pt;
+  background: #181B24;
+  display: flex;
+  align-items: center;
+  padding-left: 20pt;
+  box-sizing: border-box;
+}
+.header h1 {
+  color: #B165FB;
+  font-size: 22pt;
+  margin: 0;
+}
+.content {
+  width: 720pt;
+  height: 365pt;
+  padding: 12pt 20pt;
+  display: flex;
+  gap: 12pt;
+  box-sizing: border-box;
+}
+.left-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10pt;
+}
+.right-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10pt;
+}
+.paper-box {
+  background: #B165FB;
+  padding: 12pt;
+  border-radius: 6pt;
+  color: #ffffff;
+  flex: 1;
+  box-sizing: border-box;
+}
+.paper-box h2 {
+  font-size: 16pt;
+  margin: 0 0 8pt 0;
+  
+  padding-bottom: 5pt;
+}
+.paper-box p {
+  font-size: 12pt;
+  margin: 5px 0;
+}
+.innovation-box {
+  background: #f8f9fa;
+  padding: 10pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #40695B;
+  box-sizing: border-box;
+}
+.innovation-box h2 {
+  color: #181B24;
+  font-size: 16pt;
+  margin: 0 0 8pt 0;
+}
+.innovation-box ul {
+  margin: 0;
+  padding-left: 16pt;
+  color: #40695B;
+}
+.innovation-box li {
+  font-size: 11pt;
+  margin-bottom: 5pt;
+}
+.impact-box {
+  background: #e7f3ff;
+  padding: 10pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #B165FB;
+  flex: 1;
+  box-sizing: border-box;
+}
+.impact-box h2 {
+  color: #181B24;
+  font-size: 16pt;
+  margin: 0 0 8pt 0;
+}
+.impact-box ul {
+  margin: 0;
+  padding-left: 16pt;
+  color: #181B24;
+}
+.impact-box li {
+  font-size: 11pt;
+  margin-bottom: 5pt;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Transformer - 架构革命</h1>
+</div>
+<div class="content">
+  <div class="left-col">
+    <div class="paper-box">
+      <h2>论文</h2>
+      <p><strong>"Attention Is All You Need"</strong></p>
+      <p><strong>2017</strong></p>
+      <p>Vaswani et al. (Google)</p>
+    </div>
+    <div class="innovation-box">
+      <h2>核心创新</h2>
+      <ul>
+        <li><strong>自注意力机制：</strong>捕捉序列依赖</li>
+        <li><strong>并行计算：</strong>比 RNN 快</li>
+        <li><strong>编码器-解码器</strong></li>
+      </ul>
+    </div>
+  </div>
+  <div class="right-col">
+    <div class="impact-box">
+      <h2>影响</h2>
+      <ul>
+        <li>NLP 提升（翻译、摘要、问答）</li>
+        <li>计算机视觉（ViT）</li>
+        <li>多模态（CLIP, DALL-E）</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #ffffff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  width: 720pt;
+  height: 40pt;
+  background: #181B24;
+  display: flex;
+  align-items: center;
+  padding-left: 20pt;
+  box-sizing: border-box;
+}
+.header h1 {
+  color: #B165FB;
+  font-size: 22pt;
+  margin: 0;
+}
+.content {
+  width: 720pt;
+  height: 365pt;
+  padding: 15pt 20pt;
+  display: flex;
+  flex-direction: column;
+  gap: 12pt;
+  box-sizing: border-box;
+}
+.info-box {
+  background: #f8f9fa;
+  padding: 12pt;
+  border-radius: 6pt;
+  border-left: 5pt solid #B165FB;
+  box-sizing: border-box;
+}
+.info-row {
+  display: flex;
+  margin-bottom: 8pt;
+}
+.info-row:last-child {
+  margin-bottom: 0;
+}
+.label {
+  font-weight: bold;
+  color: #181B24;
+  width: 100pt;
+  font-size: 14pt;
+}
+.value {
+  color: #40695B;
+  font-size: 14pt;
+  flex: 1;
+}
+.quote-box {
+  background: #B165FB;
+  padding: 12pt;
+  border-radius: 6pt;
+  box-sizing: border-box;
+}
+.quote-box p {
+  color: #ffffff;
+  font-size: 12pt;
+  font-style: italic;
+  margin: 0;
+  line-height: 1.4;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>起源 - 1956 达特茅斯会议</h1>
+</div>
+<div class="content">
+  <div class="info-box">
+    <div class="info-row">
+      <span class="label">时间：</span>
+      <span class="value">1956年夏</span>
+    </div>
+    <div class="info-row">
+      <span class="label">地点：</span>
+      <span class="value">达特茅斯学院</span>
+    </div>
+    <div class="info-row">
+      <span class="label">参与者：</span>
+      <span class="value">McCarthy, Minsky 等</span>
+    </div>
+    <div class="info-row">
+      <span class="label">意义：</span>
+      <span class="value">"人工智能"术语首次正式提出</span>
+    </div>
+  </div>
+  <div class="quote-box">
+    <p>"The study is to proceed on the basis of the conjecture that every aspect of learning or any other feature of intelligence can in principle be so precisely described that a machine can be made to simulate it."</p>
+  </div>
+</div>
+</body>
+</html>

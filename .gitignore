@@ -79,6 +79,15 @@ panopticon/mission-control/postgres-data/
 panopticon/agent-homes/
 panopticon/workspaces/*/.git/
 panopticon/workspaces/*/.openclaw/
+panopticon/workspaces/*/inbox/
+panopticon/workspaces/*/outbox/
+panopticon/workspaces/*/artifacts/
+panopticon/workspaces/*/state/
+panopticon/workspaces/*/sources/
+panopticon/workspaces/*/node_modules/
+panopticon/workspaces/*/thumbnails/
+panopticon/workspaces/*/components/
+panopticon/workspaces/*/*.pptx
 panopticon/workspaces/*/memory/heartbeat-state.json
 panopticon/workspaces/*/memory/20??-??-??.md
 

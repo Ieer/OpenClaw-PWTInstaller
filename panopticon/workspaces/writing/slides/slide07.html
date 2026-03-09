@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #ffffff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  width: 720pt;
+  height: 40pt;
+  background: #181B24;
+  display: flex;
+  align-items: center;
+  padding-left: 20pt;
+  box-sizing: border-box;
+}
+.header h1 {
+  color: #B165FB;
+  font-size: 20pt;
+  margin: 0;
+}
+.content {
+  width: 720pt;
+  height: 365pt;
+  padding: 12pt 20pt;
+  display: flex;
+  gap: 15pt;
+  box-sizing: border-box;
+}
+.left-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10pt;
+}
+.right-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10pt;
+}
+.box {
+  background: #f8f9fa;
+  padding: 10pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #B165FB;
+  box-sizing: border-box;
+}
+.box h2 {
+  color: #181B24;
+  font-size: 16pt;
+  margin: 0 0 8pt 0;
+}
+.box ul {
+  margin: 0;
+  padding-left: 16pt;
+  color: #40695B;
+}
+.box li {
+  font-size: 11pt;
+  margin-bottom: 5pt;
+}
+.milestone {
+  background: #40695B;
+  padding: 12pt;
+  border-radius: 6pt;
+  color: #ffffff;
+  flex: 1;
+  box-sizing: border-box;
+}
+.milestone h2 {
+  font-size: 16pt;
+  margin: 0 0 8pt 0;
+}
+.milestone p {
+  font-size: 11pt;
+  margin: 4px 0;
+}
+.milestone strong {
+  font-size: 12pt;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>强化学习 - Agent 的决策能力</h1>
+</div>
+<div class="content">
+  <div class="left-col">
+    <div class="box">
+      <h2>核心概念</h2>
+      <ul>
+        <li>State → Action → Reward</li>
+        <li>New State → Learn</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h2>关键算法</h2>
+      <ul>
+        <li><strong>Q-Learning (1989)：</strong>Watkins 提出</li>
+        <li><strong>DQN (2015)：</strong>DeepMind</li>
+      </ul>
+    </div>
+  </div>
+  <div class="right-col">
+    <div class="milestone">
+      <h2>里程碑</h2>
+      <p><strong>1997：</strong>Deep Blue 击败卡斯帕罗夫</p>
+      <p><strong>2016：</strong>AlphaGo 击败李世石</p>
+      <p><strong>2019：</strong>AlphaStar 击败职业玩家</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

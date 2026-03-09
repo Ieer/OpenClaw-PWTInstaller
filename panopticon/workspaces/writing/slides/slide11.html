@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #ffffff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  width: 720pt;
+  height: 40pt;
+  background: #181B24;
+  display: flex;
+  align-items: center;
+  padding-left: 20pt;
+  box-sizing: border-box;
+}
+.header h1 {
+  color: #B165FB;
+  font-size: 18pt;
+  margin: 0;
+}
+.content {
+  width: 720pt;
+  height: 365pt;
+  padding: 12pt 20pt;
+  display: flex;
+  gap: 12pt;
+  box-sizing: border-box;
+}
+.left-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10pt;
+}
+.right-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10pt;
+}
+.method-box {
+  background: #f8f9fa;
+  padding: 10pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #B165FB;
+  box-sizing: border-box;
+}
+.method-box h2 {
+  color: #181B24;
+  font-size: 16pt;
+  margin: 0 0 6pt 0;
+}
+.method-box ul {
+  margin: 0;
+  padding-left: 16pt;
+  color: #40695B;
+}
+.method-box li {
+  font-size: 11pt;
+  margin-bottom: 4pt;
+}
+.method-box strong {
+  color: #B165FB;
+}
+.rlhf-box {
+  background: #40695B;
+  padding: 10pt;
+  border-radius: 6pt;
+  color: #ffffff;
+  flex: 1;
+  box-sizing: border-box;
+}
+.rlhf-box h2 {
+  font-size: 16pt;
+  margin: 0 0 8pt 0;
+  
+  padding-bottom: 5pt;
+}
+.rlhf-box p {
+  font-size: 11pt;
+  margin: 4px 0;
+}
+.rlhf-box strong {
+  font-size: 12pt;
+}
+.impact-box {
+  background: #e7f3ff;
+  padding: 10pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #B165FB;
+  flex: 1;
+  box-sizing: border-box;
+}
+.impact-box h2 {
+  color: #181B24;
+  font-size: 16pt;
+  margin: 0 0 8pt 0;
+}
+.impact-box ul {
+  margin: 0;
+  padding-left: 16pt;
+  color: #181B24;
+}
+.impact-box li {
+  font-size: 11pt;
+  margin-bottom: 6pt;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>LLM as Tool - 指令微调与 RLHF</h1>
+</div>
+<div class="content">
+  <div class="left-col">
+    <div class="method-box">
+      <h2>指令微调</h2>
+      <ul>
+        <li><strong>目标：</strong>让模型理解并执行人类指令</li>
+        <li><strong>方法：</strong>收集指令-响应对 → 微调</li>
+        <li><strong>效果：</strong>模型变得"听话"</li>
+      </ul>
+    </div>
+    <div class="rlhf-box">
+      <h2>RLHF 三阶段</h2>
+      <p><strong>1. SFT：</strong>监督微调 - 学习回复风格</p>
+      <p><strong>2. RM：</strong>奖励模型 - 学习人类偏好</p>
+      <p><strong>3. PPO：</strong>用 RM 奖励微调</p>
+    </div>
+  </div>
+  <div class="right-col">
+    <div class="impact-box">
+      <h2>影响</h2>
+      <ul>
+        <li><strong>ChatGPT (2022.11)</strong>爆发式流行</li>
+        <li>从"生成文本"到"对话助手"</li>
+        <li>自然对话交互范式确立</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>

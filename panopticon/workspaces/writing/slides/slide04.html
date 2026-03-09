@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #ffffff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  width: 720pt;
+  height: 40pt;
+  background: #181B24;
+  display: flex;
+  align-items: center;
+  padding-left: 20pt;
+  box-sizing: border-box;
+}
+.header h1 {
+  color: #B165FB;
+  font-size: 20pt;
+  margin: 0;
+}
+.content {
+  width: 720pt;
+  height: 365pt;
+  padding: 12pt 20pt;
+  display: flex;
+  gap: 15pt;
+  box-sizing: border-box;
+}
+.column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12pt;
+}
+.agent-box {
+  background: #f8f9fa;
+  padding: 12pt;
+  border-radius: 6pt;
+  flex: 1;
+  box-sizing: border-box;
+}
+.agent-box h2 {
+  color: #B165FB;
+  font-size: 18pt;
+  margin: 0 0 10pt 0;
+  
+  padding-bottom: 6pt;
+}
+.agent-box ul {
+  margin: 0;
+  padding-left: 16pt;
+  color: #181B24;
+}
+.agent-box li {
+  margin-bottom: 6pt;
+  font-size: 12pt;
+}
+.agent-box li strong {
+  color: #40695B;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>早期 Agent - ELIZA & SHRDLU</h1>
+</div>
+<div class="content">
+  <div class="column">
+    <div class="agent-box">
+      <h2>ELIZA (1966)</h2>
+      <ul>
+        <li><strong>作者：</strong>Joseph Weizenbaum</li>
+        <li><strong>类型：</strong>模拟心理治疗师对话</li>
+        <li><strong>技术：</strong>模式匹配 + 模板</li>
+        <li><strong>影响：</strong>证明计算机可"理解"人类</li>
+      </ul>
+    </div>
+  </div>
+  <div class="column">
+    <div class="agent-box">
+      <h2>SHRDLU (1968-70)</h2>
+      <ul>
+        <li><strong>作者：</strong>Terry Winograd</li>
+        <li><strong>类型：</strong>虚拟世界操作</li>
+        <li><strong>能力：</strong>理解指令，操作积木</li>
+        <li><strong>技术：</strong>语法解析 + 语义推理</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>

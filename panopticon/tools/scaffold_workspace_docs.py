@@ -3,13 +3,28 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TEMPLATE_DIR = ROOT / "templates" / "workspace-skeleton"
-DEFAULT_WORKSPACES_DIR = ROOT / "workspaces"
 REQUIRED_DIRS = ["inbox", "outbox", "artifacts", "state", "sources"]
+
+
+def resolve_default_workspaces_dir() -> Path:
+    explicit = os.getenv("PANOPTICON_WORKSPACES_ROOT", "").strip()
+    if explicit:
+        return Path(explicit).expanduser()
+
+    data_root = os.getenv("PANOPTICON_DATA_DIR", "").strip()
+    if data_root:
+        return Path(data_root).expanduser() / "workspaces"
+
+    return ROOT / "workspaces"
+
+
+DEFAULT_WORKSPACES_DIR = resolve_default_workspaces_dir()
 
 
 def build_replacements(args: argparse.Namespace) -> dict[str, str]:

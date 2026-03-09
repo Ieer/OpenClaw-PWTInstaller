@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #ffffff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  width: 720pt;
+  height: 40pt;
+  background: #181B24;
+  display: flex;
+  align-items: center;
+  padding-left: 20pt;
+  box-sizing: border-box;
+}
+.header h1 {
+  color: #B165FB;
+  font-size: 24pt;
+  margin: 0;
+}
+.content {
+  width: 720pt;
+  height: 365pt;
+  padding: 15pt;
+  display: flex;
+  gap: 15pt;
+  box-sizing: border-box;
+}
+.column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10pt;
+}
+.era {
+  background: #f8f9fa;
+  padding: 10pt;
+  border-left: 4pt solid #B165FB;
+  box-sizing: border-box;
+}
+.era h2 {
+  color: #181B24;
+  font-size: 15pt;
+  margin: 0 0 5pt 0;
+}
+.era p {
+  color: #40695B;
+  font-size: 12pt;
+  margin: 0;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>目录</h1>
+</div>
+<div class="content">
+  <div class="column">
+    <div class="era">
+      <h2>符号主义时代</h2>
+      <p>1950s-80s | 规则驱动</p>
+    </div>
+    <div class="era">
+      <h2>连接主义兴起</h2>
+      <p>1980s-2000s | 神经网络</p>
+    </div>
+    <div class="era">
+      <h2>大语言模型时代</h2>
+      <p>2017-23 | Transformer</p>
+    </div>
+  </div>
+  <div class="column">
+    <div class="era">
+      <h2>自主 Agent 时代</h2>
+      <p>2023-至今 | 自主规划</p>
+    </div>
+    <div class="era">
+      <h2>未来展望</h2>
+      <p>趋势与挑战</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

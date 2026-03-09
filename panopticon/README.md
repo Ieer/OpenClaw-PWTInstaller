@@ -166,6 +166,12 @@ python panopticon/tools/validate_skills_template.py
   - Linux / Raspberry Pi：`/mnt/usb/panopticon-data`
   - Windows（Docker Desktop）：`E:/panopticon-data`
 
+推荐策略（Git 与运行态分离）：
+
+- `panopticon/workspaces/*` 在仓库里只保留可复用基线（文档、skills、必要源码）。
+- `inbox/outbox/artifacts/state/sources/.openclaw` 与 `memory/YYYY-MM-DD.md` 等运行态数据放在 `PANOPTICON_DATA_DIR/workspaces/*`。
+- 工具脚本默认按以下优先级找 workspace 根目录：`PANOPTICON_WORKSPACES_ROOT` > `PANOPTICON_DATA_DIR/workspaces` > `panopticon/workspaces`。
+
 首次搬移到 U 盘/新磁盘后，建议先创建数据目录（等价于 `mkdir -p`）：
 
 Linux / Raspberry Pi（bash）：

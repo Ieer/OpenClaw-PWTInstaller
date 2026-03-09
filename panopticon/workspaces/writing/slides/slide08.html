@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #ffffff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  width: 720pt;
+  height: 40pt;
+  background: #181B24;
+  display: flex;
+  align-items: center;
+  padding-left: 20pt;
+  box-sizing: border-box;
+}
+.header h1 {
+  color: #B165FB;
+  font-size: 18pt;
+  margin: 0;
+}
+.content {
+  width: 720pt;
+  height: 365pt;
+  padding: 12pt 20pt;
+  display: flex;
+  gap: 12pt;
+  box-sizing: border-box;
+}
+.column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10pt;
+}
+.section-box {
+  background: #f8f9fa;
+  padding: 10pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #B165FB;
+  box-sizing: border-box;
+}
+.section-box h2 {
+  color: #181B24;
+  font-size: 16pt;
+  margin: 0 0 8pt 0;
+}
+.section-box ul {
+  margin: 0;
+  padding-left: 16pt;
+  color: #40695B;
+}
+.section-box li {
+  font-size: 11pt;
+  margin-bottom: 5pt;
+}
+.challenge-box {
+  background: #fff3cd;
+  padding: 10pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #ffc107;
+  flex: 1;
+  box-sizing: border-box;
+}
+.challenge-box h2 {
+  color: #856404;
+  font-size: 16pt;
+  margin: 0 0 8pt 0;
+}
+.challenge-box ul {
+  margin: 0;
+  padding-left: 16pt;
+  color: #856404;
+}
+.challenge-box li {
+  font-size: 12pt;
+  margin-bottom: 5pt;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>系统型 Agent - 机器人与对话系统</h1>
+</div>
+<div class="content">
+  <div class="column">
+    <div class="section-box">
+      <h2>机器人规划 (1990s-2000s)</h2>
+      <ul>
+        <li><strong>任务规划：</strong>STRIPS, PDDL</li>
+        <li><strong>导航：</strong>SLAM 算法</li>
+        <li><strong>控制：</strong>PID、MPC</li>
+      </ul>
+    </div>
+    <div class="section-box">
+      <h2>对话系统</h2>
+      <ul>
+        <li><strong>基于规则：</strong>早期客服机器人</li>
+        <li><strong>基于检索：</strong>FAQ 匹配</li>
+        <li><strong>生成式：</strong>Seq2Seq (2014)</li>
+      </ul>
+    </div>
+  </div>
+  <div class="column">
+    <div class="challenge-box">
+      <h2>挑战</h2>
+      <ul>
+        <li><strong>符号与连接主义鸿沟</strong></li>
+        <li><strong>实时性与准确性权衡</strong></li>
+        <li><strong>多轮对话状态追踪</strong></li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>

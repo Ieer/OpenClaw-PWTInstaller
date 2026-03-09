@@ -13,6 +13,7 @@
 - 环境配置：`memory/infra.md`
 - 经验教训：`memory/lessons.md`
 - 每日日志：`memory/YYYY-MM-DD.md`
+- 财务目标：存款 100W（当前 10W），详见 `memory/2026-03-03.md`
 
 ## Update Rule
 

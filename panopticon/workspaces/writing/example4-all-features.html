@@ -1,0 +1,121 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body {
+  width: 720pt; height: 405pt;
+  font-family: Arial, sans-serif;
+  display: flex;
+}
+/* Design System CSS Variables */
+:root {
+  /* Colors */
+  --color-primary: #1C2833;
+  --color-secondary: #2E4053;
+  --color-accent: #3498DB;
+  --color-success: #27AE60;
+  --color-warning: #F39C12;
+  --color-danger: #E74C3C;
+  --color-light: #ECF0F1;
+  --color-dark: #2C3E50;
+
+  /* Typography - Sizes */
+  --font-h1-size: 44pt;
+  --font-h2-size: 32pt;
+  --font-h3-size: 24pt;
+  --font-body-size: 18pt;
+  --font-small-size: 14pt;
+
+  /* Typography - Weights */
+  --font-h1-weight: bold;
+  --font-h2-weight: bold;
+  --font-h3-weight: semibold;
+  --font-body-weight: normal;
+  --font-small-weight: normal;
+
+  /* Typography - Line Heights */
+  --font-h1-line-height: 1.2;
+  --font-h2-line-height: 1.3;
+  --font-h3-line-height: 1.4;
+  --font-body-line-height: 1.5;
+  --font-small-line-height: 1.4;
+
+  /* Spacing */
+  --spacing-xs: 8pt;
+  --spacing-sm: 12pt;
+  --spacing-md: 16pt;
+  --spacing-lg: 24pt;
+  --spacing-xl: 32pt;
+  --spacing-xxl: 48pt;
+
+  /* Effects */
+  --border-radius: 8px;
+  --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.sidebar {
+  width: 180pt;
+  background: linear-gradient(135deg, var(--color-dark) 0%, var(--color-secondary) 100%);
+  padding: 24pt;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  color: white;
+}
+.sidebar h2 {
+  font-size: 28pt;
+  margin: 0 0 12pt 0;
+  color: var(--color-accent);
+}
+.sidebar p {
+  font-size: 16pt;
+  margin: 0;
+  line-height: 1.4;
+}
+.main {
+  flex: 1;
+  padding: 24pt;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.card {
+  background: white;
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
+  padding: 16pt;
+  margin-bottom: 12pt;
+}
+.card h3 {
+  font-size: 18pt;
+  margin: 0 0 8pt 0;
+  color: var(--color-primary);
+}
+.card p {
+  font-size: 14pt;
+  margin: 0;
+  line-height: 1.4;
+}
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <h2>Enhanced PPTX</h2>
+  <p>Auto-gradients + Design System + Components</p>
+</div>
+<div class="main">
+  <div class="card">
+    <h3>✨ Auto Gradient Rasterization</h3>
+    <p>CSS gradients are automatically converted to PNG images</p>
+  </div>
+  <div class="card">
+    <h3>🎨 Design Systems</h3>
+    <p>Pre-built professional color schemes and typography</p>
+  </div>
+  <div class="card">
+    <h3>🧩 Component Library</h3>
+    <p>Pre-rendered UI components ready to use</p>
+  </div>
+</div>
+</body>
+</html>

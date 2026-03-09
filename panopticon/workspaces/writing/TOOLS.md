@@ -37,4 +37,6 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
 
 ---
 
+Runtime data boundary and git policy for this workspace: `RUNTIME_POLICY.md`.
+
 Add whatever helps you do your job. This is your cheat sheet.

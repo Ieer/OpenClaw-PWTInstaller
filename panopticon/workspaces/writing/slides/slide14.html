@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #ffffff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  width: 720pt;
+  height: 40pt;
+  background: #181B24;
+  display: flex;
+  align-items: center;
+  padding-left: 20pt;
+  box-sizing: border-box;
+}
+.header h1 {
+  color: #B165FB;
+  font-size: 20pt;
+  margin: 0;
+}
+.content {
+  width: 720pt;
+  height: 365pt;
+  padding: 12pt 20pt;
+  display: flex;
+  gap: 12pt;
+  box-sizing: border-box;
+}
+.left-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8pt;
+}
+.right-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8pt;
+}
+.intro-box {
+  background: #40695B;
+  padding: 10pt;
+  border-radius: 6pt;
+  color: #ffffff;
+  flex: 1;
+  box-sizing: border-box;
+}
+.intro-box h2 {
+  font-size: 16pt;
+  margin: 0 0 6pt 0;
+  
+  padding-bottom: 5pt;
+}
+.intro-box p {
+  font-size: 11pt;
+  margin: 4px 0;
+}
+.intro-box strong {
+  font-size: 12pt;
+}
+.flow-box {
+  background: #f8f9fa;
+  padding: 8pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #B165FB;
+  box-sizing: border-box;
+}
+.flow-box h2 {
+  color: #181B24;
+  font-size: 14pt;
+  margin: 0 0 6pt 0;
+}
+.flow-box p {
+  color: #40695B;
+  font-size: 10pt;
+  margin: 3px 0;
+  font-family: 'Courier New', monospace;
+}
+.scenario-box {
+  background: #e7f3ff;
+  padding: 8pt;
+  border-radius: 6pt;
+  border-left: 4pt solid #40695B;
+  flex: 1;
+  box-sizing: border-box;
+}
+.scenario-box h2 {
+  color: #181B24;
+  font-size: 14pt;
+  margin: 0 0 6pt 0;
+}
+.scenario-box ul {
+  margin: 0;
+  padding-left: 14pt;
+  color: #181B24;
+}
+.scenario-box li {
+  font-size: 10pt;
+  margin-bottom: 3pt;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>工具调用 - Function Calling</h1>
+</div>
+<div class="content">
+  <div class="left-col">
+    <div class="intro-box">
+      <h2>OpenAI Function Calling (2023.06)</h2>
+      <p><strong>核心能力：</strong>结构化输出 + 可组合性</p>
+      <p>让 LLM 调用外部 API</p>
+    </div>
+    <div class="flow-box">
+      <h2>工作流程</h2>
+      <p>用户请求 → LLM 分析意图 → 返回 JSON 函数调用</p>
+      <p>→ 外部系统执行 → 返回结果 → LLM 整合回复</p>
+    </div>
+  </div>
+  <div class="right-col">
+    <div class="scenario-box">
+      <h2>应用场景</h2>
+      <ul>
+        <li>查询数据库</li>
+        <li>调用 API（天气、股票）</li>
+        <li>操作日历</li>
+        <li>发送消息</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>

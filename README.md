@@ -219,16 +219,11 @@ curl -fsSL https://raw.githubusercontent.com/Ieer/OpenClaw-PWTInstaller/main/con
 - 无人公司工程落地手册（简中，8-agent）：[docs/unmanned-company-playbook-zh-cn.md](docs/unmanned-company-playbook-zh-cn.md)
 - Mission Control 通用实现草案（英文）：[docs/mission-control.md](docs/mission-control.md)
 
-每个 agent 的 SOUL（含“PWT 工作契约”，简中）：
+每个 agent 的 SOUL / 契约建议通过“模板与骨架”统一维护（避免运行态目录直链失效）：
 
-- nox：[panopticon/workspaces/nox/SOUL.md](panopticon/workspaces/nox/SOUL.md)
-- metrics：[panopticon/workspaces/metrics/SOUL.md](panopticon/workspaces/metrics/SOUL.md)
-- email：[panopticon/workspaces/email/SOUL.md](panopticon/workspaces/email/SOUL.md)
-- growth：[panopticon/workspaces/growth/SOUL.md](panopticon/workspaces/growth/SOUL.md)
-- trades：[panopticon/workspaces/trades/SOUL.md](panopticon/workspaces/trades/SOUL.md)
-- health：[panopticon/workspaces/health/SOUL.md](panopticon/workspaces/health/SOUL.md)
-- writing：[panopticon/workspaces/writing/SOUL.md](panopticon/workspaces/writing/SOUL.md)
-- personal：[panopticon/workspaces/personal/SOUL.md](panopticon/workspaces/personal/SOUL.md)
+- 文档基线模板：[panopticon/templates/workspace-doc-baseline.md](panopticon/templates/workspace-doc-baseline.md)
+- 可复制骨架包：[panopticon/templates/workspace-skeleton/README.md](panopticon/templates/workspace-skeleton/README.md)
+- 一键脚手架：[panopticon/tools/scaffold_workspace_docs.py](panopticon/tools/scaffold_workspace_docs.py)
 
 ## ⚙️ 详细配置
 
