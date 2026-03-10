@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -19,6 +20,7 @@ from .db import create_engine, create_session_factory
 from .models import agent_skill_mappings, comments, events, tasks
 from .schemas import (
     AgentSkillMappingOut,
+    AgentUsageSnapshotOut,
     BoardColumn,
     BoardOut,
     CommentCreate,
@@ -44,6 +46,13 @@ TASK_STATUS_TRANSITIONS = {
     "IN PROGRESS": {"REVIEW", "DONE"},
     "REVIEW": {"IN PROGRESS", "DONE"},
     "DONE": set(),
+}
+
+USAGE_CACHE_TTL_SECONDS = 15.0
+_AGENT_USAGE_CACHE: dict[str, object] = {
+    "days": None,
+    "generated_at": 0.0,
+    "data": [],
 }
 
 
@@ -290,6 +299,210 @@ def _validate_handoff_payload(payload: dict, known_agents: set[str]) -> list[str
     return errors
 
 
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _line_usage_from_session_event(line_obj: dict) -> tuple[datetime | None, dict | None]:
+    if str(line_obj.get("type") or "") != "message":
+        return None, None
+    message = line_obj.get("message")
+    if not isinstance(message, dict):
+        return None, None
+    usage = message.get("usage")
+    if not isinstance(usage, dict):
+        return None, None
+    event_ts = _parse_iso_datetime(line_obj.get("timestamp"))
+    return event_ts, usage
+
+
+def _line_usage_from_cron_event(line_obj: dict) -> tuple[datetime | None, dict | None]:
+    usage = line_obj.get("usage")
+    if not isinstance(usage, dict):
+        return None, None
+
+    ts_ms_raw = line_obj.get("ts")
+    event_ts = None
+    if isinstance(ts_ms_raw, (int, float)):
+        try:
+            event_ts = datetime.fromtimestamp(float(ts_ms_raw) / 1000.0)
+        except (ValueError, OSError):
+            event_ts = None
+
+    mapped_usage = {
+        "input": int(usage.get("input_tokens") or 0),
+        "output": int(usage.get("output_tokens") or 0),
+        "cacheRead": int(usage.get("cache_read_tokens") or 0),
+        "cacheWrite": int(usage.get("cache_write_tokens") or 0),
+        "totalTokens": int(usage.get("total_tokens") or 0),
+        "cost": {
+            "total": float(usage.get("total_cost") or 0.0),
+        },
+    }
+    return event_ts, mapped_usage
+
+
+def _safe_int(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _safe_float(value) -> float:
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _accumulate_usage(aggregate: dict, usage: dict, *, window_key: str) -> None:
+    aggregate[f"input_tokens_{window_key}"] += _safe_int(usage.get("input"))
+    aggregate[f"output_tokens_{window_key}"] += _safe_int(usage.get("output"))
+    aggregate[f"cache_read_tokens_{window_key}"] += _safe_int(usage.get("cacheRead"))
+    aggregate[f"cache_write_tokens_{window_key}"] += _safe_int(usage.get("cacheWrite"))
+
+    total_tokens = _safe_int(usage.get("totalTokens"))
+    if total_tokens <= 0:
+        total_tokens = (
+            _safe_int(usage.get("input"))
+            + _safe_int(usage.get("output"))
+            + _safe_int(usage.get("cacheRead"))
+            + _safe_int(usage.get("cacheWrite"))
+        )
+    aggregate[f"total_tokens_{window_key}"] += total_tokens
+
+    usage_cost = usage.get("cost") if isinstance(usage.get("cost"), dict) else {}
+    if isinstance(usage_cost, dict):
+        total_cost = _safe_float(usage_cost.get("total"))
+        aggregate[f"total_cost_{window_key}"] += total_cost
+        if total_cost <= 0 and total_tokens > 0:
+            aggregate["missing_cost_entries_window"] += 1
+
+
+def _iter_agent_usage_lines(agent_dir: Path):
+    yielded: set[str] = set()
+
+    for file_path in agent_dir.glob("agents/*/sessions/**/*.jsonl"):
+        if file_path.is_file():
+            key = str(file_path)
+            if key not in yielded:
+                yielded.add(key)
+                yield file_path, "session"
+
+    for file_path in agent_dir.glob("cron/runs/*.jsonl"):
+        if file_path.is_file():
+            key = str(file_path)
+            if key not in yielded:
+                yielded.add(key)
+                yield file_path, "cron"
+
+
+def _collect_agent_usage_snapshot(settings: Settings, days: int) -> list[AgentUsageSnapshotOut]:
+    root = Path(settings.agent_homes_dir)
+    if not root.exists() or not root.is_dir():
+        return []
+
+    window_seconds = max(1, min(days, 90)) * 24 * 60 * 60
+    window_start_epoch = time.time() - window_seconds
+    day_24h_epoch = time.time() - 24 * 60 * 60
+
+    out: list[AgentUsageSnapshotOut] = []
+
+    for agent_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        aggregate = {
+            "agent": agent_dir.name,
+            "input_tokens_24h": 0,
+            "output_tokens_24h": 0,
+            "cache_read_tokens_24h": 0,
+            "cache_write_tokens_24h": 0,
+            "total_tokens_24h": 0,
+            "total_cost_24h": 0.0,
+            "input_tokens_window": 0,
+            "output_tokens_window": 0,
+            "cache_read_tokens_window": 0,
+            "cache_write_tokens_window": 0,
+            "total_tokens_window": 0,
+            "total_cost_window": 0.0,
+            "missing_cost_entries_window": 0,
+            "days": max(1, min(days, 90)),
+        }
+
+        for file_path, source_type in _iter_agent_usage_lines(agent_dir):
+            try:
+                if file_path.stat().st_mtime < window_start_epoch:
+                    continue
+            except OSError:
+                continue
+
+            try:
+                with file_path.open("r", encoding="utf-8") as handle:
+                    for raw_line in handle:
+                        line = raw_line.strip()
+                        if not line:
+                            continue
+                        try:
+                            obj = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+
+                        if source_type == "session":
+                            event_dt, usage = _line_usage_from_session_event(obj)
+                        else:
+                            event_dt, usage = _line_usage_from_cron_event(obj)
+
+                        if usage is None:
+                            continue
+
+                        include_24h = False
+                        include_window = True
+                        if event_dt is not None:
+                            event_epoch = event_dt.timestamp()
+                            include_window = event_epoch >= window_start_epoch
+                            include_24h = event_epoch >= day_24h_epoch
+
+                        if include_window:
+                            _accumulate_usage(aggregate, usage, window_key="window")
+                        if include_24h:
+                            _accumulate_usage(aggregate, usage, window_key="24h")
+            except OSError:
+                continue
+
+        out.append(AgentUsageSnapshotOut(**aggregate))
+
+    return out
+
+
+def _get_agent_usage_snapshot(settings: Settings, days: int) -> list[AgentUsageSnapshotOut]:
+    clamped_days = max(1, min(int(days), 90))
+    now_ts = time.time()
+
+    cached_days = _AGENT_USAGE_CACHE.get("days")
+    cached_at = _safe_float(_AGENT_USAGE_CACHE.get("generated_at"))
+    cached_data = _AGENT_USAGE_CACHE.get("data")
+
+    if (
+        cached_days == clamped_days
+        and isinstance(cached_data, list)
+        and now_ts - cached_at <= USAGE_CACHE_TTL_SECONDS
+    ):
+        return cached_data  # type: ignore[return-value]
+
+    fresh = _collect_agent_usage_snapshot(settings, clamped_days)
+    _AGENT_USAGE_CACHE["days"] = clamped_days
+    _AGENT_USAGE_CACHE["generated_at"] = now_ts
+    _AGENT_USAGE_CACHE["data"] = fresh
+    return fresh
+
+
 def create_app() -> FastAPI:
     settings = load_settings()
 
@@ -344,6 +557,13 @@ def create_app() -> FastAPI:
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
     ) -> list[WorkspaceSkillGroup]:
         return _scan_workspace_skills(settings, agent_slug=agent_slug)
+
+    @app.get("/v1/usage/agents", response_model=list[AgentUsageSnapshotOut])
+    async def get_agent_usage_snapshot(
+        days: int = 7,
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+    ) -> list[AgentUsageSnapshotOut]:
+        return _get_agent_usage_snapshot(settings, days)
 
     @app.get("/v1/skills/mappings", response_model=list[AgentSkillMappingOut])
     async def get_skill_mappings(

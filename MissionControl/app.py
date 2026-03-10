@@ -557,9 +557,62 @@ def _tone_for_status(status: str) -> str:
     return mapping.get(status.upper(), "stone")
 
 
-def _build_agents(board: dict, feed: list[dict]) -> list[dict]:
+def _format_token_compact(value: int) -> str:
+    number = int(value or 0)
+    if number >= 1_000_000:
+        return f"{number / 1_000_000:.1f}M"
+    if number >= 1_000:
+        return f"{number / 1_000:.1f}k"
+    return str(number)
+
+
+def _default_settings_ui() -> dict:
+    return {
+        "open": False,
+        "warn_24h": 120_000,
+        "warn_7d": 700_000,
+        "close_24h": 240_000,
+        "close_7d": 1_500_000,
+        "message": "",
+        "message_tone": "neutral",
+    }
+
+
+def _threshold_int(value, fallback: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return int(fallback)
+    return max(1, parsed)
+
+
+def _settings_risk_level(tokens_24h: int, tokens_7d: int, cfg: dict) -> tuple[str, str, str]:
+    warn_24h = int(cfg.get("warn_24h") or 120_000)
+    warn_7d = int(cfg.get("warn_7d") or 700_000)
+    close_24h = int(cfg.get("close_24h") or 240_000)
+    close_7d = int(cfg.get("close_7d") or 1_500_000)
+
+    if tokens_24h >= close_24h or tokens_7d >= close_7d:
+        return "建议关闭", "settings-risk-close", "超过关闭阈值，建议暂停该 agent 并人工复核。"
+    if tokens_24h >= warn_24h or tokens_7d >= warn_7d:
+        return "Token预警", "settings-risk-warn", "接近上限，建议降频或收缩上下文。"
+    return "正常", "settings-risk-ok", "运行正常。"
+
+
+def _settings_summary_hint(total_tokens_7d: int, total_cost_7d: float, missing_cost_entries: int) -> str:
+    if total_tokens_7d <= 0:
+        return "No recent usage data available yet."
+    if total_cost_7d <= 0 and total_tokens_7d > 0:
+        return "Cost data may be incomplete because model pricing is not configured."
+    if missing_cost_entries > 0:
+        return f"Cost data may be incomplete because {missing_cost_entries} usage entries are missing pricing."
+    return "Cost data is available for the current 7d assessment window."
+
+
+def _build_agents(board: dict, feed: list[dict], usage_by_agent: dict[str, dict] | None = None) -> list[dict]:
     names: set[str] = set(STATIC_AGENT_NAMES)
     last_seen: dict[str, datetime] = {}
+    usage_by_agent = usage_by_agent or {}
 
     for col in board.get("columns", []) or []:
         for card in col.get("cards", []) or []:
@@ -592,6 +645,16 @@ def _build_agents(board: dict, feed: list[dict]) -> list[dict]:
         if recent_time and (now - recent_time).total_seconds() <= 30 * 60:
             status = "RECENT"
         role = "Seen in board/feed" if recent_time else "Manifest agent"
+
+        usage = usage_by_agent.get(name) or usage_by_agent.get(str(name).lower()) or {}
+        tokens_24h = int(usage.get("total_tokens_24h") or 0)
+        tokens_7d = int(usage.get("total_tokens_window") or 0)
+        cost_7d = float(usage.get("total_cost_window") or 0.0)
+        days_window = int(usage.get("days") or 7)
+        usage_text = (
+            f"Usage 24h { _format_token_compact(tokens_24h) } · {days_window}d { _format_token_compact(tokens_7d) } · Cost ${cost_7d:.4f}"
+        )
+
         agents.append(
             {
                 "name": name,
@@ -599,6 +662,7 @@ def _build_agents(board: dict, feed: list[dict]) -> list[dict]:
                 "badge": "AGENT",
                 "status": status,
                 "tag": "AGENT",
+                "usage_text": usage_text,
             }
         )
     return agents
@@ -753,6 +817,7 @@ def agent_card(agent):
                         ],
                     ),
                     html.Div(agent["role"], className="agent-role"),
+                    html.Div(agent.get("usage_text") or "Usage 24h 0 · 7d 0 · Cost $0.0000", className="agent-usage"),
                 ],
             ),
             html.Div(
@@ -1035,6 +1100,7 @@ app.layout = html.Div(
                 "error_message": "",
             },
         ),
+        dcc.Store(id="settings-ui", data=_default_settings_ui()),
         dcc.Store(id="voice-ui", data=_voice_overlay_default()),
         dcc.Store(
             id="voice-metrics",
@@ -1091,7 +1157,7 @@ app.layout = html.Div(
                         html.Button("Clear Filters", id="clear-filters", className="ghost-button"),
                         html.Div("Overlay n/a", id="voice-latency-pill", className="status-pill status-unknown"),
                         html.Div("-", id="api-status", className="status-pill status-unknown"),
-                        html.Div("--:--:--", id="clock", className="clock"),
+                        html.Button("Settings", id="open-settings", className="ghost-button"),
                     ],
                 ),
             ],
@@ -1153,6 +1219,117 @@ app.layout = html.Div(
                         html.Div(id="feed", className="feed"),
                     ],
                 ),
+            ],
+        ),
+        html.Div(
+            id="settings-modal",
+            className="settings-modal",
+            children=[
+                html.Div(
+                    className="settings-modal-card",
+                    children=[
+                        html.Div(
+                            className="settings-modal-header",
+                            children=[
+                                html.Div(
+                                    children=[
+                                        html.Div("Configuration Center", className="settings-title"),
+                                        html.Div(
+                                            "Monitor per-agent usage, token thresholds, and close recommendations.",
+                                            className="settings-subtitle",
+                                        ),
+                                    ]
+                                ),
+                                html.Button("Close", id="close-settings", className="ghost-button"),
+                            ],
+                        ),
+                        html.Div(id="settings-notice", className="settings-notice"),
+                        html.Div(
+                            id="settings-overview",
+                            className="settings-overview",
+                        ),
+                        html.Div(
+                            className="settings-thresholds",
+                            children=[
+                                html.Div("Token Threshold Policy", className="settings-col-title"),
+                                html.Div(
+                                    className="settings-threshold-grid",
+                                    children=[
+                                        html.Div(
+                                            className="settings-field",
+                                            children=[
+                                                html.Div("Warn 24h tokens", className="settings-label"),
+                                                dcc.Input(
+                                                    id="settings-threshold-24h-warn",
+                                                    type="number",
+                                                    min=1,
+                                                    step=1000,
+                                                    value=120000,
+                                                    className="settings-input",
+                                                ),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            className="settings-field",
+                                            children=[
+                                                html.Div("Warn 7d tokens", className="settings-label"),
+                                                dcc.Input(
+                                                    id="settings-threshold-7d-warn",
+                                                    type="number",
+                                                    min=1,
+                                                    step=1000,
+                                                    value=700000,
+                                                    className="settings-input",
+                                                ),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            className="settings-field",
+                                            children=[
+                                                html.Div("Close Suggest 24h", className="settings-label"),
+                                                dcc.Input(
+                                                    id="settings-threshold-24h-close",
+                                                    type="number",
+                                                    min=1,
+                                                    step=1000,
+                                                    value=240000,
+                                                    className="settings-input",
+                                                ),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            className="settings-field",
+                                            children=[
+                                                html.Div("Close Suggest 7d", className="settings-label"),
+                                                dcc.Input(
+                                                    id="settings-threshold-7d-close",
+                                                    type="number",
+                                                    min=1,
+                                                    step=1000,
+                                                    value=1500000,
+                                                    className="settings-input",
+                                                ),
+                                            ],
+                                        ),
+                                    ],
+                                ),
+                                html.Div(
+                                    className="settings-actions",
+                                    children=[
+                                        html.Button("Apply Thresholds", id="apply-settings-thresholds", className="ghost-button"),
+                                    ],
+                                ),
+                            ],
+                        ),
+                        html.Div(
+                            className="settings-assessment",
+                            children=[
+                                html.Div("Agent Usage Assessment", className="settings-col-title"),
+                                html.Div(id="settings-assessment-list", className="settings-scroll"),
+                            ],
+                        ),
+                    ],
+                )
             ],
         ),
         html.Div(
@@ -1367,11 +1544,6 @@ app.layout = html.Div(
         ),
     ],
 )
-
-
-@app.callback(Output("clock", "children"), Input("clock-tick", "n_intervals"))
-def update_clock(_):
-    return datetime.now().strftime("%H:%M:%S")
 
 
 @app.callback(
@@ -1656,6 +1828,224 @@ def render_voice_latency_pill(metrics):
     else:
         tone = "status-offline"
     return text, f"status-pill {tone}"
+
+
+@app.callback(
+    Output("settings-ui", "data", allow_duplicate=True),
+    Input("open-settings", "n_clicks"),
+    Input("close-settings", "n_clicks"),
+    Input("apply-settings-thresholds", "n_clicks"),
+    State("settings-ui", "data"),
+    State("settings-threshold-24h-warn", "value"),
+    State("settings-threshold-7d-warn", "value"),
+    State("settings-threshold-24h-close", "value"),
+    State("settings-threshold-7d-close", "value"),
+    prevent_initial_call=True,
+)
+def update_settings_ui(
+    _,
+    __,
+    ___,
+    data,
+    warn_24h,
+    warn_7d,
+    close_24h,
+    close_7d,
+):
+    state = _default_settings_ui()
+    if isinstance(data, dict):
+        state.update(data)
+
+    trigger = ctx.triggered_id
+    if trigger == "open-settings":
+        state["open"] = True
+        state["message"] = ""
+        state["message_tone"] = "neutral"
+        return state
+
+    if trigger == "close-settings":
+        state["open"] = False
+        return state
+
+    if trigger == "apply-settings-thresholds":
+        state["warn_24h"] = _threshold_int(warn_24h, int(state.get("warn_24h") or 120_000))
+        state["warn_7d"] = _threshold_int(warn_7d, int(state.get("warn_7d") or 700_000))
+        state["close_24h"] = _threshold_int(close_24h, int(state.get("close_24h") or 240_000))
+        state["close_7d"] = _threshold_int(close_7d, int(state.get("close_7d") or 1_500_000))
+
+        if state["close_24h"] < state["warn_24h"] or state["close_7d"] < state["warn_7d"]:
+            state["message"] = "Close阈值应不低于Warn阈值，系统已保留输入但请复核。"
+            state["message_tone"] = "warn"
+        else:
+            state["message"] = "Token阈值已更新。"
+            state["message_tone"] = "ok"
+        return state
+
+    return state
+
+
+@app.callback(
+    Output("settings-modal", "className"),
+    Output("settings-threshold-24h-warn", "value"),
+    Output("settings-threshold-7d-warn", "value"),
+    Output("settings-threshold-24h-close", "value"),
+    Output("settings-threshold-7d-close", "value"),
+    Output("settings-overview", "children"),
+    Output("settings-assessment-list", "children"),
+    Output("settings-notice", "children"),
+    Output("settings-notice", "className"),
+    Input("refresh", "n_intervals"),
+    Input("settings-ui", "data"),
+    prevent_initial_call=False,
+)
+def render_settings_modal(_, settings_ui):
+    state = _default_settings_ui()
+    if isinstance(settings_ui, dict):
+        state.update(settings_ui)
+
+    is_open = bool(state.get("open"))
+
+    warn_24h = _threshold_int(state.get("warn_24h"), 120_000)
+    warn_7d = _threshold_int(state.get("warn_7d"), 700_000)
+    close_24h = _threshold_int(state.get("close_24h"), 240_000)
+    close_7d = _threshold_int(state.get("close_7d"), 1_500_000)
+
+    overview = html.Div(
+        className="settings-overview-grid",
+        children=[
+            html.Div("主要功能：按 agent 查看 usage、token 预警阈值评估、关闭建议。", className="settings-overview-item"),
+            html.Div("评估窗口：24h + 7d，来源于 /v1/usage/agents 聚合数据。", className="settings-overview-item"),
+            html.Div("关闭建议：仅建议，不会自动停用 agent。", className="settings-overview-item"),
+            html.Div("24h: 0 tokens · 7d: 0 tokens · 7d cost: $0.0000", className="settings-summary-line"),
+            html.Div("No recent usage data available yet.", className="settings-summary-hint"),
+        ],
+    )
+
+    if not is_open:
+        return (
+            "settings-modal",
+            warn_24h,
+            warn_7d,
+            close_24h,
+            close_7d,
+            overview,
+            [html.Div("Open 配置 to load assessment.", className="column-empty")],
+            "",
+            "settings-notice",
+        )
+
+    try:
+        usage_rows = api_get_json("/v1/usage/agents?days=7", timeout=2.5)
+    except Exception as e:
+        msg = f"Unable to load usage assessment: {e}"
+        return (
+            "settings-modal open",
+            warn_24h,
+            warn_7d,
+            close_24h,
+            close_7d,
+            overview,
+            [html.Div(msg, className="column-empty")],
+            msg,
+            "settings-notice error",
+        )
+
+    rows = usage_rows if isinstance(usage_rows, list) else []
+    rows_sorted = sorted(
+        [row for row in rows if isinstance(row, dict)],
+        key=lambda item: int(item.get("total_tokens_24h") or 0),
+        reverse=True,
+    )
+
+    total_tokens_24h = sum(int(item.get("total_tokens_24h") or 0) for item in rows_sorted)
+    total_tokens_7d = sum(int(item.get("total_tokens_window") or 0) for item in rows_sorted)
+    total_cost_7d = sum(float(item.get("total_cost_window") or 0.0) for item in rows_sorted)
+    missing_cost_entries = sum(int(item.get("missing_cost_entries_window") or 0) for item in rows_sorted)
+
+    overview = html.Div(
+        className="settings-overview-grid",
+        children=[
+            html.Div("主要功能：按 agent 查看 usage、token 预警阈值评估、关闭建议。", className="settings-overview-item"),
+            html.Div("评估窗口：24h + 7d，来源于 /v1/usage/agents 聚合数据。", className="settings-overview-item"),
+            html.Div("关闭建议：仅建议，不会自动停用 agent。", className="settings-overview-item"),
+            html.Div(
+                f"24h: {_format_token_compact(total_tokens_24h)} tokens · 7d: {_format_token_compact(total_tokens_7d)} tokens · 7d cost: ${total_cost_7d:.4f}",
+                className="settings-summary-line",
+            ),
+            html.Div(
+                _settings_summary_hint(total_tokens_7d, total_cost_7d, missing_cost_entries),
+                className="settings-summary-hint",
+            ),
+        ],
+    )
+
+    by_slug = {str(item.get("slug")): item for item in CHAT_AGENT_CONFIGS if item.get("slug")}
+
+    items = []
+    for row in rows_sorted:
+        slug = str(row.get("agent") or "-")
+        tokens_24h = int(row.get("total_tokens_24h") or 0)
+        tokens_7d = int(row.get("total_tokens_window") or 0)
+        cost_7d = float(row.get("total_cost_window") or 0.0)
+        missing_cost = int(row.get("missing_cost_entries_window") or 0)
+
+        risk_text, risk_class, recommendation = _settings_risk_level(tokens_24h, tokens_7d, {
+            "warn_24h": warn_24h,
+            "warn_7d": warn_7d,
+            "close_24h": close_24h,
+            "close_7d": close_7d,
+        })
+
+        agent_info = by_slug.get(slug) or {}
+        enabled_text = "enabled" if bool(agent_info.get("enabled", True)) else "disabled"
+
+        cost_hint = ""
+        if cost_7d <= 0 and (tokens_24h > 0 or tokens_7d > 0):
+            cost_hint = " (cost likely not configured)"
+        elif missing_cost > 0:
+            cost_hint = f" (missing cost entries: {missing_cost})"
+
+        items.append(
+            html.Div(
+                className="settings-item",
+                children=[
+                    html.Div(
+                        className="settings-item-header",
+                        children=[
+                            html.Span(slug, className="settings-item-title"),
+                            html.Span(enabled_text, className="settings-item-meta"),
+                            html.Span(risk_text, className=f"settings-risk {risk_class}"),
+                        ],
+                    ),
+                    html.Div(
+                        f"24h: {_format_token_compact(tokens_24h)} tokens · 7d: {_format_token_compact(tokens_7d)} tokens · 7d cost: ${cost_7d:.4f}{cost_hint}",
+                        className="settings-item-body",
+                    ),
+                    html.Div(f"关闭建议：{recommendation}", className="settings-item-hint"),
+                ],
+            )
+        )
+
+    if not items:
+        items = [html.Div("No usage data found for agents.", className="column-empty")]
+
+    message = str(state.get("message") or "")
+    tone = str(state.get("message_tone") or "neutral")
+    notice_class = "settings-notice"
+    if tone in {"ok", "warn", "error"}:
+        notice_class = f"settings-notice {tone}"
+
+    return (
+        "settings-modal open",
+        warn_24h,
+        warn_7d,
+        close_24h,
+        close_7d,
+        overview,
+        items,
+        message,
+        notice_class,
+    )
 
 
 @app.callback(
@@ -2133,10 +2523,21 @@ def refresh_data(n_intervals, state):
     try:
         board_json = api_get_json("/v1/boards/default")
         feed_json = api_get_json("/v1/feed-lite?limit=80")
+        usage_by_agent = {}
+        try:
+            usage_rows = api_get_json("/v1/usage/agents?days=7", timeout=2.0)
+            if isinstance(usage_rows, list):
+                for row in usage_rows:
+                    if isinstance(row, dict):
+                        slug = str(row.get("agent") or "").strip()
+                        if slug:
+                            usage_by_agent[slug] = row
+        except Exception:
+            usage_by_agent = {}
 
         columns = _convert_board(board_json)
         feed = _convert_feed(feed_json)
-        agents = _build_agents(board_json, feed_json)
+        agents = _build_agents(board_json, feed_json, usage_by_agent)
 
         visible_columns = _filter_board(columns, board_filter)
         visible_feed = _filter_feed(feed, feed_filter)

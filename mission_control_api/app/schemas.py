@@ -70,6 +70,24 @@ class EventLiteOut(BaseModel):
     round: int | None = None
 
 
+class AgentUsageSnapshotOut(BaseModel):
+    agent: str
+    input_tokens_24h: int = 0
+    output_tokens_24h: int = 0
+    cache_read_tokens_24h: int = 0
+    cache_write_tokens_24h: int = 0
+    total_tokens_24h: int = 0
+    total_cost_24h: float = 0.0
+    input_tokens_window: int = 0
+    output_tokens_window: int = 0
+    cache_read_tokens_window: int = 0
+    cache_write_tokens_window: int = 0
+    total_tokens_window: int = 0
+    total_cost_window: float = 0.0
+    missing_cost_entries_window: int = 0
+    days: int = 7
+
+
 class BoardColumn(BaseModel):
     title: str
     count: int
