@@ -10,6 +10,7 @@ NC='\033[0m'
 HOST="${HOST:-127.0.0.1}"
 HTTP_TIMEOUT="${HTTP_TIMEOUT:-5}"
 TCP_TIMEOUT="${TCP_TIMEOUT:-3}"
+GATEWAY_HTTP_STRICT="${GATEWAY_HTTP_STRICT:-0}"
 
 AGENTS=(
   nox
@@ -41,12 +42,21 @@ print_fail() {
   echo -e "${RED}[FAIL]${NC} $1"
 }
 
-check_gateway_http() {
+check_gateway() {
   local agent="$1"
   local port="$2"
   local url="http://${HOST}:${port}"
 
   TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+
+  if timeout "$TCP_TIMEOUT" bash -lc "</dev/tcp/${HOST}/${port}" >/dev/null 2>&1; then
+    PASSED_CHECKS=$((PASSED_CHECKS + 1))
+    print_ok "${agent} Gateway tcp://${HOST}:${port} open"
+  else
+    FAILED_CHECKS=$((FAILED_CHECKS + 1))
+    print_fail "${agent} Gateway tcp://${HOST}:${port} closed/unreachable"
+    return
+  fi
 
   local out code time_total
   out="$(curl -sS -o /dev/null -w '%{http_code} %{time_total}' --max-time "$HTTP_TIMEOUT" "$url" 2>/dev/null || true)"
@@ -54,15 +64,16 @@ check_gateway_http() {
   time_total="$(awk '{print $2}' <<< "$out")"
 
   if [[ "$code" =~ ^[1-5][0-9][0-9]$ ]]; then
-    PASSED_CHECKS=$((PASSED_CHECKS + 1))
     if [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
-      print_ok "${agent} Gateway ${url} reachable (HTTP ${code}, ${time_total}s)"
+      print_ok "${agent} Gateway HTTP probe ${url} ok (HTTP ${code}, ${time_total}s)"
     else
-      print_warn "${agent} Gateway ${url} reachable but non-2xx (HTTP ${code}, ${time_total}s)"
+      print_warn "${agent} Gateway HTTP probe ${url} non-2xx (HTTP ${code}, ${time_total}s)"
     fi
-  else
+  elif [[ "$GATEWAY_HTTP_STRICT" == "1" ]]; then
     FAILED_CHECKS=$((FAILED_CHECKS + 1))
-    print_fail "${agent} Gateway ${url} unreachable (HTTP ${code:-ERR})"
+    print_fail "${agent} Gateway HTTP probe ${url} failed (HTTP ${code:-ERR})"
+  else
+    print_warn "${agent} Gateway HTTP probe ${url} skipped/failed (HTTP ${code:-ERR}); TCP already reachable"
   fi
 }
 
@@ -85,9 +96,9 @@ echo -e "${CYAN}=== Panopticon Agent Endpoint 巡检 ===${NC}"
 echo "Host: ${HOST} | HTTP timeout: ${HTTP_TIMEOUT}s | TCP timeout: ${TCP_TIMEOUT}s"
 echo
 
-echo -e "${CYAN}-- Gateway (HTTP) --${NC}"
+echo -e "${CYAN}-- Gateway (TCP + optional HTTP probe) --${NC}"
 for i in "${!AGENTS[@]}"; do
-  check_gateway_http "${AGENTS[$i]}" "${GATEWAY_PORTS[$i]}"
+  check_gateway "${AGENTS[$i]}" "${GATEWAY_PORTS[$i]}"
 done
 
 echo

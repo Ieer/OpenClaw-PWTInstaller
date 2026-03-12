@@ -179,6 +179,7 @@ def render_compose(manifest: dict) -> str:
         slug = agent["slug"]
         gateway_host_port = agent["gateway_host_port"]
         bridge_host_port = agent["bridge_host_port"]
+        openclaw_version = str(runtime.get("cnim_openclaw_version", "2026.3.11"))
 
         service_block = textwrap.dedent(
             """\
@@ -187,6 +188,8 @@ def render_compose(manifest: dict) -> str:
               build:
                 context: {cnim_build_context}
                 dockerfile: {cnim_dockerfile}
+                args:
+                  OPENCLAW_VERSION: "{openclaw_version}"
               image: {cnim_image}
               cap_add:
                 - CHOWN
@@ -221,6 +224,7 @@ def render_compose(manifest: dict) -> str:
             cnim_build_context=runtime["cnim_build_context"],
             cnim_dockerfile=runtime["cnim_dockerfile"],
             cnim_image=runtime["cnim_image"],
+            openclaw_version=openclaw_version,
             gateway_host_port=gateway_host_port,
             bridge_host_port=bridge_host_port,
             gateway_container_port=runtime["container_gateway_port"],

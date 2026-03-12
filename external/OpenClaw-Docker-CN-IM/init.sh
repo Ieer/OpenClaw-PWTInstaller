@@ -41,6 +41,9 @@ if [ ! -f /home/node/.openclaw/openclaw.json ]; then
     OPENCLAW_GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT}"
     OPENCLAW_GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND}"
     OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN}"
+    OPENCLAW_GATEWAY_AUTH_MODE="${OPENCLAW_GATEWAY_AUTH_MODE:-token}"
+    OPENCLAW_GATEWAY_PASSWORD="${OPENCLAW_GATEWAY_PASSWORD}"
+    OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH="${OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH:-1}"
     
     # 生成配置文件
     cat > /home/node/.openclaw/openclaw.json <<EOF
@@ -210,11 +213,13 @@ EOF
     "mode": "local",
     "bind": "$OPENCLAW_GATEWAY_BIND",
     "controlUi": {
-      "allowInsecureAuth": true
+      "allowInsecureAuth": true,
+      "dangerouslyDisableDeviceAuth": $OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH
     },
     "auth": {
-      "mode": "token",
-      "token": "$OPENCLAW_GATEWAY_TOKEN"
+      "mode": "$OPENCLAW_GATEWAY_AUTH_MODE",
+      "token": "$OPENCLAW_GATEWAY_TOKEN",
+      "password": "$OPENCLAW_GATEWAY_PASSWORD"
     }
   },
   "plugins": {
@@ -354,9 +359,14 @@ else
 
     FEISHU_APP_ID="${FEISHU_APP_ID}"
     FEISHU_APP_SECRET="${FEISHU_APP_SECRET}"
+  OPENCLAW_GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND}"
+  OPENCLAW_GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT}"
+  OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN}"
+  OPENCLAW_GATEWAY_AUTH_MODE="${OPENCLAW_GATEWAY_AUTH_MODE:-token}"
+  OPENCLAW_GATEWAY_PASSWORD="${OPENCLAW_GATEWAY_PASSWORD}"
+  OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH="${OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH:-1}"
 
-    if [ -n "$FEISHU_APP_ID" ] && [ -n "$FEISHU_APP_SECRET" ]; then
-        python3 - <<'PY'
+  python3 - <<'PY'
 import json
 import os
 from pathlib import Path
@@ -366,6 +376,37 @@ data = json.loads(path.read_text(encoding='utf-8'))
 
 feishu_app_id = os.environ.get('FEISHU_APP_ID', '').strip()
 feishu_app_secret = os.environ.get('FEISHU_APP_SECRET', '').strip()
+gateway_bind = os.environ.get('OPENCLAW_GATEWAY_BIND', '').strip() or 'lan'
+gateway_port_raw = os.environ.get('OPENCLAW_GATEWAY_PORT', '').strip() or '26216'
+gateway_token = os.environ.get('OPENCLAW_GATEWAY_TOKEN', '').strip()
+gateway_auth_mode = os.environ.get('OPENCLAW_GATEWAY_AUTH_MODE', '').strip() or 'token'
+gateway_password = os.environ.get('OPENCLAW_GATEWAY_PASSWORD', '').strip()
+disable_device_auth_raw = os.environ.get('OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH', '').strip().lower()
+disable_device_auth = disable_device_auth_raw not in {'', '0', 'false', 'no', 'off'}
+
+try:
+  gateway_port = int(gateway_port_raw)
+except ValueError:
+  gateway_port = 26216
+
+gateway = data.setdefault('gateway', {})
+gateway['port'] = gateway_port
+gateway['mode'] = gateway.get('mode', 'local')
+gateway['bind'] = gateway_bind
+control_ui = gateway.setdefault('controlUi', {})
+control_ui['allowInsecureAuth'] = True
+control_ui['dangerouslyDisableDeviceAuth'] = disable_device_auth
+
+auth = gateway.setdefault('auth', {})
+auth['mode'] = gateway_auth_mode
+if gateway_token:
+  auth['token'] = gateway_token
+else:
+  auth.pop('token', None)
+if gateway_password:
+  auth['password'] = gateway_password
+else:
+  auth.pop('password', None)
 
 if feishu_app_id and feishu_app_secret:
     channels = data.setdefault('channels', {})
@@ -390,9 +431,10 @@ if feishu_app_id and feishu_app_secret:
 
 path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 PY
+    if [ -n "$FEISHU_APP_ID" ] && [ -n "$FEISHU_APP_SECRET" ]; then
         echo "✅ 已合并飞书渠道配置（stock:feishu）"
     else
-      echo "ℹ️ 未检测到 FEISHU_APP_ID/FEISHU_APP_SECRET，跳过飞书合并"
+      echo "ℹ️ 未检测到 FEISHU_APP_ID/FEISHU_APP_SECRET，已仅同步 gateway/controlUi 配置"
     fi
 fi
 

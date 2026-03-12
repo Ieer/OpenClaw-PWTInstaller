@@ -75,6 +75,8 @@ def _build_chat_inject_script(agent: str, token: str | None) -> str:
         f'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="{base_path}";'
         "(function(){"
         "try{"
+        "localStorage.removeItem(\"openclaw.device.auth.v1\");"
+        "sessionStorage.removeItem(\"openclaw.device.auth.v1\");"
         "const k=\"openclaw.control.settings.v1\";"
         "const raw=localStorage.getItem(k);"
         "let v={};"
@@ -125,17 +127,36 @@ def _sanitize_connect_auth(message: str, token: str | None) -> str:
 
     params = req["params"]
 
+    stale_device_keys = {
+        "device",
+        "deviceId",
+        "deviceID",
+        "device_id",
+        "deviceKey",
+        "device_key",
+        "deviceSecret",
+        "device_secret",
+        "deviceToken",
+        "device_token",
+        "clientId",
+        "client_id",
+    }
+
     auth = params.get("auth")
     if not isinstance(auth, dict):
         auth = {}
 
-    if token and not auth.get("token"):
-        auth["token"] = token
+    for key in stale_device_keys:
+        auth.pop(key, None)
+        params.pop(key, None)
 
-    if auth:
+    if token:
+        params["auth"] = {"token": token}
+    elif auth:
         params["auth"] = auth
     else:
         params.pop("auth", None)
+
     req["params"] = params
     return json.dumps(req, ensure_ascii=False)
 
@@ -154,6 +175,25 @@ def _rewrite_avatar_meta(content: bytes, agent: str, query: str) -> bytes:
         payload["avatarUrl"] = rewritten
         return json.dumps(payload, ensure_ascii=False).encode("utf-8")
     return content
+
+
+def _rewrite_control_ui_config(content: bytes, agent: str) -> bytes:
+    try:
+        payload = json.loads(content.decode("utf-8", errors="replace"))
+    except Exception:
+        return content
+
+    if not isinstance(payload, dict):
+        return content
+
+    base_path = f"/chat/{agent}"
+    payload["basePath"] = base_path
+
+    avatar = payload.get("assistantAvatar")
+    if isinstance(avatar, str) and avatar.startswith("/avatar/"):
+        payload["assistantAvatar"] = f"{base_path}{avatar}"
+
+    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
 
 def _avatar_fallback_svg(agent: str) -> bytes:
@@ -1103,7 +1143,9 @@ def create_app() -> FastAPI:
                     text = text.replace('window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";', inject_script)
                 else:
                     injected = f"<script>{inject_script}</script>"
-                    if "</head>" in text:
+                    if '<script type="module"' in text:
+                        text = text.replace('<script type="module"', f"{injected}<script type=\"module\"", 1)
+                    elif "</head>" in text:
                         text = text.replace("</head>", f"{injected}</head>", 1)
                     elif "<body>" in text:
                         text = text.replace("<body>", f"<body>{injected}", 1)
@@ -1120,6 +1162,9 @@ def create_app() -> FastAPI:
 
             content = await resp.aread()
             await resp.aclose()
+
+            if request.method.upper() == "GET" and path.endswith("control-ui-config.json") and resp.status_code == 200:
+                content = _rewrite_control_ui_config(content, agent)
 
             if request.method.upper() == "GET" and path.startswith("avatar/"):
                 is_meta = request.query_params.get("meta") == "1"

@@ -8,6 +8,7 @@ agent_runtime:
   cnim_build_context: ../external/OpenClaw-Docker-CN-IM
   cnim_dockerfile: Dockerfile
   cnim_image: openclaw-docker-cn-im:local
+  cnim_openclaw_version: 2026.3.11
   container_gateway_port: 26216
   container_bridge_port: 18790
 

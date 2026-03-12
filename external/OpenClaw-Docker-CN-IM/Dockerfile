@@ -3,6 +3,7 @@ FROM node:22-slim
 
 # When set to 1, fail the build if plugin installation fails.
 ARG STRICT_PLUGIN_INSTALL=0
+ARG OPENCLAW_VERSION=2026.3.11
 
 # 设置工作目录
 WORKDIR /app
@@ -30,7 +31,7 @@ RUN apt-get update \
 RUN npm install -g npm@latest
 
 # 安装 OpenClaw 和 OpenCode AI
-RUN npm install -g openclaw@latest opencode-ai@latest
+RUN npm install -g "openclaw@${OPENCLAW_VERSION}" opencode-ai@latest
 
 # 安装 Playwright 和 Chromium
 RUN npm install -g playwright && npx playwright install chromium --with-deps

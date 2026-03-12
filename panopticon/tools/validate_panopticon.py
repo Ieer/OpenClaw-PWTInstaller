@@ -41,6 +41,8 @@ def validate_manifest(manifest: dict) -> list[str]:
     for key in ["cnim_build_context", "cnim_dockerfile", "cnim_image", "container_gateway_port", "container_bridge_port"]:
         if key not in runtime:
             errors.append(f"missing agent_runtime.{key}")
+    if "cnim_openclaw_version" in runtime and not isinstance(runtime["cnim_openclaw_version"], (str, int, float)):
+        errors.append("agent_runtime.cnim_openclaw_version must be string-like")
 
     agents = manifest.get("agents", [])
     if not isinstance(agents, list) or not agents:
