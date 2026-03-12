@@ -12,11 +12,14 @@
 - 任务完成后如等待外部决策，应明确标记"等待用户决策"
 - 提供可追溯的输出结构：`artifacts/<task_id>/` + `sources/<task_id>/`
 - 定期检查旧任务的时效性，超过一周未响应的可归档
+- 长期挂起项目的清理策略：超过 10 天等待用户决策的任务应标记归档建议
+- 项目状态应定期同步到 `projects.md`，避免信息过时
 
 ### Heartbeat Operations
 - I/O-only heartbeat 稳定运行，无需额外推测任务
 - 每日脉冲保持一致结构（风险/阻塞/依赖/Review 需求）
 - 状态文件（heartbeat-state.json）有效追踪检查间隔
+- Weekly Review 机制化：每周总结 lessons 并更新长期索引
 
 ### Tooling & Skills (Week of 3/2-3/6)
 - Progressive Disclosure 架构显著节省上下文：McKinsey Consultant Skill 按 8 步工作流逐步加载，避免一次性加载所有参考文档
@@ -27,3 +30,8 @@
 - 费用追踪需要清晰的分类逻辑：团建费用（目标金额）vs 其他支出
 - 平摊计算需要明确参与名单和计算规则（员工平摊 vs 其他支出）
 - 最终结算需要人工确认后再落盘，避免计算错误
+
+### 运营模式 (Week of 3/10-3/11)
+- 阻塞项需要明确的恢复路径和依赖清单
+- 项目生命周期管理：Active → Completed/Blocked/Pending → 归档
+- 外部工具依赖检查应在项目启动前置，而非阻塞后才发现

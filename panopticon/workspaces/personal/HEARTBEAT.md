@@ -1,5 +1,10 @@
 # HEARTBEAT.md
 
+## Heartbeat Interval
+
+- **Frequency:** Every 2 hours
+- **Last updated:** 2026-03-10
+
 ## Rule Zero
 
 - Heartbeat is I/O-only. No autonomous purchases/cancellations/sends.

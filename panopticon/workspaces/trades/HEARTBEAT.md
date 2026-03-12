@@ -3,8 +3,13 @@
 ## Rule Zero
 
 - Heartbeat is I/O-only. No trading actions, no execution suggestions.
-- Follow this file only. Do not infer extra tasks from old chats.
+- Follow this file only. Do not infer extra tasks from prior chats.
 - If nothing requires action, reply exactly: `HEARTBEAT_OK`.
+
+## Silent Hours (UTC)
+
+- 10:00–15:00 UTC daily (Beijing 18:00–23:00): Skip all heartbeat checks and routine tasks
+- Outside silent hours: Proceed with normal heartbeat checks
 
 ## Every Heartbeat
 

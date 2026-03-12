@@ -6,6 +6,17 @@
 - Follow this file only. Do not infer extra tasks from old chats.
 - If nothing requires action, reply exactly: `HEARTBEAT_OK`.
 
+## Heartbeat Schedule
+
+- **Frequency:** Once per day
+- Run full checks once daily; other heartbeat requests during same day return `HEARTBEAT_OK`
+
+## Silent Hours (Quiet Period)
+
+- **Silent window:** Daily 13:00–16:00 UTC
+- During silent hours: Always reply `HEARTBEAT_OK` without any checks
+- Skip all inbox, state, and file operations during this window
+
 ## Every Heartbeat
 
 - Check inbox queue status and unread count snapshot.
