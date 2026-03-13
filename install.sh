@@ -5,13 +5,13 @@
 # ║   🦞 OpenClaw 一键部署脚本 v1.0.0                                          ║
 # ║   智能 AI 助手部署工具 - 支持多平台多模型                                    ║
 # ║                                                                           ║
-# ║   GitHub: https://github.com/miaoxworld/OpenClawInstaller                 ║
+# ║   GitHub: https://github.com/Ieer/OpenClaw-PWTInstaller                   ║
 # ║   官方文档: https://clawd.bot/docs                                         ║
 # ║                                                                           ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
 # 使用方法:
-#   curl -fsSL https://raw.githubusercontent.com/miaoxworld/OpenClawInstaller/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Ieer/OpenClaw-PWTInstaller/main/install.sh | bash
 #   或本地执行: chmod +x install.sh && ./install.sh
 #
 
@@ -42,7 +42,7 @@ NC='\033[0m' # 无颜色
 OPENCLAW_VERSION="latest"
 CONFIG_DIR="$HOME/.openclaw"
 MIN_NODE_VERSION=22
-GITHUB_REPO="miaoxworld/OpenClawInstaller"
+GITHUB_REPO="Ieer/OpenClaw-PWTInstaller"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/$GITHUB_REPO/main"
 
 # ================================ 工具函数 ================================
@@ -1610,15 +1610,17 @@ main() {
     echo ""
     echo -e "${GRAY}配置菜单支持: 渠道配置、身份设置、安全配置、服务管理等${NC}"
     echo ""
-    echo -e "${WHITE}💡 下次可以直接运行配置菜单:${NC}"
-    echo -e "   ${CYAN}bash ./config-menu.sh${NC}"
+    echo -e "${WHITE}💡 下次可以这样打开配置菜单:${NC}"
+    echo -e "   ${CYAN}bash ./config-menu.sh${NC} ${GRAY}(如果你当前就在仓库目录)${NC}"
+    echo -e "   ${CYAN}curl -fsSL $GITHUB_RAW_URL/config-menu.sh | bash${NC} ${GRAY}(任意目录可用)${NC}"
     echo ""
     if confirm "是否现在打开配置菜单？" "n"; then
         run_config_menu
     else
         echo ""
         echo -e "${CYAN}稍后可以通过以下命令打开配置菜单:${NC}"
-        echo "  bash ./config-menu.sh"
+        echo "  bash ./config-menu.sh        # 如果你当前就在仓库目录"
+        echo "  curl -fsSL $GITHUB_RAW_URL/config-menu.sh | bash"
         echo ""
     fi
     
