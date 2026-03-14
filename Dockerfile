@@ -7,9 +7,12 @@
 
 FROM node:22-alpine
 
+ARG OPENCLAW_VERSION=2026.3.11
+
 LABEL maintainer="OpenClaw Community"
 LABEL description="OpenClaw - Your Personal AI Assistant"
 LABEL version="1.0.0"
+LABEL org.opencontainers.image.version="${OPENCLAW_VERSION}"
 
 # 安装基础依赖
 RUN apk add --no-cache \
@@ -27,7 +30,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 WORKDIR /app
 
 # 安装 OpenClaw
-RUN npm install -g openclaw@latest
+RUN npm install -g "openclaw@${OPENCLAW_VERSION}"
 
 # 创建配置目录
 RUN mkdir -p /root/.openclaw/logs \

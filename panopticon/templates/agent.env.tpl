@@ -30,11 +30,11 @@ WORKSPACE=/home/node/.openclaw/workspace
 # Gateway (container-internal ports stay 26216/18790; host ports are mapped in docker-compose)
 OPENCLAW_GATEWAY_TOKEN={gateway_token}
 OPENCLAW_GATEWAY_BIND=lan
-OPENCLAW_GATEWAY_PORT=26216
-OPENCLAW_BRIDGE_PORT=18790
-OPENCLAW_GATEWAY_AUTH_MODE=token
+OPENCLAW_GATEWAY_PORT={gateway_port}
+OPENCLAW_BRIDGE_PORT={bridge_port}
+OPENCLAW_GATEWAY_AUTH_MODE={gateway_auth_mode}
 OPENCLAW_GATEWAY_PASSWORD=
-OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH=1
+OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH={control_ui_disable_device_auth}
 
 # Mission Control integration (agent wrapper / skills should consume these)
 AGENT_SLUG={slug}

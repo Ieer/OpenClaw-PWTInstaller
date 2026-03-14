@@ -750,13 +750,22 @@ sudo apt-get install -y nodejs
 ### Q: 如何更新到最新版本？
 
 ```bash
-# 使用 npm 更新
-npm update -g openclaw
+# 1) 先修改 openclaw-release.yaml 中的目标版本/兼容开关
 
-# 或使用配置菜单
-./config-menu.sh
-# 选择 [7] 高级设置 → [7] 更新 OpenClaw
+# 2) 运行统一准备入口（sync -> generate -> validate -> smoke）
+python tools/prepare_release_upgrade.py
+
+# 3) 做灰度发布（示例：先滚动 nox + personal）
+python tools/rollout_release_upgrade.py nox personal
+
+# 4) 如需回滚到上一次 rollout 保存的快照
+python tools/rollback_release_upgrade.py
 ```
+
+补充说明：
+- `tools/prepare_release_upgrade.py` 只做准备与验收，不会重建容器。
+- `tools/rollout_release_upgrade.py` 会先把当前 `openclaw-release.yaml` 备份到 `.release-state/`，再对指定 agent 做构建/重建/验收。
+- `tools/rollback_release_upgrade.py` 会恢复最近一次 rollout 的 release 快照，并重建对应服务。
 
 ### Q: 如何备份数据？
 

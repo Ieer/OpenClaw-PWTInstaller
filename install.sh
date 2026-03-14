@@ -39,11 +39,13 @@ GRAY='\033[0;90m'
 NC='\033[0m' # 无颜色
 
 # ================================ 配置变量 ================================
-OPENCLAW_VERSION="latest"
+OPENCLAW_VERSION_DEFAULT="2026.3.11"
+OPENCLAW_VERSION="$OPENCLAW_VERSION_DEFAULT"
 CONFIG_DIR="$HOME/.openclaw"
 MIN_NODE_VERSION=22
 GITHUB_REPO="Ieer/OpenClaw-PWTInstaller"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/$GITHUB_REPO/main"
+OPENCLAW_RELEASE_MANIFEST_URL="$GITHUB_RAW_URL/openclaw-release.yaml"
 
 # ================================ 工具函数 ================================
 
@@ -92,6 +94,24 @@ spinner() {
         printf "\b\b\b\b\b\b"
     done
     printf "    \b\b\b\b"
+}
+
+resolve_release_value() {
+    local key="$1"
+    local fallback="$2"
+
+    if ! command -v curl &> /dev/null; then
+        echo "$fallback"
+        return
+    fi
+
+    local value
+    value=$(curl -fsSL "$OPENCLAW_RELEASE_MANIFEST_URL" 2>/dev/null | awk -F': ' -v wanted="$key" '$1 == wanted {print $2; exit}')
+    if [ -n "$value" ]; then
+        echo "$value"
+    else
+        echo "$fallback"
+    fi
 }
 
 # 从 TTY 读取用户输入（支持 curl | bash 模式）
@@ -252,6 +272,8 @@ install_git() {
 
 install_dependencies() {
     log_step "检查并安装依赖..."
+
+    OPENCLAW_VERSION="${OPENCLAW_VERSION:-$(resolve_release_value openclaw_version "$OPENCLAW_VERSION_DEFAULT")}"
     
     # 安装基础依赖
     case "$OS" in
@@ -284,6 +306,7 @@ create_directories() {
 
 install_openclaw() {
     log_step "安装 OpenClaw..."
+    log_info "目标 OpenClaw 版本: $OPENCLAW_VERSION"
     
     # 检查是否已安装
     if check_command openclaw; then
@@ -297,7 +320,7 @@ install_openclaw() {
     
     # 使用 npm 全局安装
     log_info "正在从 npm 安装 OpenClaw..."
-    npm install -g openclaw@$OPENCLAW_VERSION --unsafe-perm
+    npm install -g "openclaw@$OPENCLAW_VERSION" --unsafe-perm
     
     # 验证安装
     if check_command openclaw; then

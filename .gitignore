@@ -70,6 +70,7 @@ data/
 # ------------------------------
 tmp.txt
 README-mo.md
+.release-state/
 
 # ------------------------------
 # Panopticon runtime data

@@ -244,44 +244,49 @@ def render_compose(manifest: dict) -> str:
     return compose_header + "".join(services_text) + footer
 
 
-def render_agent_env(template: str, agent: dict) -> str:
-    return template.format(
-        slug=agent["slug"],
-        role=agent.get("role", "agent"),
-        gateway_token=agent.get("gateway_token", f"CHANGE_ME_{agent['slug'].upper()}"),
-    )
+def render_agent_env(template: str, agent: dict, runtime: dict) -> str:
+  return template.format(
+    slug=agent["slug"],
+    role=agent.get("role", "agent"),
+    gateway_token=agent.get("gateway_token", f"CHANGE_ME_{agent['slug'].upper()}"),
+    gateway_port=runtime.get("container_gateway_port", 26216),
+    bridge_port=runtime.get("container_bridge_port", 18790),
+    gateway_auth_mode=runtime.get("gateway_auth_mode", "token"),
+    control_ui_disable_device_auth="1" if runtime.get("control_ui_disable_device_auth", True) else "0",
+  )
 
 
 def generate(manifest_path: Path, prune: bool = False) -> None:
-    manifest = load_manifest(manifest_path)
+  manifest = load_manifest(manifest_path)
+  runtime = manifest["agent_runtime"]
 
-    compose_content = render_compose(manifest)
-    COMPOSE_PATH.write_text(compose_content, encoding="utf-8")
+  compose_content = render_compose(manifest)
+  COMPOSE_PATH.write_text(compose_content, encoding="utf-8")
 
-    template = TEMPLATE_PATH.read_text(encoding="utf-8")
-    ENV_DIR.mkdir(parents=True, exist_ok=True)
+  template = TEMPLATE_PATH.read_text(encoding="utf-8")
+  ENV_DIR.mkdir(parents=True, exist_ok=True)
 
-    active_slugs: set[str] = set()
-    for agent in manifest["agents"]:
-        if not agent.get("enabled", True):
-            continue
-        slug = agent["slug"]
-        active_slugs.add(slug)
-        env_content = render_agent_env(template, agent)
-        (ENV_DIR / f"{slug}.env.example").write_text(env_content, encoding="utf-8")
+  active_slugs: set[str] = set()
+  for agent in manifest["agents"]:
+    if not agent.get("enabled", True):
+      continue
+    slug = agent["slug"]
+    active_slugs.add(slug)
+    env_content = render_agent_env(template, agent, runtime)
+    (ENV_DIR / f"{slug}.env.example").write_text(env_content, encoding="utf-8")
 
-    if prune:
-        static_files = {
-            "mission-control.env.example",
-            "mission-control-ui.env.example",
-          "mission-control-gateway.env.example",
-        }
-        for env_file in ENV_DIR.glob("*.env.example"):
-            if env_file.name in static_files:
-                continue
-            slug = env_file.name.removesuffix(".env.example")
-            if slug not in active_slugs:
-                env_file.unlink(missing_ok=True)
+  if prune:
+    static_files = {
+      "mission-control.env.example",
+      "mission-control-ui.env.example",
+      "mission-control-gateway.env.example",
+    }
+    for env_file in ENV_DIR.glob("*.env.example"):
+      if env_file.name in static_files:
+        continue
+      slug = env_file.name.removesuffix(".env.example")
+      if slug not in active_slugs:
+        env_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

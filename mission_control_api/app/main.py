@@ -68,38 +68,55 @@ def _rewrite_avatar_paths(obj, agent: str):
     return obj
 
 
-def _build_chat_inject_script(agent: str, token: str | None) -> str:
+def _build_chat_inject_script(
+    agent: str,
+    token: str | None,
+    *,
+    clear_device_auth_storage: bool = True,
+    inject_gateway_settings: bool = True,
+    dom_avatar_rewrite: bool = True,
+) -> str:
     base_path = f"/chat/{agent}"
     token_json = json.dumps(token or "", ensure_ascii=False)
-    return (
-        f'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="{base_path}";'
-        "(function(){"
-        "try{"
-        "localStorage.removeItem(\"openclaw.device.auth.v1\");"
-        "sessionStorage.removeItem(\"openclaw.device.auth.v1\");"
-        "const k=\"openclaw.control.settings.v1\";"
-        "const raw=localStorage.getItem(k);"
-        "let v={};"
-        "try{v=raw?JSON.parse(raw):{};}catch{}"
-        f"v.gatewayUrl=(location.protocol===\"https:\"?\"wss\":\"ws\")+\"://\"+location.host+\"{base_path}/\";"
-        f"v.token={token_json};"
-        "localStorage.setItem(k,JSON.stringify(v));"
-        "}catch(e){}"
-        "try{"
-        f"const p=\"{base_path}\";"
-        "const scan=()=>{"
-        "document.querySelectorAll('img.chat-avatar.assistant[src^=\"/avatar/\"]').forEach((img)=>{"
-        "const s=img.getAttribute(\"src\")||\"\";"
-        "if(s.startsWith(\"/avatar/\"))img.setAttribute(\"src\",p+s);"
-        "});"
-        "};"
-        "scan();"
-        "const mo=new MutationObserver(()=>scan());"
-        "mo.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:[\"src\"]});"
-        "window.addEventListener(\"beforeunload\",()=>mo.disconnect(),{once:true});"
-        "}catch(e){}"
-        "})();"
-    )
+    parts = [f'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="{base_path}";', "(function(){"]
+    if clear_device_auth_storage or inject_gateway_settings:
+        parts.append("try{")
+        if clear_device_auth_storage:
+            parts.append('localStorage.removeItem("openclaw.device.auth.v1");')
+            parts.append('sessionStorage.removeItem("openclaw.device.auth.v1");')
+        if inject_gateway_settings:
+            parts.extend(
+                [
+                    'const k="openclaw.control.settings.v1";',
+                    'const raw=localStorage.getItem(k);',
+                    'let v={};',
+                    'try{v=raw?JSON.parse(raw):{};}catch{}',
+                    f'v.gatewayUrl=(location.protocol==="https:"?"wss":"ws")+"://"+location.host+"{base_path}/";',
+                    f'v.token={token_json};',
+                    'localStorage.setItem(k,JSON.stringify(v));',
+                ]
+            )
+        parts.append("}catch(e){}")
+    if dom_avatar_rewrite:
+        parts.extend(
+            [
+                "try{",
+                f'const p="{base_path}";',
+                "const scan=()=>{",
+                "document.querySelectorAll('img.chat-avatar.assistant[src^=\"/avatar/\"]').forEach((img)=>{",
+                'const s=img.getAttribute("src")||"";',
+                'if(s.startsWith("/avatar/"))img.setAttribute("src",p+s);',
+                "});",
+                "};",
+                "scan();",
+                "const mo=new MutationObserver(()=>scan());",
+                'mo.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["src"]});',
+                'window.addEventListener("beforeunload",()=>mo.disconnect(),{once:true});',
+                "}catch(e){}",
+            ]
+        )
+    parts.append("})();")
+    return "".join(parts)
 
 
 def _normalize_control_ui_origin(origin: str | None) -> str | None:
@@ -112,7 +129,13 @@ def _normalize_control_ui_origin(origin: str | None) -> str | None:
     return origin
 
 
-def _sanitize_connect_auth(message: str, token: str | None) -> str:
+def _sanitize_connect_auth(
+    message: str,
+    token: str | None,
+    *,
+    strip_stale_device_fields: bool = True,
+    force_token_in_connect: bool = True,
+) -> str:
     try:
         req = json.loads(message)
     except Exception:
@@ -146,12 +169,16 @@ def _sanitize_connect_auth(message: str, token: str | None) -> str:
     if not isinstance(auth, dict):
         auth = {}
 
-    for key in stale_device_keys:
-        auth.pop(key, None)
-        params.pop(key, None)
+    if strip_stale_device_fields:
+        for key in stale_device_keys:
+            auth.pop(key, None)
+            params.pop(key, None)
 
-    if token:
+    if token and force_token_in_connect:
         params["auth"] = {"token": token}
+    elif token and not auth.get("token"):
+        auth["token"] = token
+        params["auth"] = auth
     elif auth:
         params["auth"] = auth
     else:
@@ -177,7 +204,7 @@ def _rewrite_avatar_meta(content: bytes, agent: str, query: str) -> bytes:
     return content
 
 
-def _rewrite_control_ui_config(content: bytes, agent: str) -> bytes:
+def _rewrite_control_ui_config(content: bytes, agent: str, *, rewrite_avatar: bool = True) -> bytes:
     try:
         payload = json.loads(content.decode("utf-8", errors="replace"))
     except Exception:
@@ -189,9 +216,10 @@ def _rewrite_control_ui_config(content: bytes, agent: str) -> bytes:
     base_path = f"/chat/{agent}"
     payload["basePath"] = base_path
 
-    avatar = payload.get("assistantAvatar")
-    if isinstance(avatar, str) and avatar.startswith("/avatar/"):
-        payload["assistantAvatar"] = f"{base_path}{avatar}"
+    if rewrite_avatar:
+        avatar = payload.get("assistantAvatar")
+        if isinstance(avatar, str) and avatar.startswith("/avatar/"):
+            payload["assistantAvatar"] = f"{base_path}{avatar}"
 
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
@@ -1105,7 +1133,7 @@ def create_app() -> FastAPI:
                 },
             )
             
-        target_url = f"http://openclaw-{agent}:26216/{path}"
+        target_url = f"http://openclaw-{agent}:{settings.chat_upstream_port}/{path}"
         query = request.url.query
         if query:
             target_url += f"?{query}"
@@ -1113,8 +1141,9 @@ def create_app() -> FastAPI:
         async with httpx.AsyncClient(timeout=3600.0) as client:
             headers = dict(request.headers.items())
             headers.pop("host", None)
-            headers["x-real-ip"] = "127.0.0.1"
-            headers["x-forwarded-for"] = "127.0.0.1"
+            if settings.chat_force_loopback_headers:
+                headers["x-real-ip"] = "127.0.0.1"
+                headers["x-forwarded-for"] = "127.0.0.1"
             
             token = settings.agent_token_map.get(agent)
             if token:
@@ -1137,25 +1166,33 @@ def create_app() -> FastAPI:
                 content = await resp.aread()
                 text = content.decode("utf-8", errors="replace")
                 
-                inject_script = _build_chat_inject_script(agent, token)
+                if settings.chat_inject_script_enabled:
+                    inject_script = _build_chat_inject_script(
+                        agent,
+                        token,
+                        clear_device_auth_storage=settings.chat_clear_device_auth_storage,
+                        inject_gateway_settings=settings.chat_inject_gateway_settings,
+                        dom_avatar_rewrite=settings.chat_dom_avatar_rewrite,
+                    )
 
-                if 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' in text:
-                    text = text.replace('window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";', inject_script)
-                else:
-                    injected = f"<script>{inject_script}</script>"
-                    if '<script type="module"' in text:
-                        text = text.replace('<script type="module"', f"{injected}<script type=\"module\"", 1)
-                    elif "</head>" in text:
-                        text = text.replace("</head>", f"{injected}</head>", 1)
-                    elif "<body>" in text:
-                        text = text.replace("<body>", f"<body>{injected}", 1)
+                    if 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' in text:
+                        text = text.replace('window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";', inject_script)
                     else:
-                        text = f"{injected}{text}"
-                text = re.sub(
-                    r'window\.__OPENCLAW_ASSISTANT_AVATAR__=("|\')/avatar/[^"\']*("|\')',
-                    'window.__OPENCLAW_ASSISTANT_AVATAR__=""',
-                    text,
-                )
+                        injected = f"<script>{inject_script}</script>"
+                        if '<script type="module"' in text:
+                            text = text.replace('<script type="module"', f"{injected}<script type=\"module\"", 1)
+                        elif "</head>" in text:
+                            text = text.replace("</head>", f"{injected}</head>", 1)
+                        elif "<body>" in text:
+                            text = text.replace("<body>", f"<body>{injected}", 1)
+                        else:
+                            text = f"{injected}{text}"
+                    if settings.chat_dom_avatar_rewrite:
+                        text = re.sub(
+                            r'window\.__OPENCLAW_ASSISTANT_AVATAR__=("|\')/avatar/[^"\']*("|\')',
+                            'window.__OPENCLAW_ASSISTANT_AVATAR__=""',
+                            text,
+                        )
                 await resp.aclose()
                 
                 return HTMLResponse(content=text, status_code=resp.status_code)
@@ -1163,14 +1200,20 @@ def create_app() -> FastAPI:
             content = await resp.aread()
             await resp.aclose()
 
-            if request.method.upper() == "GET" and path.endswith("control-ui-config.json") and resp.status_code == 200:
-                content = _rewrite_control_ui_config(content, agent)
+            if (
+                settings.chat_rewrite_control_ui_config
+                and request.method.upper() == "GET"
+                and path.endswith("control-ui-config.json")
+                and resp.status_code == 200
+            ):
+                content = _rewrite_control_ui_config(content, agent, rewrite_avatar=settings.chat_rewrite_avatar_payloads)
 
             if request.method.upper() == "GET" and path.startswith("avatar/"):
                 is_meta = request.query_params.get("meta") == "1"
 
                 if is_meta and resp.status_code == 200 and "application/json" in resp.headers.get("content-type", ""):
-                    content = _rewrite_avatar_meta(content, agent, query)
+                    if settings.chat_rewrite_avatar_payloads:
+                        content = _rewrite_avatar_meta(content, agent, query)
 
                 if not is_meta and resp.status_code == 404:
                     svg = _avatar_fallback_svg(agent)
@@ -1206,7 +1249,7 @@ def create_app() -> FastAPI:
             },
         )
             
-        target_ws_url = f"ws://openclaw-{agent}:26216/{path}"
+        target_ws_url = f"ws://openclaw-{agent}:{settings.chat_upstream_port}/{path}"
         ws_query = websocket.scope.get("query_string", b"")
         if isinstance(ws_query, (bytes, bytearray)) and ws_query:
             target_ws_url = f"{target_ws_url}?{ws_query.decode('utf-8', errors='ignore')}"
@@ -1217,8 +1260,9 @@ def create_app() -> FastAPI:
         headers = {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        headers["X-Real-IP"] = "127.0.0.1"
-        headers["X-Forwarded-For"] = "127.0.0.1"
+        if settings.chat_force_loopback_headers:
+            headers["X-Real-IP"] = "127.0.0.1"
+            headers["X-Forwarded-For"] = "127.0.0.1"
         upstream_origin = _normalize_control_ui_origin(websocket.headers.get("origin"))
             
         try:
@@ -1231,7 +1275,13 @@ def create_app() -> FastAPI:
                     try:
                         while True:
                             msg = await websocket.receive_text()
-                            msg = _sanitize_connect_auth(msg, token)
+                            if settings.chat_sanitize_connect_auth:
+                                msg = _sanitize_connect_auth(
+                                    msg,
+                                    token,
+                                    strip_stale_device_fields=settings.chat_strip_stale_device_fields,
+                                    force_token_in_connect=settings.chat_force_token_in_connect,
+                                )
                             await upstream_ws.send(msg)
                     except WebSocketDisconnect:
                         pass
@@ -1242,7 +1292,7 @@ def create_app() -> FastAPI:
                     try:
                         while True:
                             msg = await upstream_ws.recv()
-                            if isinstance(msg, str) and "/avatar/" in msg:
+                            if settings.chat_rewrite_avatar_payloads and isinstance(msg, str) and "/avatar/" in msg:
                                 try:
                                     payload = json.loads(msg)
                                     rewritten = _rewrite_avatar_paths(payload, agent)

@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "agents.manifest.yaml"
 COMPOSE_PATH = ROOT / "docker-compose.panopticon.yml"
 ENV_DIR = ROOT / "env"
+RELEASE_PATH = ROOT.parent / "openclaw-release.yaml"
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
@@ -19,6 +20,14 @@ def load_manifest(path: Path) -> dict:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):
         raise ValueError("manifest must be a mapping")
+    return data
+
+
+def load_release(path: Path) -> dict:
+    with path.open("r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        raise ValueError("openclaw-release.yaml must be a mapping")
     return data
 
 
@@ -43,6 +52,10 @@ def validate_manifest(manifest: dict) -> list[str]:
             errors.append(f"missing agent_runtime.{key}")
     if "cnim_openclaw_version" in runtime and not isinstance(runtime["cnim_openclaw_version"], (str, int, float)):
         errors.append("agent_runtime.cnim_openclaw_version must be string-like")
+    if "gateway_auth_mode" in runtime and not isinstance(runtime["gateway_auth_mode"], str):
+        errors.append("agent_runtime.gateway_auth_mode must be string")
+    if "control_ui_disable_device_auth" in runtime and not isinstance(runtime["control_ui_disable_device_auth"], bool):
+        errors.append("agent_runtime.control_ui_disable_device_auth must be bool")
 
     agents = manifest.get("agents", [])
     if not isinstance(agents, list) or not agents:
@@ -105,6 +118,33 @@ def validate_generated_files(manifest: dict) -> list[str]:
     return errors
 
 
+def validate_release_alignment(manifest: dict, release: dict) -> list[str]:
+    errors: list[str] = []
+
+    runtime = manifest.get("agent_runtime", {})
+    release_ports = release.get("ports", {})
+    compat = release.get("compat", {})
+
+    expected_pairs = [
+        ("cnim_openclaw_version", str(release.get("openclaw_version", ""))),
+        ("container_gateway_port", release_ports.get("panopticon_container_gateway_port")),
+        ("container_bridge_port", release_ports.get("panopticon_container_bridge_port")),
+        ("gateway_auth_mode", compat.get("gateway_auth_mode")),
+        ("control_ui_disable_device_auth", compat.get("control_ui_disable_device_auth")),
+    ]
+
+    for key, expected in expected_pairs:
+        if expected is None:
+            continue
+        actual = runtime.get(key)
+        if str(actual) != str(expected):
+            errors.append(
+                f"release drift: agent_runtime.{key}={actual!r} does not match openclaw-release.yaml value {expected!r}"
+            )
+
+    return errors
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Validate panopticon agents manifest and generated artifacts"
@@ -115,11 +155,19 @@ if __name__ == "__main__":
         default=MANIFEST_PATH,
         help="Path to agents.manifest.yaml",
     )
+    parser.add_argument(
+        "--release",
+        type=Path,
+        default=RELEASE_PATH,
+        help="Path to openclaw-release.yaml",
+    )
     args = parser.parse_args()
 
     manifest = load_manifest(args.manifest)
+    release = load_release(args.release)
     errors = validate_manifest(manifest)
     errors.extend(validate_generated_files(manifest))
+    errors.extend(validate_release_alignment(manifest, release))
 
     if errors:
         print("Validation failed:")

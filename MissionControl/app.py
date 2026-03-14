@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import requests
 import websocket
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
-from flask import Response, request
+from flask import Response
 
 APP_TITLE = "Mission Control"
 
@@ -29,6 +29,12 @@ MISSION_CONTROL_CHAT_HOST = (os.getenv("MISSION_CONTROL_CHAT_HOST") or "127.0.0.
 MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT = int((os.getenv("MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT") or "26216").strip())
 MISSION_CONTROL_CHAT_AUTH_SCHEME = (os.getenv("MISSION_CONTROL_CHAT_AUTH_SCHEME") or "Bearer").strip() or "Bearer"
 MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP = (os.getenv("MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP") or "").strip()
+MISSION_CONTROL_ENABLE_LEGACY_CHAT_PROXY = (
+    (os.getenv("MISSION_CONTROL_ENABLE_LEGACY_CHAT_PROXY") or "0").strip().lower() in {"1", "true", "yes", "on"}
+)
+MISSION_CONTROL_ENABLE_DIRECT_AGENT_LINKS = (
+    (os.getenv("MISSION_CONTROL_ENABLE_DIRECT_AGENT_LINKS") or "0").strip().lower() in {"1", "true", "yes", "on"}
+)
 MISSION_CONTROL_CHAT_EVENT_BRIDGE_ENABLED = (
     (os.getenv("MISSION_CONTROL_CHAT_EVENT_BRIDGE_ENABLED") or "1").strip().lower() in {"1", "true", "yes", "on"}
 )
@@ -193,31 +199,23 @@ def _load_chat_agent_configs() -> list[dict]:
             configs = []
 
     out: list[dict] = []
-    inside_docker = os.path.exists("/.dockerenv")
     for idx, item in enumerate(configs):
         slug = str(item.get("slug") or "").strip()
         if not slug or slug in seen:
             continue
         seen.add(slug)
         gateway_port = item.get("gateway_host_port")
-        bridge_port = item.get("bridge_host_port")
         token_candidate = CHAT_AGENT_TOKEN_OVERRIDES.get(slug) or str(item.get("gateway_token") or "").strip()
         gateway_token = "" if _is_placeholder_token(token_candidate) else token_candidate
-        if gateway_port is None:
+        if gateway_port is None and MISSION_CONTROL_ENABLE_DIRECT_AGENT_LINKS:
             gateway_port = 18801 + idx * 10
+        direct_url = f"http://{MISSION_CONTROL_CHAT_HOST}:{int(gateway_port)}" if gateway_port else ""
         out.append(
             {
                 "slug": slug,
                 "label": _slug_label(slug),
                 "enabled": bool(item.get("enabled", True)),
-                "chat_url": f"http://{MISSION_CONTROL_CHAT_HOST}:{int(gateway_port)}",
-                "proxy_target_url": (
-                    f"http://openclaw-{slug}:{MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT}"
-                    if inside_docker
-                    else f"http://{MISSION_CONTROL_CHAT_HOST}:{int(gateway_port)}"
-                ),
-                "bridge_url": f"tcp://{MISSION_CONTROL_CHAT_HOST}:{int(bridge_port)}" if bridge_port else "",
-                "health_url": f"http://{MISSION_CONTROL_CHAT_HOST}:{int(gateway_port)}",
+                "direct_url": direct_url,
                 "gateway_token": gateway_token,
                 "open_mode": "iframe",
                 "order": idx,
@@ -229,8 +227,7 @@ def _load_chat_agent_configs() -> list[dict]:
 
     fallback = []
     for idx, slug in enumerate(STATIC_AGENT_NAMES):
-        gateway_port = 18801 + idx * 10
-        bridge_port = gateway_port + 1
+        gateway_port = 18801 + idx * 10 if MISSION_CONTROL_ENABLE_DIRECT_AGENT_LINKS else None
         token_candidate = CHAT_AGENT_TOKEN_OVERRIDES.get(slug) or ""
         gateway_token = "" if _is_placeholder_token(token_candidate) else token_candidate
         fallback.append(
@@ -238,14 +235,7 @@ def _load_chat_agent_configs() -> list[dict]:
                 "slug": slug,
                 "label": _slug_label(slug),
                 "enabled": True,
-                "chat_url": f"http://{MISSION_CONTROL_CHAT_HOST}:{gateway_port}",
-                "proxy_target_url": (
-                    f"http://openclaw-{slug}:{MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT}"
-                    if inside_docker
-                    else f"http://{MISSION_CONTROL_CHAT_HOST}:{gateway_port}"
-                ),
-                "bridge_url": f"tcp://{MISSION_CONTROL_CHAT_HOST}:{bridge_port}",
-                "health_url": f"http://{MISSION_CONTROL_CHAT_HOST}:{gateway_port}",
+                "direct_url": f"http://{MISSION_CONTROL_CHAT_HOST}:{gateway_port}" if gateway_port else "",
                 "gateway_token": gateway_token,
                 "open_mode": "iframe",
                 "order": idx,
@@ -255,9 +245,8 @@ def _load_chat_agent_configs() -> list[dict]:
 
 
 CHAT_AGENT_CONFIGS = _load_chat_agent_configs()
-CHAT_AGENT_URL_MAP = {item["slug"]: item["chat_url"] for item in CHAT_AGENT_CONFIGS if item.get("slug")}
-CHAT_AGENT_PROXY_TARGET_URL_MAP = {
-    item["slug"]: item.get("proxy_target_url") or item["chat_url"]
+CHAT_AGENT_DIRECT_URL_MAP = {
+    item["slug"]: item.get("direct_url") or ""
     for item in CHAT_AGENT_CONFIGS
     if item.get("slug")
 }
@@ -950,119 +939,19 @@ app.clientside_callback(
 )
 
 
-def _rewrite_location_for_proxy(location_value: str, agent_slug: str, upstream_base: str) -> str:
-    if not location_value:
-        return location_value
-    base = upstream_base.rstrip("/")
-    prefix = f"/chat/{agent_slug}"
-    if location_value.startswith(base):
-        tail = location_value[len(base):]
-        if not tail.startswith("/"):
-            tail = "/" + tail
-        return f"{prefix}{tail}"
-    if location_value.startswith("/"):
-        return f"{prefix}{location_value}"
-    return location_value
-
-
 @app.server.route("/chat/<agent_slug>/", defaults={"proxy_path": ""}, methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
 @app.server.route("/chat/<agent_slug>/<path:proxy_path>", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
 def chat_reverse_proxy(agent_slug: str, proxy_path: str):
-    upstream_base = CHAT_AGENT_PROXY_TARGET_URL_MAP.get(agent_slug)
-    if not upstream_base:
-        return Response("Unknown agent", status=404)
-
-    upstream = upstream_base.rstrip("/") + "/"
-    if proxy_path:
-        upstream += proxy_path.lstrip("/")
-
-    query_string = request.query_string.decode("utf-8", errors="ignore")
-    if query_string:
-        upstream = f"{upstream}?{query_string}"
-
-    skip_headers = {"host", "content-length", "connection"}
-    forward_headers = {}
-    for key, value in request.headers.items():
-        if key.lower() in skip_headers:
-            continue
-        forward_headers[key] = value
-
-    token = CHAT_AGENT_TOKEN_MAP.get(agent_slug, "").strip()
-    if token:
-        auth_value = token if token.lower().startswith("bearer ") else f"{MISSION_CONTROL_CHAT_AUTH_SCHEME} {token}"
-        forward_headers["Authorization"] = auth_value
-
-    body = request.get_data() if request.method in {"POST", "PUT", "PATCH", "DELETE"} else None
-    request_query_keys = sorted(list(request.args.keys()))
-    is_ws_upgrade = request.headers.get("Upgrade", "").lower() == "websocket"
-
-    if request.method in {"POST", "PUT", "PATCH", "DELETE"} or is_ws_upgrade:
-        emit_chat_event(
-            agent_slug,
-            "chat.message.sent",
-            {
-                "method": request.method,
-                "path": f"/{proxy_path.lstrip('/')}" if proxy_path else "/",
-                "query_keys": request_query_keys,
-                "is_ws_upgrade": is_ws_upgrade,
-                "content_length": len(body) if body else 0,
-            },
+    if not MISSION_CONTROL_ENABLE_LEGACY_CHAT_PROXY:
+        return Response(
+            "Legacy Mission Control chat proxy is disabled. Use /chat via mission-control-gateway.",
+            status=410,
         )
 
-    try:
-        upstream_resp = requests.request(
-            method=request.method,
-            url=upstream,
-            headers=forward_headers,
-            data=body,
-            cookies=request.cookies,
-            allow_redirects=False,
-            timeout=20,
-        )
-    except Exception as e:
-        emit_chat_event(
-            agent_slug,
-            "chat.proxy.error",
-            {
-                "method": request.method,
-                "path": f"/{proxy_path.lstrip('/')}" if proxy_path else "/",
-                "query_keys": request_query_keys,
-                "error_type": e.__class__.__name__,
-            },
-        )
-        return Response(f"Upstream unavailable: {e}", status=502)
-
-    if request.method in {"POST", "PUT", "PATCH", "DELETE"} or is_ws_upgrade:
-        emit_chat_event(
-            agent_slug,
-            "chat.message.received",
-            {
-                "method": request.method,
-                "path": f"/{proxy_path.lstrip('/')}" if proxy_path else "/",
-                "query_keys": request_query_keys,
-                "is_ws_upgrade": is_ws_upgrade,
-                "status_code": upstream_resp.status_code,
-            },
-        )
-
-    excluded_resp_headers = {
-        "content-length",
-        "transfer-encoding",
-        "content-encoding",
-        "connection",
-        "x-frame-options",
-        "content-security-policy",
-    }
-
-    resp = Response(upstream_resp.content, status=upstream_resp.status_code)
-    for key, value in upstream_resp.headers.items():
-        lk = key.lower()
-        if lk in excluded_resp_headers:
-            continue
-        if lk == "location":
-            value = _rewrite_location_for_proxy(value, agent_slug, upstream_base)
-        resp.headers[key] = value
-
+    return Response(
+        "Legacy Mission Control chat proxy is deprecated. Use /chat via mission-control-gateway.",
+        status=410,
+    )
     return resp
 
 app.layout = html.Div(
@@ -2420,7 +2309,7 @@ def render_chat_modal(_, chat_ui):
     embed_url = CHAT_AGENT_EMBED_URL_MAP.get(selected, "")
     # Prefer the same-origin proxy path for external open as well.
     # Direct 188xx gateway URLs do not inject token into localStorage and will prompt for manual token paste.
-    external_url = embed_url or (CHAT_AGENT_URL_MAP.get(selected, "") or "#")
+    external_url = embed_url or (CHAT_AGENT_DIRECT_URL_MAP.get(selected, "") or "#")
     iframe_src = embed_url or "about:blank"
 
     notice = ""

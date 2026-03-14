@@ -11,6 +11,8 @@ agent_runtime:
   cnim_openclaw_version: 2026.3.11
   container_gateway_port: 26216
   container_bridge_port: 18790
+  gateway_auth_mode: token
+  control_ui_disable_device_auth: true
 
 agents:
   - slug: nox

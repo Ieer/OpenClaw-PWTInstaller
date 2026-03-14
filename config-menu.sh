@@ -50,12 +50,33 @@ BG_GREEN='\033[42m'
 BG_RED='\033[41m'
 
 # ================================ 配置变量 ================================
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_OPENCLAW_VERSION="2026.3.11"
+RELEASE_MANIFEST_PATH="$SCRIPT_DIR/openclaw-release.yaml"
 CONFIG_DIR="$HOME/.openclaw"
 
 # OpenClaw 环境变量配置
 OPENCLAW_ENV="$CONFIG_DIR/env"
 OPENCLAW_JSON="$CONFIG_DIR/openclaw.json"
 BACKUP_DIR="$CONFIG_DIR/backups"
+
+resolve_local_release_value() {
+    local key="$1"
+    local fallback="$2"
+
+    if [ -f "$RELEASE_MANIFEST_PATH" ]; then
+        local value
+        value=$(awk -F': ' -v wanted="$key" '$1 == wanted {print $2; exit}' "$RELEASE_MANIFEST_PATH")
+        if [ -n "$value" ]; then
+            echo "$value"
+            return
+        fi
+    fi
+
+    echo "$fallback"
+}
+
+OPENCLAW_VERSION="${OPENCLAW_VERSION:-$(resolve_local_release_value openclaw_version "$DEFAULT_OPENCLAW_VERSION")}"
 
 # ================================ 工具函数 ================================
 
@@ -4523,8 +4544,8 @@ advanced_settings() {
             ;;
         6)
             echo ""
-            log_info "正在更新 OpenClaw..."
-            npm update -g openclaw
+            log_info "正在更新 OpenClaw 到版本: $OPENCLAW_VERSION"
+            npm install -g "openclaw@$OPENCLAW_VERSION"
             log_info "更新完成"
             ;;
         7)
