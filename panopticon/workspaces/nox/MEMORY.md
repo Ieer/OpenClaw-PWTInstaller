@@ -21,6 +21,7 @@
 
 - **lyrics-collaboration-2026-02-25**（已完成，等待决策）：3 套歌词方案 + 3 条路线建议 → `artifacts/lyrics-collaboration-2026-02-25/`
 - **year-end-party-2026**（已完成）：尾牙活动费用追踪与结算，17人参与，最终结算已确认 → `memory/2026-03-07.md`
+- **rpa-contact-2026-03-13**（已完成）：华西MCOE RPA业务通讯录，27个部门，601名IDL → `artifacts/rpa-contact-2026-03-13/`
 
 ## Update Rule
 

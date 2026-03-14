@@ -1,18 +1,18 @@
-# 8-Agent「Personal Panopticon」Mission Control（OpenClaw + Docker + Dash）完整備案
+# Mission Control Personal Panopticon（8-Agent，繁中完整備案）
 
 對應簡中工程落地手冊（弱化敘事、強化配置/清單/矩陣）：
-- [docs/unmanned-company-playbook-zh-cn.md](docs/unmanned-company-playbook-zh-cn.md)
+- [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md)
 
 本文件把目前討論到的「Mission Control + 8 個並行個人 agent」方案完整落盤，目的不是做漂亮簡報，而是讓你可以直接按表施工：容器怎麼切、權限怎麼收、skills 怎麼治理、事件怎麼記錄、以及如何沿用 CN-IM 的 env→openclaw.json 生成模式做 per-agent 差異化。
 
 關聯文件（本 repo）：
-- 通用 Mission Control 設計： [docs/mission-control.md](docs/mission-control.md)
-- Dash UI 原型： [MissionControl/app.py](MissionControl/app.py)
-- Dash 樣式： [MissionControl/assets/styles.css](MissionControl/assets/styles.css)
-- OpenClaw 設定範例（含 security / scheduler）： [examples/config.example.yaml](examples/config.example.yaml)
-- CN-IM Docker 模板（env→openclaw.json）： [src/OpenClaw-Docker-CN-IM/README.md](src/OpenClaw-Docker-CN-IM/README.md)
-- CN-IM env 範本： [src/OpenClaw-Docker-CN-IM/.env.example](src/OpenClaw-Docker-CN-IM/.env.example)
-- CN-IM 參考設定： [src/OpenClaw-Docker-CN-IM/openclaw.json.example](src/OpenClaw-Docker-CN-IM/openclaw.json.example)
+- 通用 Mission Control 設計： [mission-control-overview-en.md](mission-control-overview-en.md)
+- Dash UI 原型： [../MissionControl/app.py](../MissionControl/app.py)
+- Dash 樣式： [../MissionControl/assets/styles.css](../MissionControl/assets/styles.css)
+- OpenClaw 發版設定： [../openclaw-release.yaml](../openclaw-release.yaml)
+- CN-IM Docker 模板（env→openclaw.json）： [../external/OpenClaw-Docker-CN-IM/README.md](../external/OpenClaw-Docker-CN-IM/README.md)
+- CN-IM env 範本： [../external/OpenClaw-Docker-CN-IM/.env.example](../external/OpenClaw-Docker-CN-IM/.env.example)
+- CN-IM 參考設定： [../external/OpenClaw-Docker-CN-IM/openclaw.json.example](../external/OpenClaw-Docker-CN-IM/openclaw.json.example)
 
 ## 一句話目標
 用「8 個目錄＝8 個獨立 agent」作為責任邊界與資料邊界：每個 agent 是隔離的 OpenClaw 容器（獨立 OpenClaw home、獨立工作區 volume、獨立工具白名單與心跳排程），由一個 Python 控制平面（Dash UI + API + WebSocket）統一派工、handoff、checkpoint、審計與通知。
@@ -34,7 +34,7 @@
 - 只啟用該角色需要的工具（browser/shell/外部 API）與最小權限。
 
 ### 2) Control plane：Mission Control（Dash + API + WS）
-- UI（Dash）：沿用 [MissionControl/app.py](MissionControl/app.py) 的三欄布局（Agent roster / Kanban / Live feed）。
+- UI（Dash）：沿用 [../MissionControl/app.py](../MissionControl/app.py) 的三欄布局（Agent roster / Kanban / Live feed）。
 - API（建議 FastAPI）：任務 CRUD、指派、handoff、checkpoint、artifact 上傳/索引、稽核查詢。
 - WS：推送 agent 狀態、任務事件、log 摘要到 live feed。
 
@@ -76,7 +76,7 @@
 ### Workspace 狀態全面測試（已落地）
 
 新增測試腳本：
-- [panopticon/tools/test_workspace_contract.py](panopticon/tools/test_workspace_contract.py)
+- [../panopticon/tools/test_workspace_contract.py](../panopticon/tools/test_workspace_contract.py)
 
 嚴格模式（只檢查，不改目錄）：
 
@@ -213,7 +213,7 @@ CN-IM 既有欄位（可直接沿用）：
 - RETENTION_ARTIFACT_DAYS / RETENTION_SOURCES_DAYS：留存
 
 對照 CN-IM 生成策略（重點提醒）：
-- CN-IM 的 [src/OpenClaw-Docker-CN-IM/init.sh](src/OpenClaw-Docker-CN-IM/init.sh) 是「若 openclaw.json 不存在才由 env 生成」。
+- CN-IM 的 [../external/OpenClaw-Docker-CN-IM/init.sh](../external/OpenClaw-Docker-CN-IM/init.sh) 是「若 openclaw.json 不存在才由 env 生成」。
 - 多 agent 模式下建議每個容器一份獨立 OPENCLAW_DATA_DIR（或獨立掛載的 OpenClaw home），避免共用造成設定與技能污染。
 
 ## env 管理兩種路線（都可行）
@@ -238,13 +238,13 @@ CN-IM 既有欄位（可直接沿用）：
 - 降級：WS 斷線時系統仍可用（少即時感，不影響任務完成）。
 
 ## 已落地現況（本 repo）
-- Dash UI 原型已存在於 [MissionControl/app.py](MissionControl/app.py) 並可啟動；Dash 啟動方式已採用相容的新入口（run）。
-- 通用 Mission Control 架構說明已在 [docs/mission-control.md](docs/mission-control.md)。
+- Dash UI 原型已存在於 [../MissionControl/app.py](../MissionControl/app.py) 並可啟動；Dash 啟動方式已採用相容的新入口（run）。
+- 通用 Mission Control 架構說明已在 [mission-control-overview-en.md](mission-control-overview-en.md)。
 
 ## 全面評估落地（可執行）
 
 已新增綜合評估腳本：
-- [panopticon/tools/comprehensive_assessment.py](panopticon/tools/comprehensive_assessment.py)
+- [../panopticon/tools/comprehensive_assessment.py](../panopticon/tools/comprehensive_assessment.py)
 
 ### 基本用法（只讀評估）
 

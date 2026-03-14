@@ -1,4 +1,4 @@
-# 用 OpenClaw 组建 8-Agent 虚拟 AI 团队：无人公司工程落地手册（简中）
+# Mission Control 8-Agent 工程落地手册（简中）
 
 ⚠️ 免责声明：本文所有信息仅用于学习与工程讨论。请在充分了解安全风险、合规要求与成本约束后谨慎使用。任何涉及生产系统、真实资金、真实用户数据的自动化操作必须经过人工审核。
 
@@ -6,12 +6,12 @@
 
 相关文件（本 repo）：
 
-- 繁中完整备案（更细、偏设计与治理）：[docs/my_mission_control.md](docs/my_mission_control.md)
-- 通用 Mission Control 设计草案（英文）：[docs/mission-control.md](docs/mission-control.md)
-- Dash UI 原型（当前为 mock data）：[MissionControl/app.py](MissionControl/app.py)
-- OpenClaw 配置参考（含 security / scheduler / channels）：[examples/config.example.yaml](examples/config.example.yaml)
-- CN-IM Docker 模板（env→openclaw.json）：[src/OpenClaw-Docker-CN-IM/README.md](src/OpenClaw-Docker-CN-IM/README.md)
-- 8-service Panopticon Compose（已落地）：[panopticon/docker-compose.panopticon.yml](panopticon/docker-compose.panopticon.yml)
+- 繁中完整备案（更细、偏设计与治理）：[mission-control-personal-panopticon-zh-hant.md](mission-control-personal-panopticon-zh-hant.md)
+- 通用 Mission Control 设计草案（英文）：[mission-control-overview-en.md](mission-control-overview-en.md)
+- Dash UI 原型（当前为 mock data）：[../MissionControl/app.py](../MissionControl/app.py)
+- OpenClaw 发版配置：[../openclaw-release.yaml](../openclaw-release.yaml)
+- CN-IM Docker 模板（env→openclaw.json）：[../external/OpenClaw-Docker-CN-IM/README.md](../external/OpenClaw-Docker-CN-IM/README.md)
+- 8-service Panopticon Compose（已落地）：[../panopticon/docker-compose.panopticon.yml](../panopticon/docker-compose.panopticon.yml)
 
 ---
 
@@ -27,7 +27,7 @@
 
 ### 当前仓库已落地
 
-- Dash UI 原型已存在，但目前是静态 mock 数据展示：[MissionControl/app.py](MissionControl/app.py)
+- Dash UI 原型已存在，但目前是静态 mock 数据展示：[../MissionControl/app.py](../MissionControl/app.py)
 - Redis/Convex/向量库/WS/任务一致性等属于“设计与待实现”范畴（本文会按工程手册写清楚接口与约束，但不声称已实现）。
 
 ---
@@ -55,9 +55,9 @@
 
 本 repo 已提供 8 个 agent 的 compose 与 per-agent env_file 模板（对齐 CN-IM 的 env→openclaw.json 生成方式）：
 
-- Compose： [panopticon/docker-compose.panopticon.yml](panopticon/docker-compose.panopticon.yml)
-- 使用说明： [panopticon/README.md](panopticon/README.md)
-- env 模板目录： [panopticon/env/](panopticon/env/)
+- Compose： [../panopticon/docker-compose.panopticon.yml](../panopticon/docker-compose.panopticon.yml)
+- 使用说明： [../panopticon/README.md](../panopticon/README.md)
+- env 模板目录： [../panopticon/env/](../panopticon/env/)
 
 ---
 

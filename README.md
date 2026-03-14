@@ -281,10 +281,11 @@ curl -fsSL https://raw.githubusercontent.com/Ieer/OpenClaw-PWTInstaller/main/con
 
 如果你想从“能用”走向“用得深”，建议按以下顺序阅读：
 
-- 理念延伸：个人全景监控与 8-Agent 方法论（繁中）：[docs/my_mission_control.md](docs/my_mission_control.md)
+- Docs 索引与分工说明：[docs/README.md](docs/README.md)
+- 理念延伸：个人全景监控与 8-Agent 方法论（繁中）：[docs/mission-control-personal-panopticon-zh-hant.md](docs/mission-control-personal-panopticon-zh-hant.md)
 - 8-Agent 运行编排（Panopticon）：[panopticon/README.md](panopticon/README.md)
-- 无人公司工程落地手册（简中，8-agent）：[docs/unmanned-company-playbook-zh-cn.md](docs/unmanned-company-playbook-zh-cn.md)
-- Mission Control 通用实现草案（英文）：[docs/mission-control.md](docs/mission-control.md)
+- 工程落地手册（简中，8-agent）：[docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md)
+- Mission Control 通用实现草案（英文）：[docs/mission-control-overview-en.md](docs/mission-control-overview-en.md)
 
 每个 Agent 的 SOUL / 契约建议通过“模板与骨架”统一维护：
 
@@ -311,7 +312,7 @@ curl -fsSL https://raw.githubusercontent.com/Ieer/OpenClaw-PWTInstaller/main/con
 
 1. **想先用起来**：本页 → `install.sh` / `config-menu.sh`
 2. **想运行 8-Agent**：本页 → [panopticon/README.md](panopticon/README.md)
-3. **想理解治理/契约**：本页 → [docs/unmanned-company-playbook-zh-cn.md](docs/unmanned-company-playbook-zh-cn.md) → [docs/my_mission_control.md](docs/my_mission_control.md)
+3. **想理解治理/契约**：本页 → [docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md) → [docs/mission-control-personal-panopticon-zh-hant.md](docs/mission-control-personal-panopticon-zh-hant.md)
 4. **想改控制台**：本页 → [mission_control_api/README.md](mission_control_api/README.md) → `MissionControl/app.py`
 
 ## ⚙️ 详细配置
@@ -389,7 +390,7 @@ curl -fsSL https://raw.githubusercontent.com/Ieer/OpenClaw-PWTInstaller/main/con
 
 ### 配置飞书机器人
 
-> 📖 **详细文档**: 查看 [飞书机器人配置指南](docs/feishu-setup.md) 获取完整的配置说明和常见问题解答。
+> 📖 **详细文档**: 查看 [飞书接入指南（OpenClaw，简中）](docs/feishu-setup-zh-cn.md) 获取完整的配置说明和常见问题解答。
 
 > 💡 **无需公网服务器**：OpenClaw 使用飞书的 WebSocket 长连接模式接收事件，无需配置 Webhook 地址。
 

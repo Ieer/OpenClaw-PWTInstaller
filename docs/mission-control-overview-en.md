@@ -2,12 +2,12 @@
 
 This doc describes a general Mission Control architecture and uses a **10-agent example roster** as a reference. This repository also includes a separate **8-agent personal configuration** ("Personal Panopticon") optimized for one-person workflows:
 
-- [docs/my_mission_control.md](docs/my_mission_control.md) (Traditional Chinese, complete record)
-- [docs/unmanned-company-playbook-zh-cn.md](docs/unmanned-company-playbook-zh-cn.md) (Simplified Chinese, engineering playbook)
+- [mission-control-personal-panopticon-zh-hant.md](mission-control-personal-panopticon-zh-hant.md) (Traditional Chinese, complete record)
+- [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md) (Simplified Chinese, engineering playbook)
 
 Implementation status note:
 
-- The Dash UI prototype exists in [MissionControl/app.py](MissionControl/app.py) and currently uses mocked data.
+- The Dash UI prototype exists in [../MissionControl/app.py](../MissionControl/app.py) and currently uses mocked data.
 - API/Redis Streams/WebSocket/Convex/vector store integration are described as target components and may require additional implementation work.
 
 ## Goals

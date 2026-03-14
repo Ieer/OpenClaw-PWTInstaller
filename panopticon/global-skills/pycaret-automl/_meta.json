@@ -1,0 +1,19 @@
+{
+  "name": "pycaret-automl",
+  "version": "0.1.0",
+  "description": "Publish-ready OpenClaw skill for end-to-end AutoML with PyCaret across classification, regression, and time series forecasting.",
+  "requires": {
+    "env": [],
+    "credentials": []
+  },
+  "tags": [
+    "latest",
+    "automl",
+    "pycaret",
+    "forecasting",
+    "classification",
+    "regression",
+    "time-series",
+    "demand-planning"
+  ]
+}
