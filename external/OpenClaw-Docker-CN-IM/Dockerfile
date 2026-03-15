@@ -3,7 +3,7 @@ FROM node:22-slim
 
 # When set to 1, fail the build if plugin installation fails.
 ARG STRICT_PLUGIN_INSTALL=0
-ARG OPENCLAW_VERSION=2026.3.12
+ARG OPENCLAW_VERSION=2026.3.13
 
 # 设置工作目录
 WORKDIR /app
@@ -29,6 +29,10 @@ RUN apt-get update \
 
 # 更新 npm 到最新版本
 RUN npm install -g npm@latest
+
+# Ensure npm transitive git dependencies can be fetched without SSH keys
+RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" \
+  && git config --global url."https://github.com/".insteadOf "git@github.com:"
 
 # 安装 OpenClaw 和 OpenCode AI
 RUN npm install -g "openclaw@${OPENCLAW_VERSION}" opencode-ai@latest
