@@ -165,6 +165,10 @@ python panopticon/tools/validate_skills_template.py
 - 修改 `PANOPTICON_DATA_DIR`：
   - Linux / Raspberry Pi：`/mnt/usb/panopticon-data`
   - Windows（Docker Desktop）：`E:/panopticon-data`
+- 如需让全部 `openclaw-*` agent 直接访问 U 盘，再额外设置：
+  - `PANOPTICON_USB_HOST_PATH=/media/pi/4A21-0000`
+  - `PANOPTICON_USB_CONTAINER_PATH=/mnt/usb`
+  - 建议在 U 盘下使用 `agents/<slug>/` 作为每个 agent 的归档子目录；容器内对应路径为 `/mnt/usb/agents/<slug>`，并通过环境变量 `PANOPTICON_USB_AGENT_DIR` 暴露给 agent。
 
 推荐策略（Git 与运行态分离）：
 

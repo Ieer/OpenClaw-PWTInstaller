@@ -146,7 +146,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.3.12"
+        OPENCLAW_VERSION: "2026.3.13"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -156,6 +156,8 @@ services:
     environment:
       HOME: /home/node
       TERM: xterm-256color
+      PANOPTICON_USB_ROOT: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
+      PANOPTICON_USB_AGENT_DIR: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}/agents/nox
     env_file:
       - ./env/nox.env.example
       - ./env/nox.env
@@ -166,6 +168,9 @@ services:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/nox
         target: /home/node/.openclaw/workspace
+      - type: bind
+        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
       - "18801:26216"
@@ -181,7 +186,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.3.12"
+        OPENCLAW_VERSION: "2026.3.13"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -191,6 +196,8 @@ services:
     environment:
       HOME: /home/node
       TERM: xterm-256color
+      PANOPTICON_USB_ROOT: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
+      PANOPTICON_USB_AGENT_DIR: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}/agents/metrics
     env_file:
       - ./env/metrics.env.example
       - ./env/metrics.env
@@ -201,6 +208,9 @@ services:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/metrics
         target: /home/node/.openclaw/workspace
+      - type: bind
+        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
       - "18811:26216"
@@ -216,7 +226,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.3.12"
+        OPENCLAW_VERSION: "2026.3.13"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -226,6 +236,8 @@ services:
     environment:
       HOME: /home/node
       TERM: xterm-256color
+      PANOPTICON_USB_ROOT: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
+      PANOPTICON_USB_AGENT_DIR: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}/agents/email
     env_file:
       - ./env/email.env.example
       - ./env/email.env
@@ -236,6 +248,9 @@ services:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/email
         target: /home/node/.openclaw/workspace
+      - type: bind
+        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
       - "18821:26216"
@@ -251,7 +266,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.3.12"
+        OPENCLAW_VERSION: "2026.3.13"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -261,6 +276,8 @@ services:
     environment:
       HOME: /home/node
       TERM: xterm-256color
+      PANOPTICON_USB_ROOT: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
+      PANOPTICON_USB_AGENT_DIR: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}/agents/growth
     env_file:
       - ./env/growth.env.example
       - ./env/growth.env
@@ -271,6 +288,9 @@ services:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/growth
         target: /home/node/.openclaw/workspace
+      - type: bind
+        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
       - "18831:26216"
@@ -286,7 +306,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.3.12"
+        OPENCLAW_VERSION: "2026.3.13"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -296,6 +316,8 @@ services:
     environment:
       HOME: /home/node
       TERM: xterm-256color
+      PANOPTICON_USB_ROOT: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
+      PANOPTICON_USB_AGENT_DIR: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}/agents/trades
     env_file:
       - ./env/trades.env.example
       - ./env/trades.env
@@ -306,6 +328,9 @@ services:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/trades
         target: /home/node/.openclaw/workspace
+      - type: bind
+        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
       - "18841:26216"
@@ -321,7 +346,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.3.12"
+        OPENCLAW_VERSION: "2026.3.13"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -331,6 +356,8 @@ services:
     environment:
       HOME: /home/node
       TERM: xterm-256color
+      PANOPTICON_USB_ROOT: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
+      PANOPTICON_USB_AGENT_DIR: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}/agents/health
     env_file:
       - ./env/health.env.example
       - ./env/health.env
@@ -341,6 +368,9 @@ services:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/health
         target: /home/node/.openclaw/workspace
+      - type: bind
+        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
       - "18851:26216"
@@ -356,7 +386,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.3.12"
+        OPENCLAW_VERSION: "2026.3.13"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -366,6 +396,8 @@ services:
     environment:
       HOME: /home/node
       TERM: xterm-256color
+      PANOPTICON_USB_ROOT: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
+      PANOPTICON_USB_AGENT_DIR: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}/agents/writing
     env_file:
       - ./env/writing.env.example
       - ./env/writing.env
@@ -376,6 +408,9 @@ services:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/writing
         target: /home/node/.openclaw/workspace
+      - type: bind
+        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
       - "18861:26216"
@@ -391,7 +426,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.3.12"
+        OPENCLAW_VERSION: "2026.3.13"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -401,6 +436,8 @@ services:
     environment:
       HOME: /home/node
       TERM: xterm-256color
+      PANOPTICON_USB_ROOT: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
+      PANOPTICON_USB_AGENT_DIR: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}/agents/personal
     env_file:
       - ./env/personal.env.example
       - ./env/personal.env
@@ -411,6 +448,9 @@ services:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/personal
         target: /home/node/.openclaw/workspace
+      - type: bind
+        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
       - "18871:26216"

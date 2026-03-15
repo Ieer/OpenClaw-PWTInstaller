@@ -199,6 +199,8 @@ def render_compose(manifest: dict) -> str:
               environment:
                 HOME: /home/node
                 TERM: xterm-256color
+                PANOPTICON_USB_ROOT: ${{PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}}
+                PANOPTICON_USB_AGENT_DIR: ${{PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}}/agents/{slug}
               env_file:
                 - ./env/{slug}.env.example
                 - ./env/{slug}.env
@@ -209,6 +211,9 @@ def render_compose(manifest: dict) -> str:
                 - type: bind
                   source: ${{PANOPTICON_DATA_DIR:-.}}/workspaces/{slug}
                   target: /home/node/.openclaw/workspace
+                - type: bind
+                  source: ${{PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}}
+                  target: ${{PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}}
                 - /home/node/.openclaw/extensions
               ports:
                 - \"{gateway_host_port}:{gateway_container_port}\"
