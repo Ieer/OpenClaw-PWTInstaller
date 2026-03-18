@@ -91,6 +91,10 @@ panopticon/workspaces/*/components/
 panopticon/workspaces/*/*.pptx
 panopticon/workspaces/*/memory/heartbeat-state.json
 panopticon/workspaces/*/memory/20??-??-??.md
+panopticon/workspaces/*/memory/*-daily-pulse.md
+panopticon/workspaces/*/memory/*-weekly.md
+panopticon/workspaces/*/memory/daily_heartbeat_*.md
+panopticon/workspaces/*/memory/draft-pipeline-*.md
 
 # Panopticon local env overrides (contain secrets; do not commit)
 panopticon/env/*.env
