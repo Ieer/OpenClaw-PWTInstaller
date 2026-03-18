@@ -80,3 +80,40 @@ An OpenClaw skill for running a practical end-to-end AutoML workflow with PyCare
 - Runnable dual-workflow demo: ./sample_codes/run_dual_workflows.py
 - Sample CSV: ./sample_data/sales_forecast_sample.csv
 - Regression sample CSV: ./sample_data/revenue_regression_sample.csv
+
+## Use Cases
+
+- 客户流失预测、营收回归、销售/需求预测。
+- 用户提供业务表格，要求“数据清洗 + 建模 + 报告”一体化。
+- 需要快速比较多模型并给出业务可解释结论。
+
+## Run
+
+1. 明确业务问题、目标变量、评估指标与交付格式。
+2. 完成数据质量检查（缺失、异常、泄漏、时序边界）。
+3. 进行清洗与特征处理，形成可建模数据集。
+4. 选择对应 PyCaret 模块并执行 `setup -> compare_models -> tune_model -> finalize_model`。
+5. 输出预测结果、指标、风险与交接文档。
+
+## Inputs
+
+- 原始数据（CSV/Excel/SQL 导出表）。
+- 任务定义（分类/回归/时序/聚类/异常检测）。
+- 业务约束（预测窗口、目标阈值、解释需求）。
+
+## Outputs
+
+- 数据准备与质量检查报告。
+- 模型比较结果与最终模型选择说明。
+- 预测或评分输出（含关键指标）。
+- 业务结论、风险提示与后续行动建议。
+
+## Safety
+
+- 禁止在目标定义不清时直接建模。
+- 必须执行数据泄漏检查与时序边界检查。
+- 不用单一指标做最终结论，需给出局限性说明。
+
+## Version
+
+- 1.0.0 (2026-03-18)

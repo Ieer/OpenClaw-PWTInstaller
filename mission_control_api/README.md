@@ -1,11 +1,48 @@
-# Mission Control API (WIP)
+# Mission Control API
 
-最小可跑的 Mission Control 後端骨架：
-- REST：任務看板/留言/活動流
+路徑口徑（與主入口同步）：
+- 主推路線是 `8-Agent Panopticon + Mission Control` 平台化編排。
+- 單 Agent 命令列安裝器屬次要路線。
+- 根目錄 `docker-compose.yml` 單容器路徑屬實驗性方案（非主推、非生產預設）。
+
+若需完整運行入口與部署說明，優先參考：
+- [../README.md](../README.md)
+- [../panopticon/README.md](../panopticon/README.md)
+
+可運行的 Mission Control 後端實作，目前已提供：
+- REST：健康檢查、任務看板、留言、活動流、skills mapping、usage 聚合
 - WS：即時事件流（由 Redis Streams 提供）
-- 儲存：Postgres（啟用 pgvector extension）
+- Chat：同源 HTTP / WebSocket 代理，可對接各 agent 的 Control UI / Chat
+- 儲存：Postgres（啟用 pgvector extension，並預留記憶相關表）
 
-> 這是工程落地起點：先把資料面/事件面跑起來，再讓 MissionControl Dash UI 改為吃 API。
+此服務已接入 Panopticon 編排，並由 `MissionControl` Dash UI 直接調用。
+
+## Schema 迁移与初始化策略
+
+Mission Control 数据层已切换为 **Alembic 单轨迁移**：
+
+- 应用容器启动时先执行 `alembic upgrade head`，成功后才启动 API。
+- 应用代码不再在 `startup` 事件里执行兜底 `CREATE TABLE/INDEX`。
+- Postgres 初始化目录中的 legacy SQL 不再作为默认 schema 来源。
+
+本地开发常用命令：
+
+```bash
+# 在 mission_control_api 目录
+alembic upgrade head
+
+# 生成新迁移（手工调整后提交）
+alembic revision -m "your migration message"
+
+# 回退一步
+alembic downgrade -1
+```
+
+约束建议：
+
+- 所有 schema 变更必须通过 Alembic 版本脚本提交。
+- `app/main.py` 禁止再新增运行期 DDL 兜底逻辑。
+- 迁移脚本需保持可重复执行（幂等）并包含 downgrade。
 
 ## Skills 映射更新（逐項失敗明細）
 

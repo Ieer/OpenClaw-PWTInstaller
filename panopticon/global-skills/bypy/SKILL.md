@@ -63,3 +63,39 @@ Use `bypy` as a practical file transport and backup layer for Baidu Netdisk.
 - Command recipes: ./references/command-recipes.md
 - Safety and limitations: ./references/safety-and-limitations.md
 - Backup example: ./examples/backup-and-sync.md
+
+## Use Cases
+
+- 将本地目录备份到百度网盘 `/apps/bypy`。
+- 从网盘拉取文件做恢复或跨机器交换。
+- 在同步前比较本地与远端差异，降低误覆盖风险。
+- 通过 CLI 在无图形界面环境进行网盘文件管理。
+
+## Run
+
+1. 确认目标路径与方向（上传、下载、同步、比较、恢复）。
+2. 首次使用执行 `bypy info` 完成授权。
+3. 先 `bypy compare` 评估差异，再执行 `syncup/syncdown`。
+4. 执行完成后回报变更摘要与未处理项。
+
+## Inputs
+
+- 本地路径（文件或目录）。
+- 远端路径（百度网盘 `/apps/bypy` 下路径）。
+- 操作类型（upload、download、syncup、syncdown、compare、restore）。
+
+## Outputs
+
+- 执行结果（成功/失败、处理文件数量、关键报错）。
+- 路径级变更摘要（新增、更新、跳过）。
+- 后续建议（是否需要二次同步、重试或回滚）。
+
+## Safety
+
+- 任何同步前优先执行 `compare`，避免误删与误覆盖。
+- 强调 bypy 只作用于 `/apps/bypy`，不代表全盘可见。
+- 删除/覆盖风险操作必须先提示并二次确认。
+
+## Version
+
+- 1.0.0 (2026-03-18)

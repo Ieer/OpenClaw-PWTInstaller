@@ -7,28 +7,43 @@
 相关文件（本 repo）：
 
 - 繁中完整备案（更细、偏设计与治理）：[mission-control-personal-panopticon-zh-hant.md](mission-control-personal-panopticon-zh-hant.md)
-- 通用 Mission Control 设计草案（英文）：[mission-control-overview-en.md](mission-control-overview-en.md)
-- Dash UI 原型（当前为 mock data）：[../MissionControl/app.py](../MissionControl/app.py)
+- 通用 Mission Control 设计参考（英文，偏目标态与扩展方向）：[mission-control-overview-en.md](mission-control-overview-en.md)
+- Mission Control UI（Dash，已接入真实 API / feed / 内嵌 Chat）：[../MissionControl/app.py](../MissionControl/app.py)
+- Mission Control API（FastAPI，已实现任务板 / 事件流 / Chat 代理）：[../mission_control_api/app/main.py](../mission_control_api/app/main.py)
 - OpenClaw 发版配置：[../openclaw-release.yaml](../openclaw-release.yaml)
 - CN-IM Docker 模板（env→openclaw.json）：[../external/OpenClaw-Docker-CN-IM/README.md](../external/OpenClaw-Docker-CN-IM/README.md)
 - 8-service Panopticon Compose（已落地）：[../panopticon/docker-compose.panopticon.yml](../panopticon/docker-compose.panopticon.yml)
 
 ---
 
-## 0. 目标架构 vs 当前仓库落地状态（务必读）
+## 0. 当前实现 vs 后续扩展（务必读）
 
-### 目标架构（本文描述的“核心组件”）
+为避免“文档像设计稿、代码却已落地”的错位，本文统一按下面三层来描述：
 
-- Control plane：Dash UI + API（建议 FastAPI）+ WebSocket（实时 feed）
-- Data plane：8 个 OpenClaw agent 容器（每 agent 独立隔离）
-- Async bus：Redis Streams（任务分发与事件可重放）
-- Task store：Convex（实时看板/评论/动态，或同类替代）
-- Memory：pgvector 或 Qdrant（可选，但本文仍按“核心能力”描述）
+### 已落地（当前仓库可直接运行）
 
-### 当前仓库已落地
+- Control plane：Dash UI + FastAPI API + WebSocket 实时 feed，已形成实际可运行闭环。
+- Data plane：8 个 OpenClaw agent 容器，按 `nox / metrics / email / growth / trades / health / writing / personal` 隔离运行。
+- Chat 入口：`mission-control-gateway` + `mission-control-api` 已提供同源 HTTP / WebSocket 代理，可从 `/chat/<agent>/` 访问单个 agent。
+- 数据与事件：Postgres、Redis、事件写入、feed-lite、comment、board、skills mapping 已在仓库内实现并接入编排。
+- 运行入口：以 [../panopticon/docker-compose.panopticon.yml](../panopticon/docker-compose.panopticon.yml) 为当前编排事实来源。
 
-- Dash UI 原型已存在，但目前是静态 mock 数据展示：[../MissionControl/app.py](../MissionControl/app.py)
-- Redis/Convex/向量库/WS/任务一致性等属于“设计与待实现”范畴（本文会按工程手册写清楚接口与约束，但不声称已实现）。
+### 已实现但仍在演进
+
+- 任务状态机、事件流、技能映射、usage 聚合、语音 overlay、同源内嵌 Chat 已可用，但仍属于持续打磨中的工程实现。
+- `pgvector` 扩展与 `memory_chunks` 表已预留，当前更适合作为后续记忆检索能力的落点，而不是完整记忆产品能力说明。
+- Redis 已用于事件流与实时 feed；若后续扩展更强的异步编排/重放/消费组语义，可在现有基础上继续演进。
+
+### 仍属目标态 / 可选扩展
+
+- Convex 并不是当前仓库运行闭环的必需组件；本文涉及 Convex 的地方，应理解为“可替代的实时任务存储思路”。
+- Qdrant / 更完整的向量检索链路 / 更严格的任务一致性编排，仍属于可选增强，而非当前默认能力。
+
+### 文档权威源约定
+
+- **运行方式、端口、服务组成**：以 [../panopticon/docker-compose.panopticon.yml](../panopticon/docker-compose.panopticon.yml) 与 [../panopticon/README.md](../panopticon/README.md) 为准。
+- **产品入口与使用说明**：以 [../README.md](../README.md) 为准。
+- **本文定位**：解释当前实现、工程约束与后续扩展边界；若与代码细节冲突，以仓库实现为准。
 
 ---
 

@@ -1320,47 +1320,6 @@ def create_app() -> FastAPI:
     async def chat_ws_proxy(agent: str, path: str, websocket: WebSocket):
         await _chat_ws_proxy_impl(agent, path, websocket)
 
-    @app.on_event("startup")
-    async def _startup():
-        async with engine.begin() as conn:
-            await conn.execute(
-                sa.text(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_events_created_at_desc
-                    ON events(created_at DESC);
-                    """
-                )
-            )
-            await conn.execute(
-                sa.text(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_events_type_created_at_desc
-                    ON events(type, created_at DESC);
-                    """
-                )
-            )
-            await conn.execute(
-                sa.text(
-                    """
-                    CREATE TABLE IF NOT EXISTS agent_skill_mappings (
-                      id uuid PRIMARY KEY,
-                      agent_slug text NOT NULL,
-                      skill_slug text NOT NULL,
-                      created_at timestamptz NOT NULL DEFAULT now(),
-                      CONSTRAINT uq_agent_skill_mappings_agent_skill UNIQUE (agent_slug, skill_slug)
-                    );
-                    """
-                )
-            )
-            await conn.execute(
-                sa.text(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_agent_skill_mappings_agent_slug
-                    ON agent_skill_mappings(agent_slug);
-                    """
-                )
-            )
-
     @app.on_event("shutdown")
     async def _shutdown():
         await redis.aclose()

@@ -2,6 +2,16 @@
 
 本目录已按“主题 + 范围 + 语言”重新整理，避免旧文件名语义不清与重复阅读。
 
+## 入口口径（与根 README 同步）
+
+- **主推路线**：`8-Agent Panopticon + Mission Control`（平台化、长期运行、多 Agent 协作）。
+- **次要路线**：`单 Agent 命令行安装器`（快速上手、轻量使用）。
+- **实验性路线**：根目录 `docker-compose.yml` 单容器部署（非主推，不作为生产默认路径）。
+
+若你要做长期运行与多 Agent 协作，请优先阅读：
+- [../README.md](../README.md) 的“运行模式总览 / 快速开始”
+- [../panopticon/README.md](../panopticon/README.md) 的“架构、启动与运维”
+
 ## 命名规则
 
 - `mission-control-overview-en.md`：英文总览
@@ -28,7 +38,9 @@
 
 ## 推荐阅读顺序
 
-1. [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md)
-2. [mission-control-personal-panopticon-zh-hant.md](mission-control-personal-panopticon-zh-hant.md)
-3. [mission-control-overview-en.md](mission-control-overview-en.md)
-4. [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md)
+1. [../README.md](../README.md)
+2. [../panopticon/README.md](../panopticon/README.md)
+3. [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md)
+4. [mission-control-personal-panopticon-zh-hant.md](mission-control-personal-panopticon-zh-hant.md)
+5. [mission-control-overview-en.md](mission-control-overview-en.md)
+6. [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md)

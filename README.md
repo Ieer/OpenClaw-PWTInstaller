@@ -71,14 +71,20 @@
 
 本仓库覆盖从单 Agent 到 8-Agent Panopticon 的完整路径，建议先确定模式再继续阅读。
 
+> **当前主路线声明（2026-03）**
+> - **主推路线**：`8-Agent Panopticon + Mission Control`（平台化、长期运行、多 Agent 协作）。
+> - **次要路线**：`单 Agent 命令行安装器`（快速上手、轻量使用）。
+> - **实验性路线**：根目录 `docker-compose.yml` 单容器部署（非主推，不作为生产默认路径）。
+
 | 模式 | 适合谁 | 入口 | 当前仓库状态 |
 |------|--------|------|--------------|
 | 桌面版 Manager | 想快速上手、偏 GUI | OpenClaw Manager | 推荐新用户优先使用 |
 | 单 Agent 命令行 | 想先跑通 OpenClaw 并配置模型/渠道 | `install.sh` + `config-menu.sh` | 已可直接使用 |
 | 8-Agent Panopticon | 想长期运行多角色 Agent，并接入 Mission Control | `panopticon/docker-compose.panopticon.yml` | 已提供 compose、env、模板与校验工具 |
-| Mission Control 开发 | 想二次开发控制台、事件流与任务面板 | `mission_control_api/` + `MissionControl/` | 仓库内已集成到 Panopticon 编排 |
+| 根目录 Docker 单容器 | 想做快速容器实验或本地临时验证 | `docker-compose.yml` | **实验性（非主推）** |
+| Mission Control 开发 | 想二次开发控制台、事件流与任务面板 | `mission_control_api/` + `MissionControl/` | API / UI / WS / Chat 代理已接入 Panopticon 编排 |
 
-首次接触 OpenClaw，建议先完成“单 Agent 命令行版”；如果目标是 PWT / 8-Agent 长时运行，直接阅读本页的 Panopticon 章节与 [panopticon/README.md](panopticon/README.md)。
+首次接触 OpenClaw，可先完成“单 Agent 命令行版”；如果目标是 PWT / 多 Agent 长时运行，建议直接按主路线阅读本页 Panopticon 章节与 [panopticon/README.md](panopticon/README.md)。
 
 ## 🧩 灵感来源与方法论
 
@@ -172,6 +178,17 @@ docker compose -f panopticon/docker-compose.panopticon.yml up -d
 
 > 💡 建议：在 8-Agent Panopticon 模式下，优先从 `18920` 的同源入口访问 Chat，不要直接打开 `188xx` 端口，可减少 `token missing`、`1008`、`pairing required` 等问题。
 
+### 方式四：根目录 Docker 单容器（实验性，非主推）
+
+根目录 `docker-compose.yml` 仅用于单容器快速实验/本地临时验证，不作为当前仓库主路线。
+
+```bash
+docker compose up -d
+docker compose logs -f --tail=200
+```
+
+> ⚠️ 提示：若你的目标是稳定运行 Mission Control + 多 Agent，请改用 `panopticon/docker-compose.panopticon.yml`。
+
 ### 安装完成后
 
 安装完成后，脚本会：
@@ -211,6 +228,12 @@ curl -fsSL https://raw.githubusercontent.com/Ieer/OpenClaw-PWTInstaller/main/con
 ## ✨ 功能特性
 
 以下能力围绕 PWT 设计：让信息可见、动作可执行、系统可迭代。
+
+<p align="center">
+  <img src="photo/ConfigurationCenter.png" alt="配置中心总览" width="700">
+</p>
+
+<p align="center"><em>配置中心：查看管理ｔｏｋｅｎ </em></p>
 
 ### 🤖 多模型支持
 
@@ -267,25 +290,43 @@ curl -fsSL https://raw.githubusercontent.com/Ieer/OpenClaw-PWTInstaller/main/con
 - **技能系统** - 通过 Markdown 文件定义自定义能力
 - **远程控制** - 可执行系统命令、读写文件、浏览网络
 
+<p align="center">
+  <img src="photo/SkillsManagement.png" alt="技能管理界面" width="700">
+</p>
+
+<p align="center"><em>技能管理：集中维护技能列表、能力边界与可复用工作流。</em></p>
+
 ### 🕸️ Panopticon / Mission Control 能力
 
 进入 8-Agent Panopticon 模式后，仓库还提供：
 
 - **8 个隔离 Agent 容器** - `nox / metrics / email / growth / trades / health / writing / personal`
-- **Mission Control API** - 事件流、任务板、技能映射、代理入口
-- **Mission Control UI** - 面板、状态卡、实时 feed、内嵌 Chat
+- **Mission Control API** - 健康检查、任务板、评论、事件流、技能映射、usage 聚合、同源 Chat 代理
+- **Mission Control UI** - 面板、状态卡、实时 feed、内嵌 Chat、Settings / Skills 弹窗与语音 overlay
 - **统一同源网关** - 通过 `mission-control-gateway` 聚合 `/` 与 `/chat/<agent>/`
 - **模板与校验工具** - manifest 生成、workspace 骨架、skills 校验、契约测试
+
+<p align="center">
+  <img src="photo/MissionControl.png" alt="Mission Control 控制台" width="49%">
+  <img src="photo/AgentChat.png" alt="Agent Chat 界面" width="49%">
+</p>
+
+<p align="center"><em>左侧为 Mission Control 总控视图，右侧为同源 Agent Chat 对话入口。</em></p>
 
 ## 📚 文档
 
 如果你想从“能用”走向“用得深”，建议按以下顺序阅读：
 
+> 文档权威源约定：
+> - **当前运行方式 / 端口 / 服务组成**：以本页与 [panopticon/README.md](panopticon/README.md) 以及实际 compose 文件为准。
+> - **Mission Control 工程说明**：以 [docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md) 为准；其中“扩展方向”不等同于“默认已启用”。
+> - **英文 overview**：用于补充设计背景与目标态，不作为当前实现状态的唯一依据。
+
 - Docs 索引与分工说明：[docs/README.md](docs/README.md)
 - 理念延伸：个人全景监控与 8-Agent 方法论（繁中）：[docs/mission-control-personal-panopticon-zh-hant.md](docs/mission-control-personal-panopticon-zh-hant.md)
 - 8-Agent 运行编排（Panopticon）：[panopticon/README.md](panopticon/README.md)
-- 工程落地手册（简中，8-agent）：[docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md)
-- Mission Control 通用实现草案（英文）：[docs/mission-control-overview-en.md](docs/mission-control-overview-en.md)
+- 工程落地手册（简中，8-agent，含当前实现与扩展边界）：[docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md)
+- Mission Control 通用实现参考（英文，偏设计背景与目标态）：[docs/mission-control-overview-en.md](docs/mission-control-overview-en.md)
 
 每个 Agent 的 SOUL / 契约建议通过“模板与骨架”统一维护：
 
@@ -302,6 +343,7 @@ curl -fsSL https://raw.githubusercontent.com/Ieer/OpenClaw-PWTInstaller/main/con
 | `install.sh` | 单 Agent 一键安装脚本 | 首次安装命令行版 |
 | `config-menu.sh` | 交互式配置中心 | 配模型、渠道、测试连接 |
 | `panopticon/` | 8-Agent 编排、模板、env、数据目录约定 | 搭建 PWT / 多 Agent 长时运行 |
+| `docker-compose.yml` | 根目录单容器 Docker 路径（实验性） | 仅做本地快速容器实验 |
 | `mission_control_api/` | Mission Control 后端 | 需要任务板、事件流、API 二次开发 |
 | `MissionControl/` | Mission Control 前端界面 | 需要控制台 UI、面板与嵌入聊天 |
 | `docs/` | 理念、方法论、工程手册 | 需要理解整体设计与治理边界 |
@@ -311,9 +353,9 @@ curl -fsSL https://raw.githubusercontent.com/Ieer/OpenClaw-PWTInstaller/main/con
 推荐阅读顺序：
 
 1. **想先用起来**：本页 → `install.sh` / `config-menu.sh`
-2. **想运行 8-Agent**：本页 → [panopticon/README.md](panopticon/README.md)
+2. **想走主路线（推荐）**：本页 → [panopticon/README.md](panopticon/README.md)
 3. **想理解治理/契约**：本页 → [docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md) → [docs/mission-control-personal-panopticon-zh-hant.md](docs/mission-control-personal-panopticon-zh-hant.md)
-4. **想改控制台**：本页 → [mission_control_api/README.md](mission_control_api/README.md) → `MissionControl/app.py`
+4. **想改控制台**：本页 → [docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md) → [mission_control_api/README.md](mission_control_api/README.md) → `MissionControl/app.py`
 
 ## ⚙️ 详细配置
 
@@ -526,6 +568,101 @@ OpenClaw 使用以下配置方式：
   - 每个 Agent / Mission Control 的模型、密钥、Gateway Token、事件上报配置。
 4. **数据层**：`PANOPTICON_DATA_DIR`
   - 运行态数据根目录，承载 `agent-homes/`、`workspaces/`、`mission-control/`。
+
+Mission Control 数据层初始化已改为 **Alembic 迁移优先**：
+
+- `mission-control-api` 启动时会先执行 `alembic upgrade head`。
+- 应用不再依赖启动期兜底建表逻辑。
+- Postgres 不再通过 `docker-entrypoint-initdb.d` 挂载 SQL 作为默认 schema 来源。
+
+### Mission Control 零停机迁移 SOP（生产）
+
+> 目标：在不中断整体服务的前提下完成 schema 演进。原则是 **先兼容、再切流、最后清理**。
+
+#### 0) 适用前提
+
+- 迁移必须是向后兼容的第一阶段变更（例如：加表/加列/加索引，不直接删列改类型）。
+- 应用代码应遵循 expand/contract 策略：先发布兼容新旧 schema 的版本，再做收缩型迁移。
+
+#### 1) 预检查（必须通过）
+
+```bash
+# 进入仓库根目录
+cd /home/pi/OpenClaw-PWTInstaller
+
+# 1) 关键服务健康
+docker compose -f panopticon/docker-compose.panopticon.yml ps
+curl -fsS http://127.0.0.1:18910/health
+
+# 2) 查看当前迁移位点与历史
+docker compose -f panopticon/docker-compose.panopticon.yml exec mission-control-api alembic current
+docker compose -f panopticon/docker-compose.panopticon.yml exec mission-control-api alembic history -v
+
+# 3) 备份数据库（生产强制）
+mkdir -p backups
+docker compose -f panopticon/docker-compose.panopticon.yml exec -T mc-postgres \
+  pg_dump -U mission_control -d mission_control > backups/mission_control_$(date +%F_%H%M%S).sql
+```
+
+#### 2) 迁移执行（零停机流程）
+
+```bash
+# 1) 构建最新 mission-control-api 镜像（包含迁移脚本）
+docker compose -f panopticon/docker-compose.panopticon.yml build mission-control-api
+
+# 2) 先执行迁移（可重复执行，幂等）
+docker compose -f panopticon/docker-compose.panopticon.yml run --rm mission-control-api alembic upgrade head
+
+# 3) 验证迁移位点
+docker compose -f panopticon/docker-compose.panopticon.yml run --rm mission-control-api alembic current
+
+# 4) 仅滚动更新 API（最小影响面）
+docker compose -f panopticon/docker-compose.panopticon.yml up -d mission-control-api
+```
+
+#### 3) 迁移后验证（必须执行）
+
+```bash
+# API 健康
+curl -fsS http://127.0.0.1:18910/health
+
+# 基础功能探活
+curl -fsS http://127.0.0.1:18910/v1/boards/default > /dev/null
+curl -fsS "http://127.0.0.1:18910/v1/feed-lite?limit=5" > /dev/null
+
+# 网关侧探活
+curl -I http://127.0.0.1:18920/
+curl -I http://127.0.0.1:18920/chat/nox/
+```
+
+#### 4) 生产回滚步骤（失败时）
+
+```bash
+# A. 先回滚应用版本（快速止血）
+docker compose -f panopticon/docker-compose.panopticon.yml up -d mission-control-api
+
+# B. 若需要回滚 schema（仅在迁移脚本提供 downgrade 且评估通过时执行）
+docker compose -f panopticon/docker-compose.panopticon.yml run --rm mission-control-api alembic downgrade -1
+
+# C. 验证回滚后的位点
+docker compose -f panopticon/docker-compose.panopticon.yml run --rm mission-control-api alembic current
+docker compose -f panopticon/docker-compose.panopticon.yml run --rm mission-control-api alembic history -v
+```
+
+如果 downgrade 不安全或不可逆，使用备份恢复：
+
+```bash
+# 以最新备份文件为例恢复
+cat backups/mission_control_<timestamp>.sql | \
+  docker compose -f panopticon/docker-compose.panopticon.yml exec -T mc-postgres \
+  psql -U mission_control -d mission_control
+```
+
+#### 5) 发布门禁建议
+
+- 每次发布必须附带：迁移脚本、`alembic history -v` 输出、回滚说明。
+- 禁止在 `mission_control_api/app/main.py` 恢复运行期 DDL 兜底逻辑。
+- 收缩型迁移（删列/改类型）应放在后续独立窗口执行，不与功能发布同批上线。
 
 一句话：**改 Agent 名单与端口看 manifest；改模型与密钥看 env；改运行态数据位置看 `.env` / `PANOPTICON_DATA_DIR`。**
 

@@ -26,10 +26,6 @@ services:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/mission-control/postgres-data
         target: /var/lib/postgresql/data
-      - type: bind
-        source: ./mission-control/db
-        target: /docker-entrypoint-initdb.d
-        read_only: true
     restart: unless-stopped
     networks:
       - panopticon

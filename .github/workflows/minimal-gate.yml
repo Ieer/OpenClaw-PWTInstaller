@@ -1,0 +1,58 @@
+name: Minimal CI Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  minimal-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r panopticon/tools/requirements.txt
+
+      - name: Manifest validation
+        run: |
+          python panopticon/tools/validate_panopticon.py
+
+      - name: Skills template validation
+        run: |
+          python panopticon/tools/validate_skills_template.py
+
+      - name: Python basic checks (syntax compile)
+        run: |
+          python -m compileall mission_control_api/app mission_control_api/alembic panopticon/tools tools
+
+      - name: Generated artifacts drift check
+        run: |
+          python panopticon/tools/generate_panopticon.py --prune
+          git diff --exit-code -- panopticon/docker-compose.panopticon.yml panopticon/env/*.env.example
+
+      - name: Compose configuration sanity check
+        run: |
+          for example in panopticon/env/*.env.example; do
+            target="${example%.example}"
+            if [ ! -f "$target" ]; then
+              cp "$example" "$target"
+            fi
+          done
+
+          docker compose -f panopticon/docker-compose.panopticon.yml config > /tmp/panopticon.compose.rendered.yml
+          grep -q "mission-control-api" /tmp/panopticon.compose.rendered.yml
+          grep -q "mission-control-gateway" /tmp/panopticon.compose.rendered.yml
+          grep -q "mc-postgres" /tmp/panopticon.compose.rendered.yml
+          grep -q "mc-redis" /tmp/panopticon.compose.rendered.yml

@@ -2,6 +2,10 @@
 
 这是一份 **8-agent + Mission Control** 的 Docker Compose 模板，用于启动 8 个隔离的 OpenClaw agent（nox/metrics/email/growth/trades/health/writing/personal），并对齐 CN-IM 镜像的 **env → openclaw.json** 生成方式。
 
+> **产品路径定位（2026-03）**
+> - 本目录对应仓库的**当前主路线**（平台化运行路径）。
+> - 根目录 `docker-compose.yml` 单容器路径仅为实验性方案，不作为主推或生产默认方案。
+
 入口文件：
 
 - Compose： [panopticon/docker-compose.panopticon.yml](panopticon/docker-compose.panopticon.yml)
@@ -18,6 +22,12 @@
 
 - Mission Control env_file： [panopticon/env/mission-control.env.example](panopticon/env/mission-control.env.example)
 - Mission Control UI env_file： [panopticon/env/mission-control-ui.env.example](panopticon/env/mission-control-ui.env.example)
+
+Mission Control 数据初始化策略：
+
+- `mission-control-api` 启动时会先执行 Alembic 迁移（`alembic upgrade head`），再启动 API 服务。
+- `mc-postgres` 不再依赖 `docker-entrypoint-initdb.d` 的 schema SQL 挂载。
+- schema 变更应统一通过 `mission_control_api/alembic/versions/` 管理。
 
 ## 项目整体框架（架构图 + 说明）
 
