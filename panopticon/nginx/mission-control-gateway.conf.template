@@ -13,6 +13,9 @@ server {
   resolver 127.0.0.11 ipv6=off;
   client_max_body_size 50m;
 
+  set $mission_control_ui_upstream mission-control-ui:9090;
+  set $mission_control_api_upstream mission-control-api:9090;
+
   if ($host = 127.0.0.1) {
     return 308 $scheme://localhost:18920$request_uri;
   }
@@ -24,7 +27,7 @@ server {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
 
-    proxy_pass http://mission-control-ui:9090;
+    proxy_pass http://$mission_control_ui_upstream;
   }
 
   location /chat/ {
@@ -41,6 +44,6 @@ server {
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
     
-    proxy_pass http://mission-control-api:9090/chat/;
+    proxy_pass http://$mission_control_api_upstream/chat/;
   }
 }

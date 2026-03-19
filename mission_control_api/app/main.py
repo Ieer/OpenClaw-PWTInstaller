@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
@@ -28,7 +29,10 @@ from .schemas import (
     EventIn,
     EventLiteOut,
     EventOut,
+    ContainerHealthSummaryOut,
     Health,
+    HealthSignalOut,
+    ObservabilitySummaryOut,
     SkillItem,
     SkillsMappingFailureItem,
     SkillsMappingPatchIn,
@@ -379,6 +383,37 @@ def _parse_iso_datetime(value: str | None) -> datetime | None:
         return None
 
 
+def _host_port_from_url(raw_url: str, default_port: int) -> tuple[str | None, int]:
+    parsed = urlparse(raw_url)
+    host = parsed.hostname
+    port = parsed.port or default_port
+    return host, int(port)
+
+
+async def _probe_tcp(host: str, port: int, *, timeout_seconds: float = 1.2) -> tuple[bool, int | None, str]:
+    started = time.perf_counter()
+    try:
+        _, writer = await asyncio.wait_for(asyncio.open_connection(host, int(port)), timeout=timeout_seconds)
+        writer.close()
+        await writer.wait_closed()
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        return True, latency_ms, "connected"
+    except Exception as exc:
+        return False, None, f"{exc.__class__.__name__}: {exc}"
+
+
+async def _probe_http(url: str, *, timeout_seconds: float = 1.5) -> tuple[bool, int | None, str]:
+    started = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=True) as client:
+            response = await client.get(url)
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        ok = int(response.status_code) < 500
+        return ok, latency_ms, f"HTTP {response.status_code}"
+    except Exception as exc:
+        return False, None, f"{exc.__class__.__name__}: {exc}"
+
+
 def _line_usage_from_session_event(line_obj: dict) -> tuple[datetime | None, dict | None]:
     if str(line_obj.get("type") or "") != "message":
         return None, None
@@ -612,6 +647,234 @@ def create_app() -> FastAPI:
     @app.get("/health", response_model=Health)
     async def healthcheck() -> Health:
         return Health(ok=True)
+
+    @app.get("/v1/observability/summary", response_model=ObservabilitySummaryOut)
+    async def get_observability_summary(
+        window_minutes: int = 5,
+        heartbeat_stale_seconds: int = 180,
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> ObservabilitySummaryOut:
+        now = datetime.utcnow()
+        window = max(1, min(int(window_minutes or 5), 60))
+        stale = max(30, min(int(heartbeat_stale_seconds or 180), 3600))
+        since = now - timedelta(minutes=window)
+
+        status_code_expr = sa.cast(
+            sa.func.nullif(sa.func.jsonb_extract_path_text(events.c.payload, "status_code"), ""),
+            sa.Integer,
+        )
+        error_type_expr = sa.func.jsonb_extract_path_text(events.c.payload, "error_type")
+        accepted_expr = sa.func.jsonb_extract_path_text(events.c.payload, "accepted")
+
+        request_total_stmt = sa.select(sa.func.count()).where(
+            events.c.created_at >= since,
+            events.c.type == "chat.gateway.access",
+        )
+        request_total = int((await session.execute(request_total_stmt)).scalar_one() or 0)
+
+        error_total_stmt = sa.select(sa.func.count()).where(
+            events.c.created_at >= since,
+            sa.or_(
+                sa.and_(events.c.type == "event.validation", accepted_expr == "false"),
+                events.c.type.like("%.error"),
+                status_code_expr >= 400,
+                sa.and_(error_type_expr.is_not(None), error_type_expr != ""),
+            ),
+        )
+        error_total = int((await session.execute(error_total_stmt)).scalar_one() or 0)
+
+        events_total_stmt = sa.select(sa.func.count()).where(events.c.created_at >= since)
+        events_total = int((await session.execute(events_total_stmt)).scalar_one() or 0)
+
+        tasks_done_stmt = sa.select(sa.func.count()).where(
+            tasks.c.updated_at >= since,
+            tasks.c.status == "DONE",
+        )
+        tasks_done_total = int((await session.execute(tasks_done_stmt)).scalar_one() or 0)
+
+        task_backlog_stmt = sa.select(sa.func.count()).where(tasks.c.status != "DONE")
+        task_backlog_total = int((await session.execute(task_backlog_stmt)).scalar_one() or 0)
+
+        try:
+            event_backlog_total = int(await redis.xlen(settings.redis_stream_key))
+        except Exception:
+            event_backlog_total = 0
+
+        known_agents = sorted(_known_agent_slugs(settings))
+        total_agents = len(known_agents)
+        healthy_agents = 0
+
+        if known_agents:
+            heartbeats_stmt = (
+                sa.select(events.c.agent, sa.func.max(events.c.created_at).label("last_seen"))
+                .where(
+                    events.c.type == "agent.heartbeat",
+                    events.c.agent.is_not(None),
+                    events.c.agent.in_(known_agents),
+                )
+                .group_by(events.c.agent)
+            )
+            rows = (await session.execute(heartbeats_stmt)).all()
+            cutoff = now - timedelta(seconds=stale)
+            for row in rows:
+                last_seen = row.last_seen
+                if isinstance(last_seen, datetime) and last_seen >= cutoff:
+                    healthy_agents += 1
+
+        denominator = request_total if request_total > 0 else max(events_total, 1)
+        error_rate = float(error_total) / float(denominator)
+
+        return ObservabilitySummaryOut(
+            generated_at=now,
+            window_minutes=window,
+            request_total=request_total,
+            error_total=error_total,
+            error_rate=error_rate,
+            event_throughput_per_min=float(events_total) / float(window),
+            task_throughput_per_min=float(tasks_done_total) / float(window),
+            event_backlog_total=event_backlog_total,
+            task_backlog_total=task_backlog_total,
+            healthy_agents=healthy_agents,
+            total_agents=total_agents,
+            agent_health_ratio=(float(healthy_agents) / float(total_agents)) if total_agents > 0 else 0.0,
+            heartbeat_stale_seconds=stale,
+        )
+
+    @app.get("/v1/observability/container-health", response_model=ContainerHealthSummaryOut)
+    async def get_container_health_summary(
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> ContainerHealthSummaryOut:
+        now = datetime.utcnow()
+        signals: list[HealthSignalOut] = []
+
+        redis_host, redis_port = _host_port_from_url(settings.redis_url, 6379)
+        db_host, db_port = _host_port_from_url(settings.database_url, 5432)
+
+        compose_ok = 0
+        compose_total = 0
+
+        compose_total += 1
+        redis_started = time.perf_counter()
+        try:
+            redis_ok = bool(await redis.ping())
+            redis_latency = int((time.perf_counter() - redis_started) * 1000)
+            if redis_ok:
+                compose_ok += 1
+            signals.append(
+                HealthSignalOut(
+                    name="redis.ping",
+                    source="compose",
+                    target=f"{redis_host or 'redis'}:{redis_port}",
+                    ok=redis_ok,
+                    latency_ms=redis_latency,
+                    detail="PONG" if redis_ok else "No PONG",
+                )
+            )
+        except Exception as exc:
+            signals.append(
+                HealthSignalOut(
+                    name="redis.ping",
+                    source="compose",
+                    target=f"{redis_host or 'redis'}:{redis_port}",
+                    ok=False,
+                    detail=f"{exc.__class__.__name__}: {exc}",
+                )
+            )
+
+        compose_total += 1
+        db_started = time.perf_counter()
+        try:
+            db_ok = bool((await session.execute(sa.select(sa.literal(1)))).scalar_one() == 1)
+            db_latency = int((time.perf_counter() - db_started) * 1000)
+            if db_ok:
+                compose_ok += 1
+            signals.append(
+                HealthSignalOut(
+                    name="postgres.select_1",
+                    source="compose",
+                    target=f"{db_host or 'postgres'}:{db_port}",
+                    ok=db_ok,
+                    latency_ms=db_latency,
+                    detail="SELECT 1",
+                )
+            )
+        except Exception as exc:
+            signals.append(
+                HealthSignalOut(
+                    name="postgres.select_1",
+                    source="compose",
+                    target=f"{db_host or 'postgres'}:{db_port}",
+                    ok=False,
+                    detail=f"{exc.__class__.__name__}: {exc}",
+                )
+            )
+
+        port_targets: list[tuple[str, str, int]] = [
+            ("mission-control-api", "mission-control-api", 9090),
+            ("mission-control-ui", "mission-control-ui", 9090),
+            ("mission-control-gateway", "mission-control-gateway", 80),
+        ]
+        for slug in sorted(_known_agent_slugs(settings)):
+            port_targets.append((f"openclaw-{slug}", f"openclaw-{slug}", settings.chat_upstream_port))
+
+        port_ok = 0
+        port_total = len(port_targets)
+        for name, host, port in port_targets:
+            ok, latency_ms, detail = await _probe_tcp(host, port)
+            if ok:
+                port_ok += 1
+            signals.append(
+                HealthSignalOut(
+                    name=name,
+                    source="port",
+                    target=f"{host}:{port}",
+                    ok=ok,
+                    latency_ms=latency_ms,
+                    detail=detail,
+                )
+            )
+
+        http_targets: list[tuple[str, str]] = [
+            ("mission-control-api.health", "http://mission-control-api:9090/health"),
+            ("mission-control-gateway.root", "http://mission-control-gateway/"),
+            ("mission-control-ui.root", "http://mission-control-ui:9090/"),
+        ]
+
+        http_ok = 0
+        http_total = len(http_targets)
+        for name, url in http_targets:
+            ok, latency_ms, detail = await _probe_http(url)
+            if ok:
+                http_ok += 1
+            signals.append(
+                HealthSignalOut(
+                    name=name,
+                    source="http",
+                    target=url,
+                    ok=ok,
+                    latency_ms=latency_ms,
+                    detail=detail,
+                )
+            )
+
+        overall_ok = compose_ok + port_ok + http_ok
+        overall_total = compose_total + port_total + http_total
+
+        return ContainerHealthSummaryOut(
+            generated_at=now,
+            compose_ok=compose_ok,
+            compose_total=compose_total,
+            port_ok=port_ok,
+            port_total=port_total,
+            http_ok=http_ok,
+            http_total=http_total,
+            overall_ok=overall_ok,
+            overall_total=overall_total,
+            overall_ratio=(float(overall_ok) / float(overall_total)) if overall_total > 0 else 0.0,
+            signals=signals,
+        )
 
     @app.get("/v1/skills/global", response_model=list[SkillItem])
     async def get_global_skills(
@@ -1110,28 +1373,8 @@ def create_app() -> FastAPI:
     
     @app.api_route("/chat/{agent}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
     async def chat_proxy(agent: str, path: str, request: Request):
+        started = time.perf_counter()
         upgrade = request.headers.get("upgrade", "").lower() == "websocket"
-        if not upgrade:
-            payload = {
-                "path": f"/{path}",
-                "query": str(request.url.query)[:256],
-                "method": request.method,
-                "status_code": 0,
-                "request_time": "0.0",
-                "upstream_status": "proxy",
-                "is_ws_upgrade": False,
-                "source": "api_gateway_proxy",
-                "ts": datetime.utcnow().isoformat() + "Z",
-            }
-            await publish_event(
-                redis,
-                stream_key=settings.redis_stream_key,
-                event={
-                    "type": "chat.gateway.access",
-                    "agent": agent,
-                    "payload": payload,
-                },
-            )
             
         target_url = f"http://openclaw-{agent}:{settings.chat_upstream_port}/{path}"
         query = request.url.query
@@ -1159,6 +1402,28 @@ def create_app() -> FastAPI:
             try:
                 resp = await client.send(req, stream=True)
             except Exception as e:
+                if not upgrade:
+                    elapsed = max(0.0, time.perf_counter() - started)
+                    await publish_event(
+                        redis,
+                        stream_key=settings.redis_stream_key,
+                        event={
+                            "type": "chat.gateway.access",
+                            "agent": agent,
+                            "payload": {
+                                "path": f"/{path}",
+                                "query": str(request.url.query)[:256],
+                                "method": request.method,
+                                "status_code": 502,
+                                "request_time": f"{elapsed:.4f}",
+                                "upstream_status": "error",
+                                "error_type": e.__class__.__name__,
+                                "is_ws_upgrade": False,
+                                "source": "api_gateway_proxy",
+                                "ts": datetime.utcnow().isoformat() + "Z",
+                            },
+                        },
+                    )
                 raise HTTPException(status_code=502, detail=f"Proxy error: {e}")
             
             is_html = "text/html" in resp.headers.get("content-type", "")
@@ -1223,6 +1488,32 @@ def create_app() -> FastAPI:
             for k, v in resp.headers.items():
                 if k.lower() not in ("content-length", "transfer-encoding", "connection"):
                     r.headers[k] = v
+
+            if not upgrade:
+                elapsed = max(0.0, time.perf_counter() - started)
+                error_type = None
+                if resp.status_code >= 400:
+                    error_type = f"http_{resp.status_code}"
+                await publish_event(
+                    redis,
+                    stream_key=settings.redis_stream_key,
+                    event={
+                        "type": "chat.gateway.access",
+                        "agent": agent,
+                        "payload": {
+                            "path": f"/{path}",
+                            "query": str(request.url.query)[:256],
+                            "method": request.method,
+                            "status_code": int(resp.status_code),
+                            "request_time": f"{elapsed:.4f}",
+                            "upstream_status": "ok" if resp.status_code < 500 else "error",
+                            "error_type": error_type,
+                            "is_ws_upgrade": False,
+                            "source": "api_gateway_proxy",
+                            "ts": datetime.utcnow().isoformat() + "Z",
+                        },
+                    },
+                )
             return r
 
     async def _chat_ws_proxy_impl(agent: str, path: str, websocket: WebSocket):

@@ -48,6 +48,36 @@ except ValueError:
     MISSION_CONTROL_WS_TICK_MS = 150
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return float(default)
+    try:
+        return float(raw)
+    except ValueError:
+        return float(default)
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except ValueError:
+        return int(default)
+
+
+OBS_ERROR_RATE_WARN_PCT = _env_float("MISSION_CONTROL_OBS_ERROR_RATE_WARN_PCT", 2.0)
+OBS_ERROR_RATE_CRIT_PCT = _env_float("MISSION_CONTROL_OBS_ERROR_RATE_CRIT_PCT", 5.0)
+OBS_EVENT_BACKLOG_WARN = _env_int("MISSION_CONTROL_OBS_EVENT_BACKLOG_WARN", 200)
+OBS_EVENT_BACKLOG_CRIT = _env_int("MISSION_CONTROL_OBS_EVENT_BACKLOG_CRIT", 1000)
+OBS_TASK_THROUGHPUT_WARN_PER_MIN = _env_float("MISSION_CONTROL_OBS_TASK_THROUGHPUT_WARN_PER_MIN", 0.5)
+OBS_TASK_THROUGHPUT_CRIT_PER_MIN = _env_float("MISSION_CONTROL_OBS_TASK_THROUGHPUT_CRIT_PER_MIN", 0.1)
+OBS_HEALTH_RATIO_WARN = _env_float("MISSION_CONTROL_OBS_HEALTH_RATIO_WARN", 0.8)
+OBS_HEALTH_RATIO_CRIT = _env_float("MISSION_CONTROL_OBS_HEALTH_RATIO_CRIT", 0.6)
+
+
 def _normalize_text(text: str | None) -> str:
     return str(text or "").strip().lower()
 
@@ -575,6 +605,22 @@ def _threshold_int(value, fallback: int) -> int:
     return max(1, parsed)
 
 
+def _stat_class_high_bad(value: float, warn: float, critical: float) -> str:
+    if value >= critical:
+        return "stat stat-critical"
+    if value >= warn:
+        return "stat stat-warn"
+    return "stat stat-ok"
+
+
+def _stat_class_low_bad(value: float, warn: float, critical: float) -> str:
+    if value <= critical:
+        return "stat stat-critical"
+    if value <= warn:
+        return "stat stat-warn"
+    return "stat stat-ok"
+
+
 def _settings_risk_level(tokens_24h: int, tokens_7d: int, cfg: dict) -> tuple[str, str, str]:
     warn_24h = int(cfg.get("warn_24h") or 120_000)
     warn_7d = int(cfg.get("warn_7d") or 700_000)
@@ -1006,47 +1052,94 @@ app.layout = html.Div(
             className="topbar",
             children=[
                 html.Div(
-                    className="brand",
-                    children=[
-                        html.Span("Mission Control", className="brand-title"),
-                        html.Span("SiteGPT", className="brand-chip"),
-                    ],
-                ),
-                html.Div(
-                    className="stats",
+                    className="topbar-row",
                     children=[
                         html.Div(
-                            className="stat",
+                            className="topbar-left",
                             children=[
-                                html.Span("-", id="stat-agents", className="stat-value"),
-                                html.Span("Agents Active", className="stat-label"),
+                                html.Div(
+                                    className="brand",
+                                    children=[
+                                        html.Span("Mission Control", className="brand-title"),
+                                        html.Span("SiteGPT", className="brand-chip"),
+                                    ],
+                                ),
+                                html.Div(
+                                    className="stats stats-primary",
+                                    children=[
+                                        html.Div(
+                                            className="stat",
+                                            children=[
+                                                html.Span("-", id="stat-agents", className="stat-value"),
+                                                html.Span("Agents Active", className="stat-label"),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            className="stat",
+                                            children=[
+                                                html.Span("-", id="stat-tasks", className="stat-value"),
+                                                html.Span("Tasks in Queue", className="stat-label"),
+                                            ],
+                                        ),
+                                    ],
+                                ),
                             ],
                         ),
                         html.Div(
-                            className="stat",
+                            className="topbar-actions",
                             children=[
-                                html.Span("-", id="stat-tasks", className="stat-value"),
-                                html.Span("Tasks in Queue", className="stat-label"),
+                                html.A(
+                                    "Docs",
+                                    href=MISSION_CONTROL_DOCS_URL,
+                                    target="_blank",
+                                    rel="noreferrer",
+                                    className="ghost-button docs-link",
+                                ),
+                                html.Button("Chat", id="open-chat", className="ghost-button"),
+                                html.Button("Skills", id="open-skills", className="ghost-button"),
+                                html.Button("Clear Filters", id="clear-filters", className="ghost-button"),
+                                html.Div("Overlay n/a", id="voice-latency-pill", className="status-pill status-unknown"),
+                                html.Div("-", id="api-status", className="status-pill status-unknown"),
+                                html.Button("Settings", id="open-settings", className="ghost-button"),
                             ],
                         ),
                     ],
                 ),
                 html.Div(
-                    className="topbar-actions",
+                    className="stats stats-observability",
                     children=[
-                        html.A(
-                            "Docs",
-                            href=MISSION_CONTROL_DOCS_URL,
-                            target="_blank",
-                            rel="noreferrer",
-                            className="ghost-button docs-link",
+                        html.Div(
+                            id="stat-card-error-rate",
+                            className="stat stat-observability-card",
+                            children=[
+                                html.Span("Error", className="stat-label"),
+                                html.Span("-", id="stat-error-rate", className="stat-value"),
+                            ],
                         ),
-                        html.Button("Chat", id="open-chat", className="ghost-button"),
-                        html.Button("Skills", id="open-skills", className="ghost-button"),
-                        html.Button("Clear Filters", id="clear-filters", className="ghost-button"),
-                        html.Div("Overlay n/a", id="voice-latency-pill", className="status-pill status-unknown"),
-                        html.Div("-", id="api-status", className="status-pill status-unknown"),
-                        html.Button("Settings", id="open-settings", className="ghost-button"),
+                        html.Div(
+                            id="stat-card-event-backlog",
+                            className="stat stat-observability-card",
+                            children=[
+                                html.Span("Backlog", className="stat-label"),
+                                html.Span("-", id="stat-event-backlog", className="stat-value"),
+                            ],
+                        ),
+                        html.Div(
+                            id="stat-card-task-throughput",
+                            className="stat stat-observability-card",
+                            children=[
+                                html.Span("Throughput", className="stat-label"),
+                                html.Span("-", id="stat-task-throughput", className="stat-value"),
+                            ],
+                        ),
+                        html.Div(
+                            id="stat-card-health-ratio",
+                            className="stat stat-observability-card",
+                            children=[
+                                html.Span("Health", className="stat-label"),
+                                html.Span("-", id="stat-health-ratio", className="stat-value"),
+                            ],
+                        ),
                     ],
                 ),
             ],
@@ -2396,6 +2489,14 @@ def sync_filter_chip_classes(state):
     Output("feed", "children"),
     Output("stat-agents", "children"),
     Output("stat-tasks", "children"),
+    Output("stat-error-rate", "children"),
+    Output("stat-event-backlog", "children"),
+    Output("stat-task-throughput", "children"),
+    Output("stat-health-ratio", "children"),
+    Output("stat-card-error-rate", "className"),
+    Output("stat-card-event-backlog", "className"),
+    Output("stat-card-task-throughput", "className"),
+    Output("stat-card-health-ratio", "className"),
     Output("agents-count", "children"),
     Output("api-status", "children"),
     Output("api-status", "className"),
@@ -2432,6 +2533,69 @@ def refresh_data(n_intervals, state):
         visible_feed = _filter_feed(feed, feed_filter)
 
         tasks_total = sum(int(c.get("count") or 0) for c in columns)
+        error_rate_text = "-"
+        event_backlog_text = "-"
+        task_throughput_text = "-"
+        health_ratio_text = "-"
+        error_rate_class = "stat stat-observability-card"
+        event_backlog_class = "stat stat-observability-card"
+        task_throughput_class = "stat stat-observability-card"
+        health_ratio_class = "stat stat-observability-card"
+
+        try:
+            obs = api_get_json("/v1/observability/summary?window_minutes=5", timeout=2.0)
+            if isinstance(obs, dict):
+                error_rate = float(obs.get("error_rate") or 0.0) * 100.0
+                event_backlog = int(obs.get("event_backlog_total") or 0)
+                task_tp = float(obs.get("task_throughput_per_min") or 0.0)
+                healthy = int(obs.get("healthy_agents") or 0)
+                total = int(obs.get("total_agents") or 0)
+                health_ratio = float(obs.get("agent_health_ratio") or 0.0) * 100.0
+
+                error_rate_text = f"{error_rate:.1f}%"
+                event_backlog_text = str(event_backlog)
+                task_throughput_text = f"{task_tp:.1f}/m"
+                health_ratio_text = f"{healthy}/{total} · {health_ratio:.0f}%" if total > 0 else "0/0 · 0%"
+
+                error_rate_class = _stat_class_high_bad(
+                    error_rate,
+                    OBS_ERROR_RATE_WARN_PCT,
+                    OBS_ERROR_RATE_CRIT_PCT,
+                ) + " stat-observability-card"
+                event_backlog_class = _stat_class_high_bad(
+                    float(event_backlog),
+                    float(OBS_EVENT_BACKLOG_WARN),
+                    float(OBS_EVENT_BACKLOG_CRIT),
+                ) + " stat-observability-card"
+                task_throughput_class = _stat_class_low_bad(
+                    task_tp,
+                    OBS_TASK_THROUGHPUT_WARN_PER_MIN,
+                    OBS_TASK_THROUGHPUT_CRIT_PER_MIN,
+                ) + " stat-observability-card"
+                health_ratio_class = _stat_class_low_bad(
+                    float(obs.get("agent_health_ratio") or 0.0),
+                    OBS_HEALTH_RATIO_WARN,
+                    OBS_HEALTH_RATIO_CRIT,
+                ) + " stat-observability-card"
+        except Exception:
+            pass
+
+        try:
+            health_summary = api_get_json("/v1/observability/container-health", timeout=2.0)
+            if isinstance(health_summary, dict):
+                overall_ok = int(health_summary.get("overall_ok") or 0)
+                overall_total = int(health_summary.get("overall_total") or 0)
+                overall_ratio = float(health_summary.get("overall_ratio") or 0.0)
+                if overall_total > 0:
+                    health_ratio_text = f"{overall_ok}/{overall_total} · {overall_ratio * 100.0:.0f}%"
+                    health_ratio_class = _stat_class_low_bad(
+                        overall_ratio,
+                        OBS_HEALTH_RATIO_WARN,
+                        OBS_HEALTH_RATIO_CRIT,
+                    ) + " stat-observability-card"
+        except Exception:
+            pass
+
         now_text = datetime.now().strftime("%H:%M:%S")
 
         agents_children = [agent_card(a) for a in agents] or [
@@ -2450,6 +2614,14 @@ def refresh_data(n_intervals, state):
             feed_children,
             str(len(agents)),
             str(tasks_total),
+            error_rate_text,
+            event_backlog_text,
+            task_throughput_text,
+            health_ratio_text,
+            error_rate_class,
+            event_backlog_class,
+            task_throughput_class,
+            health_ratio_class,
             str(len(agents)),
             _format_api_status(True, now_text),
             "status-pill status-online",
@@ -2461,6 +2633,14 @@ def refresh_data(n_intervals, state):
             [html.Div("API unavailable", className="column-empty")],
             "-",
             "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "stat",
+            "stat",
+            "stat",
+            "stat",
             "-",
             _format_api_status(False, "", e),
             "status-pill status-offline",

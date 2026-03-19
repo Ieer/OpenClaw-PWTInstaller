@@ -10,6 +10,45 @@ class Health(BaseModel):
     ok: bool
 
 
+class ObservabilitySummaryOut(BaseModel):
+    generated_at: datetime
+    window_minutes: int
+    request_total: int
+    error_total: int
+    error_rate: float
+    event_throughput_per_min: float
+    task_throughput_per_min: float
+    event_backlog_total: int
+    task_backlog_total: int
+    healthy_agents: int
+    total_agents: int
+    agent_health_ratio: float
+    heartbeat_stale_seconds: int
+
+
+class HealthSignalOut(BaseModel):
+    name: str
+    source: str
+    target: str
+    ok: bool
+    latency_ms: int | None = None
+    detail: str | None = None
+
+
+class ContainerHealthSummaryOut(BaseModel):
+    generated_at: datetime
+    compose_ok: int
+    compose_total: int
+    port_ok: int
+    port_total: int
+    http_ok: int
+    http_total: int
+    overall_ok: int
+    overall_total: int
+    overall_ratio: float
+    signals: list[HealthSignalOut]
+
+
 class TaskCreate(BaseModel):
     title: str
     status: str = "INBOX"

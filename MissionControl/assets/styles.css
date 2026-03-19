@@ -37,14 +37,27 @@ body {
 
 .topbar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  flex-direction: column;
+  gap: 12px;
   padding: 16px 20px;
   background: var(--paper);
   border: 1px solid var(--border);
   border-radius: 20px;
   box-shadow: 0 12px 32px var(--shadow);
+}
+
+.topbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .brand {
@@ -69,8 +82,64 @@ body {
 }
 
 .stats {
+  display: grid;
+  gap: 12px;
+}
+
+.stats-primary {
   display: flex;
   gap: 14px;
+  flex-wrap: wrap;
+}
+
+.stats-observability {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stat-observability-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: auto;
+  min-height: 0;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 250, 243, 0.62);
+  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+}
+
+.stat-observability-card .stat-value {
+  font-size: 14px;
+  line-height: 1;
+  display: inline;
+}
+
+.stat-observability-card .stat-label {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  display: inline;
+  color: var(--ink-soft);
+}
+
+.stat.stat-observability-card.stat-ok {
+  border-color: color-mix(in srgb, var(--border) 76%, var(--teal));
+}
+
+.stat.stat-observability-card.stat-ok .stat-value {
+  color: var(--ink);
+}
+
+.stat.stat-observability-card.stat-warn {
+  background: color-mix(in srgb, var(--amber) 10%, var(--paper));
+  border-color: color-mix(in srgb, var(--amber) 36%, var(--border));
+}
+
+.stat.stat-observability-card.stat-critical {
+  background: color-mix(in srgb, var(--rust) 10%, var(--paper));
+  border-color: color-mix(in srgb, var(--rust) 36%, var(--border));
 }
 
 .stat {
@@ -79,6 +148,30 @@ body {
   border-radius: 14px;
   border: 1px solid var(--border);
   min-width: 120px;
+}
+
+.stat.stat-ok {
+  border-color: var(--teal);
+}
+
+.stat.stat-ok .stat-value {
+  color: var(--teal);
+}
+
+.stat.stat-warn {
+  border-color: var(--amber);
+}
+
+.stat.stat-warn .stat-value {
+  color: var(--amber);
+}
+
+.stat.stat-critical {
+  border-color: var(--rust);
+}
+
+.stat.stat-critical .stat-value {
+  color: var(--rust);
 }
 
 .stat-value {
@@ -98,6 +191,8 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .ghost-button {
@@ -1141,6 +1236,19 @@ body {
 }
 
 @media (max-width: 1200px) {
+  .topbar-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .topbar-left {
+    width: 100%;
+  }
+
+  .topbar-actions {
+    justify-content: flex-start;
+  }
+
   .main {
     grid-template-columns: 1fr;
   }
@@ -1192,5 +1300,15 @@ body {
 
   .voice-overlay-card {
     width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .stats-observability {
+    gap: 6px;
+  }
+
+  .stats-primary {
+    gap: 10px;
   }
 }
