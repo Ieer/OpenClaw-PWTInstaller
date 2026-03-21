@@ -44,6 +44,6 @@ server {
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
     
-    proxy_pass http://$mission_control_api_upstream/chat/;
+    proxy_pass http://$mission_control_api_upstream;
   }
 }
