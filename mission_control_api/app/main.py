@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import urllib.parse
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
@@ -20,6 +21,8 @@ from .config import Settings, load_settings
 from .db import create_engine, create_session_factory
 from .models import agent_skill_mappings, comments, events, tasks
 from .schemas import (
+    AgentControlActionIn,
+    AgentControlActionOut,
     AgentSkillMappingOut,
     AgentUsageSnapshotOut,
     BoardColumn,
@@ -58,6 +61,8 @@ _AGENT_USAGE_CACHE: dict[str, object] = {
     "generated_at": 0.0,
     "data": [],
 }
+
+ALLOWED_AGENT_CONTROL_ACTIONS = {"start", "stop", "restart"}
 
 
 def _rewrite_avatar_paths(obj, agent: str):
@@ -343,6 +348,47 @@ def _known_agent_slugs(settings: Settings) -> set[str]:
     if not root.exists() or not root.is_dir():
         return set()
     return {path.name for path in root.iterdir() if path.is_dir()}
+
+
+async def _forward_agent_control(
+    settings: Settings,
+    *,
+    agent: str,
+    action: str,
+) -> AgentControlActionOut:
+    base_url = (settings.agent_controller_url or "").strip().rstrip("/")
+    if not base_url:
+        raise HTTPException(status_code=503, detail="agent controller is not configured")
+
+    target_url = f"{base_url}/v1/containers/{urllib.parse.quote(agent, safe='')}/control"
+    timeout = max(1.0, float(settings.agent_controller_timeout_seconds or 5.0))
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(target_url, json={"action": action})
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"agent controller unavailable: {exc.__class__.__name__}")
+
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = {}
+
+    if resp.status_code >= 400:
+        detail = payload.get("detail") if isinstance(payload, dict) else "controller returned error"
+        raise HTTPException(status_code=resp.status_code, detail=str(detail or "controller returned error"))
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=502, detail="invalid controller response")
+
+    return AgentControlActionOut(
+        ok=bool(payload.get("ok", False)),
+        agent=str(payload.get("agent") or agent),
+        action=str(payload.get("action") or action),
+        container=str(payload.get("container") or f"openclaw-{agent}"),
+        status=str(payload.get("status") or "unknown"),
+        detail=str(payload.get("detail") or ""),
+    )
 
 
 def _validate_handoff_payload(payload: dict, known_agents: set[str]) -> list[str]:
@@ -895,6 +941,26 @@ def create_app() -> FastAPI:
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
     ) -> list[AgentUsageSnapshotOut]:
         return _get_agent_usage_snapshot(settings, days)
+
+    @app.post("/v1/agents/{agent}/control", response_model=AgentControlActionOut)
+    async def control_agent_container(
+        agent: str,
+        body: AgentControlActionIn,
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+    ) -> AgentControlActionOut:
+        slug = str(agent or "").strip()
+        if not slug:
+            raise HTTPException(status_code=400, detail="agent is required")
+
+        known_agents = _known_agent_slugs(settings)
+        if known_agents and slug not in known_agents:
+            raise HTTPException(status_code=404, detail=f"unknown agent: {slug}")
+
+        action = str(body.action or "").strip().lower()
+        if action not in ALLOWED_AGENT_CONTROL_ACTIONS:
+            raise HTTPException(status_code=400, detail=f"invalid action: {action}")
+
+        return await _forward_agent_control(settings, agent=slug, action=action)
 
     @app.get("/v1/skills/mappings", response_model=list[AgentSkillMappingOut])
     async def get_skill_mappings(

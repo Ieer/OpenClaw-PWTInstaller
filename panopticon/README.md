@@ -144,6 +144,19 @@ Voice 链路（可选，启用 `voice` profile）：
 - 通过 [panopticon/tools/generate_panopticon.py](panopticon/tools/generate_panopticon.py) 生成 compose 与 env 模板；变更应优先改 manifest/生成器，再执行生成。
 - 生成后建议执行：`validate_panopticon.py` + `validate_skills_template.py` + `docker compose config` 三步校验。
 
+Mission Control 生成器字段（请在 manifest 维护，不要手改 compose）：
+
+- `mission_control.agent_controller_enabled`：是否启用容器控制器服务生成（默认 `true`）。
+- `mission_control.agent_controller_url`：`mission-control-api` 访问控制器的内部地址（默认 `http://mission-control-agent-controller:9091`）。
+
+当 `agent_controller_enabled: true` 时，生成器会自动产出以下内容：
+
+- 服务 `mission-control-agent-controller`（含 docker.sock 与 docker CLI 挂载）。
+- `mission-control-api` 的 `MC_AGENT_CONTROLLER_URL` 环境变量。
+- `mission-control-api` 对 `mission-control-agent-controller` 的 `depends_on`。
+
+维护约束：若需要调整上述行为，请修改 [panopticon/agents.manifest.yaml](panopticon/agents.manifest.yaml) 或 [panopticon/tools/generate_panopticon.py](panopticon/tools/generate_panopticon.py) 后重新生成；不要直接长期维护 [panopticon/docker-compose.panopticon.yml](panopticon/docker-compose.panopticon.yml)。
+
 ## 快速启动
 
 推荐流程（Manifest 驱动）：
@@ -318,6 +331,31 @@ CHECK_VOICE_E2E=1 bash panopticon/tools/check_panopticon_services.sh
 ```bash
 bash panopticon/tools/check_agent_endpoints.sh
 ```
+
+## 运维重启顺序（避免 502）
+
+当你重建或重启 `mission-control-ui` 后，建议按以下顺序操作：
+
+1. 重建/重启 API 与 UI：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --build mission-control-api mission-control-ui
+```
+
+2. 强制重建 Gateway（关键步骤）：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --force-recreate mission-control-gateway
+```
+
+3. 快速验收：
+
+```bash
+curl -I http://localhost:18920/
+curl -fsS http://localhost:18910/health
+```
+
+说明：`mission-control-gateway` 若仍缓存旧 upstream 容器 IP，可能出现 `502 Bad Gateway`（常见于 `/_dash-update-component`）；`--force-recreate mission-control-gateway` 可让网关重新解析上游地址。
 
 ## Control UI（Web Chat）推荐入口与 1008 排障
 

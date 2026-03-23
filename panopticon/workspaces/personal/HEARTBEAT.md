@@ -2,8 +2,8 @@
 
 ## Heartbeat Interval
 
-- **Frequency:** Every 2 hours
-- **Last updated:** 2026-03-10
+- **Frequency:** 每天 6:00 UTC，每天一次
+- **Last updated:** 2026-03-21
 
 ## Rule Zero
 
@@ -11,14 +11,11 @@
 - Follow this file only. Do not infer extra tasks from old chats.
 - If nothing requires action, reply exactly: `HEARTBEAT_OK`.
 
-## Every Heartbeat
+## Daily Heartbeat（每天 6:00 UTC）
 
 - Check pending personal admin items and due-date drift.
 - Check `state/` for blocked to-dos that need user confirmation.
 - Refresh `memory/heartbeat-state.json` timestamps.
-
-## Daily (once)
-
 - Generate a short priorities note (today/this week).
 - Mark irreversible actions as Review-required.
 

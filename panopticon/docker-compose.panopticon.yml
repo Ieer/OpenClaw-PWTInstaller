@@ -42,6 +42,7 @@ services:
     environment:
       MC_GLOBAL_SKILLS_DIR: /data/global-skills
       MC_AGENT_HOMES_DIR: /data/agent-homes
+      MC_AGENT_CONTROLLER_URL: http://mission-control-agent-controller:9091
     volumes:
       - type: bind
         source: ./global-skills
@@ -53,8 +54,25 @@ services:
     depends_on:
       - mc-redis
       - mc-postgres
+      - mission-control-agent-controller
     ports:
       - "18910:9090"
+    restart: unless-stopped
+    networks:
+      - panopticon
+
+
+  mission-control-agent-controller:
+    container_name: mission-control-agent-controller
+    build:
+      context: ./agent-controller
+      dockerfile: Dockerfile
+    image: mission-control-agent-controller:local
+    environment:
+      MC_AGENT_CONTROLLER_ALLOWED_AGENTS: nox,metrics,email,growth,trades,health,writing,personal
+    volumes:
+      - /usr/bin/docker:/usr/bin/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
     networks:
       - panopticon

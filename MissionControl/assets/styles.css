@@ -1038,6 +1038,17 @@ body {
   color: var(--ink-soft);
 }
 
+.settings-item-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.settings-action-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
 .chat-modal-body {
   display: grid;
   grid-template-columns: 300px 1fr;

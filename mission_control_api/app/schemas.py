@@ -127,6 +127,19 @@ class AgentUsageSnapshotOut(BaseModel):
     days: int = 7
 
 
+class AgentControlActionIn(BaseModel):
+    action: str
+
+
+class AgentControlActionOut(BaseModel):
+    ok: bool
+    agent: str
+    action: str
+    container: str
+    status: str
+    detail: str = ""
+
+
 class BoardColumn(BaseModel):
     title: str
     count: int

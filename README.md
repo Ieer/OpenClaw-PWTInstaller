@@ -323,6 +323,7 @@ curl -fsSL https://raw.githubusercontent.com/Ieer/OpenClaw-PWTInstaller/main/con
 > - **英文 overview**：用于补充设计背景与目标态，不作为当前实现状态的唯一依据。
 
 - Docs 索引与分工说明：[docs/README.md](docs/README.md)
+- `openclaw.json` 新手配置说明（简中，含本地 Ollama 示例）：[docs/openclaw-json-guide-zh-cn.md](docs/openclaw-json-guide-zh-cn.md)
 - 理念延伸：个人全景监控与 8-Agent 方法论（繁中）：[docs/mission-control-personal-panopticon-zh-hant.md](docs/mission-control-personal-panopticon-zh-hant.md)
 - 8-Agent 运行编排（Panopticon）：[panopticon/README.md](panopticon/README.md)
 - 工程落地手册（简中，8-agent，含当前实现与扩展边界）：[docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md)
@@ -354,8 +355,9 @@ curl -fsSL https://raw.githubusercontent.com/Ieer/OpenClaw-PWTInstaller/main/con
 
 1. **想先用起来**：本页 → `install.sh` / `config-menu.sh`
 2. **想走主路线（推荐）**：本页 → [panopticon/README.md](panopticon/README.md)
-3. **想理解治理/契约**：本页 → [docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md) → [docs/mission-control-personal-panopticon-zh-hant.md](docs/mission-control-personal-panopticon-zh-hant.md)
-4. **想改控制台**：本页 → [docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md) → [mission_control_api/README.md](mission_control_api/README.md) → `MissionControl/app.py`
+3. **想先看懂配置文件**：本页 → [docs/openclaw-json-guide-zh-cn.md](docs/openclaw-json-guide-zh-cn.md)
+4. **想理解治理/契约**：本页 → [docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md) → [docs/mission-control-personal-panopticon-zh-hant.md](docs/mission-control-personal-panopticon-zh-hant.md)
+5. **想改控制台**：本页 → [docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md) → [mission_control_api/README.md](mission_control_api/README.md) → `MissionControl/app.py`
 
 ## ⚙️ 详细配置
 
@@ -543,6 +545,24 @@ docker compose -f panopticon/docker-compose.panopticon.yml logs -f --tail=200
 # 仅重建同源网关（常用于 1008 / token 问题排查后）
 docker compose -f panopticon/docker-compose.panopticon.yml up -d --force-recreate mission-control-gateway
 ```
+
+### Panopticon 重启顺序（避免 502）
+
+当你重建或重启 `mission-control-ui`（尤其 `--build` 后），建议固定执行：
+
+```bash
+# 1) 先重建 API/UI
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --build mission-control-api mission-control-ui
+
+# 2) 再强制重建网关（关键）
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --force-recreate mission-control-gateway
+
+# 3) 快速验收
+curl -I http://localhost:18920/
+curl -fsS http://127.0.0.1:18910/health
+```
+
+原因：`mission-control-ui` 容器 IP 变化后，`mission-control-gateway` 可能仍指向旧 upstream，表现为 `502 Bad Gateway`（常见在 `/_dash-update-component`）。
 
 ## 📋 配置说明
 

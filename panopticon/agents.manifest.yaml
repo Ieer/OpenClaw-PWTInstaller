@@ -3,6 +3,8 @@ version: 1
 mission_control:
   api_port: 18910
   ui_port: 18920
+  agent_controller_enabled: true
+  agent_controller_url: http://mission-control-agent-controller:9091
 
 agent_runtime:
   cnim_build_context: ../external/OpenClaw-Docker-CN-IM

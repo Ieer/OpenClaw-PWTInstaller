@@ -26,6 +26,36 @@ def render_compose(manifest: dict) -> str:
     runtime = manifest["agent_runtime"]
     agents = [agent for agent in manifest["agents"] if agent.get("enabled", True)]
     agent_slugs = ",".join(agent["slug"] for agent in agents)
+    controller_enabled = bool(mission_control.get("agent_controller_enabled", True))
+    controller_url = str(mission_control.get("agent_controller_url") or "http://mission-control-agent-controller:9091").strip()
+
+    api_controller_env_block = ""
+    api_controller_dep_block = ""
+    controller_service_block = ""
+    if controller_enabled:
+        api_controller_env_block = f"MC_AGENT_CONTROLLER_URL: {controller_url}"
+        api_controller_dep_block = "- mission-control-agent-controller"
+        controller_service_block = textwrap.indent(
+            textwrap.dedent(
+            """\
+            mission-control-agent-controller:
+              container_name: mission-control-agent-controller
+              build:
+                context: ./agent-controller
+                dockerfile: Dockerfile
+              image: mission-control-agent-controller:local
+              environment:
+                MC_AGENT_CONTROLLER_ALLOWED_AGENTS: {agent_slugs}
+              volumes:
+                - /usr/bin/docker:/usr/bin/docker:ro
+                - /var/run/docker.sock:/var/run/docker.sock
+              restart: unless-stopped
+              networks:
+                - panopticon
+            """
+            ).format(agent_slugs=agent_slugs),
+            "  ",
+        )
 
     compose_header = textwrap.dedent(
         """\
@@ -73,6 +103,7 @@ def render_compose(manifest: dict) -> str:
             environment:
               MC_GLOBAL_SKILLS_DIR: /data/global-skills
               MC_AGENT_HOMES_DIR: /data/agent-homes
+              __API_CONTROLLER_ENV_BLOCK__
             volumes:
               - type: bind
                 source: ./global-skills
@@ -84,6 +115,7 @@ def render_compose(manifest: dict) -> str:
             depends_on:
               - mc-redis
               - mc-postgres
+              __API_CONTROLLER_DEP_BLOCK__
             ports:
               - \"{api_port}:9090\"
             restart: unless-stopped
@@ -168,7 +200,20 @@ def render_compose(manifest: dict) -> str:
             networks:
               - panopticon
         """
-    ).format(api_port=mission_control["api_port"], ui_port=mission_control["ui_port"], agent_slugs=agent_slugs)
+    ).format(
+      api_port=mission_control["api_port"],
+      ui_port=mission_control["ui_port"],
+      agent_slugs=agent_slugs,
+    )
+
+    compose_header = compose_header.replace("__API_CONTROLLER_ENV_BLOCK__", api_controller_env_block)
+    compose_header = compose_header.replace("__API_CONTROLLER_DEP_BLOCK__", api_controller_dep_block)
+    if controller_service_block:
+      compose_header = compose_header.replace(
+        "  mission-control-ui:\n",
+        f"\n{controller_service_block}\n  mission-control-ui:\n",
+        1,
+      )
 
     services_text = []
     for agent in agents:

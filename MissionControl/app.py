@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import requests
 import websocket
-from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
+from dash import ALL, Dash, Input, Output, State, ctx, dcc, html, no_update
 from flask import Response
 
 APP_TITLE = "Mission Control"
@@ -603,6 +603,13 @@ def _threshold_int(value, fallback: int) -> int:
     except (TypeError, ValueError):
         return int(fallback)
     return max(1, parsed)
+
+
+def _safe_agent_slug(value: str | None) -> str:
+    slug = str(value or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9_-]+", slug):
+        return ""
+    return slug
 
 
 def _stat_class_high_bad(value: float, warn: float, critical: float) -> str:
@@ -1817,6 +1824,7 @@ def render_voice_latency_pill(metrics):
     Input("open-settings", "n_clicks"),
     Input("close-settings", "n_clicks"),
     Input("apply-settings-thresholds", "n_clicks"),
+    Input({"type": "settings-agent-action", "agent": ALL, "action": ALL}, "n_clicks"),
     State("settings-ui", "data"),
     State("settings-threshold-24h-warn", "value"),
     State("settings-threshold-7d-warn", "value"),
@@ -1828,6 +1836,7 @@ def update_settings_ui(
     _,
     __,
     ___,
+    ____,
     data,
     warn_24h,
     warn_7d,
@@ -1861,6 +1870,28 @@ def update_settings_ui(
         else:
             state["message"] = "Token阈值已更新。"
             state["message_tone"] = "ok"
+        return state
+
+    if isinstance(trigger, dict) and trigger.get("type") == "settings-agent-action":
+        slug = _safe_agent_slug(trigger.get("agent"))
+        action = str(trigger.get("action") or "").strip().lower()
+        if not slug or action not in {"start", "stop", "restart"}:
+            state["message"] = "Agent control failed: invalid action target."
+            state["message_tone"] = "error"
+            return state
+
+        try:
+            resp = api_post_json(f"/v1/agents/{slug}/control", {"action": action}, timeout=6.0)
+            if isinstance(resp, dict) and bool(resp.get("ok", False)):
+                status = str(resp.get("status") or "unknown")
+                state["message"] = f"{slug}: {action} completed (status: {status})."
+                state["message_tone"] = "ok"
+            else:
+                state["message"] = f"{slug}: {action} finished with unknown response."
+                state["message_tone"] = "warn"
+        except Exception as e:
+            state["message"] = f"{slug}: {action} failed: {e}"
+            state["message_tone"] = "error"
         return state
 
     return state
@@ -2004,6 +2035,26 @@ def render_settings_modal(_, settings_ui):
                         className="settings-item-body",
                     ),
                     html.Div(f"关闭建议：{recommendation}", className="settings-item-hint"),
+                    html.Div(
+                        className="settings-item-actions",
+                        children=[
+                            html.Button(
+                                "Start",
+                                id={"type": "settings-agent-action", "agent": slug, "action": "start"},
+                                className="ghost-button settings-action-btn",
+                            ),
+                            html.Button(
+                                "Stop",
+                                id={"type": "settings-agent-action", "agent": slug, "action": "stop"},
+                                className="ghost-button settings-action-btn",
+                            ),
+                            html.Button(
+                                "Restart",
+                                id={"type": "settings-agent-action", "agent": slug, "action": "restart"},
+                                className="ghost-button settings-action-btn",
+                            ),
+                        ],
+                    ),
                 ],
             )
         )

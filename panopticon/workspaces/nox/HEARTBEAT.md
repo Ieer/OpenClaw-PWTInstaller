@@ -6,6 +6,11 @@
 - Follow this file only. Do not infer extra tasks from old chats.
 - If nothing requires action, reply exactly: `HEARTBEAT_OK`.
 
+## Schedule
+
+- 频率：每天一次
+- 时间：北京时间 21:00（UTC 13:00）
+
 ## Every Heartbeat
 
 - Check product-ops task queue freshness and blocked cards.
