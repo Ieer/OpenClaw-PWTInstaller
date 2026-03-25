@@ -2,7 +2,7 @@ version: 1
 
 # Single source of truth for repository-wide OpenClaw runtime defaults.
 # Update this file first, then sync generated defaults where needed.
-openclaw_version: 2026.3.13
+openclaw_version: 2026.3.23
 opencode_ai_version: latest
 node_major: 22
 

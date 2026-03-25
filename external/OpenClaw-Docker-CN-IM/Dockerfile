@@ -3,7 +3,7 @@ FROM node:22-slim
 
 # When set to 1, fail the build if plugin installation fails.
 ARG STRICT_PLUGIN_INSTALL=0
-ARG OPENCLAW_VERSION=2026.3.13
+ARG OPENCLAW_VERSION=2026.3.23
 
 # 设置工作目录
 WORKDIR /app
