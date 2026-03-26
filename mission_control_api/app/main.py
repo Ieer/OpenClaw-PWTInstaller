@@ -461,20 +461,65 @@ async def _probe_http(url: str, *, timeout_seconds: float = 1.5) -> tuple[bool, 
 
 
 def _line_usage_from_session_event(line_obj: dict) -> tuple[datetime | None, dict | None]:
-    if str(line_obj.get("type") or "") != "message":
-        return None, None
-    message = line_obj.get("message")
-    if not isinstance(message, dict):
-        return None, None
-    usage = message.get("usage")
+    message = line_obj.get("message") if isinstance(line_obj.get("message"), dict) else {}
+    payload = line_obj.get("payload") if isinstance(line_obj.get("payload"), dict) else {}
+
+    usage = None
+    for candidate in (message.get("usage"), line_obj.get("usage"), payload.get("usage")):
+        if isinstance(candidate, dict):
+            usage = candidate
+            break
+
     if not isinstance(usage, dict):
         return None, None
-    event_ts = _parse_iso_datetime(line_obj.get("timestamp"))
-    return event_ts, usage
+
+    mapped_usage = {
+        "input": _safe_int(usage.get("input") or usage.get("input_tokens")),
+        "output": _safe_int(usage.get("output") or usage.get("output_tokens")),
+        "cacheRead": _safe_int(usage.get("cacheRead") or usage.get("cache_read_tokens")),
+        "cacheWrite": _safe_int(usage.get("cacheWrite") or usage.get("cache_write_tokens")),
+        "totalTokens": _safe_int(usage.get("totalTokens") or usage.get("total_tokens")),
+        "cost": {
+            "total": _safe_float(
+                (usage.get("cost") or {}).get("total") if isinstance(usage.get("cost"), dict) else usage.get("total_cost")
+            ),
+        },
+    }
+
+    if mapped_usage["totalTokens"] <= 0:
+        mapped_usage["totalTokens"] = (
+            mapped_usage["input"]
+            + mapped_usage["output"]
+            + mapped_usage["cacheRead"]
+            + mapped_usage["cacheWrite"]
+        )
+
+    event_ts = _parse_iso_datetime(
+        line_obj.get("timestamp")
+        or line_obj.get("created_at")
+        or line_obj.get("createdAt")
+        or line_obj.get("updated_at")
+        or line_obj.get("updatedAt")
+    )
+    if event_ts is None:
+        ts_value = line_obj.get("ts")
+        if isinstance(ts_value, (int, float)):
+            try:
+                epoch = float(ts_value)
+                if epoch > 10_000_000_000:
+                    epoch = epoch / 1000.0
+                event_ts = datetime.fromtimestamp(epoch)
+            except (ValueError, OSError):
+                event_ts = None
+
+    return event_ts, mapped_usage
 
 
 def _line_usage_from_cron_event(line_obj: dict) -> tuple[datetime | None, dict | None]:
     usage = line_obj.get("usage")
+    if not isinstance(usage, dict):
+        payload = line_obj.get("payload") if isinstance(line_obj.get("payload"), dict) else {}
+        usage = payload.get("usage")
     if not isinstance(usage, dict):
         return None, None
 
@@ -540,19 +585,34 @@ def _accumulate_usage(aggregate: dict, usage: dict, *, window_key: str) -> None:
 def _iter_agent_usage_lines(agent_dir: Path):
     yielded: set[str] = set()
 
-    for file_path in agent_dir.glob("agents/*/sessions/**/*.jsonl"):
-        if file_path.is_file():
-            key = str(file_path)
-            if key not in yielded:
-                yielded.add(key)
-                yield file_path, "session"
+    session_patterns = [
+        "agents/*/sessions/**/*.jsonl",
+        "agents/*/sessions/**/*.jsonl.reset.*",
+        "agents/*/sessions/**/*.jsonl.deleted.*",
+        "sessions/**/*.jsonl",
+        "sessions/**/*.jsonl.reset.*",
+        "sessions/**/*.jsonl.deleted.*",
+    ]
+    cron_patterns = [
+        "cron/runs/*.jsonl",
+        "cron/runs/**/*.jsonl",
+    ]
 
-    for file_path in agent_dir.glob("cron/runs/*.jsonl"):
-        if file_path.is_file():
-            key = str(file_path)
-            if key not in yielded:
-                yielded.add(key)
-                yield file_path, "cron"
+    for pattern in session_patterns:
+        for file_path in agent_dir.glob(pattern):
+            if file_path.is_file():
+                key = str(file_path)
+                if key not in yielded:
+                    yielded.add(key)
+                    yield file_path, "session"
+
+    for pattern in cron_patterns:
+        for file_path in agent_dir.glob(pattern):
+            if file_path.is_file():
+                key = str(file_path)
+                if key not in yielded:
+                    yielded.add(key)
+                    yield file_path, "cron"
 
 
 def _collect_agent_usage_snapshot(settings: Settings, days: int) -> list[AgentUsageSnapshotOut]:
@@ -586,12 +646,6 @@ def _collect_agent_usage_snapshot(settings: Settings, days: int) -> list[AgentUs
         }
 
         for file_path, source_type in _iter_agent_usage_lines(agent_dir):
-            try:
-                if file_path.stat().st_mtime < window_start_epoch:
-                    continue
-            except OSError:
-                continue
-
             try:
                 with file_path.open("r", encoding="utf-8") as handle:
                     for raw_line in handle:
