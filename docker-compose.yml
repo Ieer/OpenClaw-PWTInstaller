@@ -15,7 +15,7 @@ services:
     build:
       context: .
       args:
-        OPENCLAW_VERSION: "2026.3.23"
+        OPENCLAW_VERSION: "2026.3.28"
     image: openclaw:local
     container_name: openclaw
     restart: unless-stopped

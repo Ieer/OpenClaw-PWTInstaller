@@ -7,7 +7,7 @@
 - 角色：nox（产品运营与 roadmap 建议）
 - 高风险动作：涉及外部承诺/上线影响动作一律 Review
 - Heartbeat：I/O-only 模式，每 30 分钟检查一次
-- 每周回顾：每周初更新 lessons.md 和 MEMORY.md（上次：2026-03-11）
+- 每周回顾：每周初更新 lessons.md 和 MEMORY.md（上次：2026-03-25）
 
 ## Index
 

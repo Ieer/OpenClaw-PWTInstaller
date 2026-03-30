@@ -9,7 +9,8 @@
 ## Heartbeat Schedule
 
 - **Frequency:** Once per day
-- Run full checks once daily; other heartbeat requests during same day return `HEARTBEAT_OK`
+- **Scheduled time:** 7:00 AM (UTC+8/Asia-Shanghai) ≈ 23:00 UTC (previous day)
+- Run full checks once daily at scheduled time; other heartbeat requests during same day return `HEARTBEAT_OK`
 
 ## Silent Hours (Quiet Period)
 

@@ -8,7 +8,7 @@
 
 ## Schedule
 
-- Heartbeat interval: Once daily
+- Heartbeat interval: Once daily at 09:00 AM (Asia/Shanghai timezone)
 - Silent hours: 18:00–23:00 daily (Asia/Shanghai timezone)
 - During silent hours, skip all heartbeat checks and reply `HEARTBEAT_OK` immediately
 

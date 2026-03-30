@@ -13,7 +13,7 @@
 
 ## Heartbeat Frequency
 
-- Daily heartbeat (once per day)
+- Daily heartbeat (once per day, at 06:00 UTC)
 
 ## Every Heartbeat
 

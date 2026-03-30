@@ -22,6 +22,7 @@ if [ ! -f /home/node/.openclaw/openclaw.json ]; then
     BASE_URL="${BASE_URL}"
     API_KEY="${API_KEY}"
     API_PROTOCOL="${API_PROTOCOL:-openai-completions}"
+    OPENCLAW_VERSION="${OPENCLAW_VERSION:-unknown}"
     CONTEXT_WINDOW="${CONTEXT_WINDOW:-200000}"
     MAX_TOKENS="${MAX_TOKENS:-8192}"
     
@@ -49,7 +50,7 @@ if [ ! -f /home/node/.openclaw/openclaw.json ]; then
     cat > /home/node/.openclaw/openclaw.json <<EOF
 {
   "meta": {
-    "lastTouchedVersion": "2026.1.29",
+    "lastTouchedVersion": "$OPENCLAW_VERSION",
     "lastTouchedAt": "$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")"
   },
   "update": {
@@ -107,12 +108,7 @@ if [ ! -f /home/node/.openclaw/openclaw.json ]; then
     }
   },
   "messages": {
-    "ackReactionScope": "group-mentions",
-    "tts": {
-      "edge": {
-        "voice": "zh-CN-XiaoxiaoNeural"
-      }
-    }
+    "ackReactionScope": "group-mentions"
   },
   "commands": {
     "native": "auto",
@@ -408,26 +404,67 @@ if gateway_password:
 else:
   auth.pop('password', None)
 
+# OpenClaw 2026.3.28 schema no longer accepts messages.tts.edge.
+messages = data.get('messages') if isinstance(data.get('messages'), dict) else None
+if messages is not None:
+  tts = messages.get('tts') if isinstance(messages.get('tts'), dict) else None
+  if tts is not None:
+    tts.pop('edge', None)
+    if not tts:
+      messages.pop('tts', None)
+
+channels = data.setdefault('channels', {})
+feishu_existing = channels.get('feishu') if isinstance(channels.get('feishu'), dict) else {}
+
+# Remove legacy schema keys that are rejected in newer OpenClaw versions.
+if isinstance(feishu_existing, dict):
+  feishu_existing.pop('accounts', None)
+
 if feishu_app_id and feishu_app_secret:
-    channels = data.setdefault('channels', {})
-    feishu = channels.setdefault('feishu', {})
-    feishu.update({
-        'enabled': True,
-        'connectionMode': feishu.get('connectionMode', 'websocket'),
-        'dmPolicy': feishu.get('dmPolicy', 'pairing'),
-        'groupPolicy': feishu.get('groupPolicy', 'allowlist'),
-        'requireMention': feishu.get('requireMention', True),
-        'appId': feishu_app_id,
-        'appSecret': feishu_app_secret,
-    })
+  channels['feishu'] = {
+    'enabled': True,
+    'connectionMode': feishu_existing.get('connectionMode', 'websocket'),
+    'dmPolicy': feishu_existing.get('dmPolicy', 'pairing'),
+    'groupPolicy': feishu_existing.get('groupPolicy', 'allowlist'),
+    'requireMention': feishu_existing.get('requireMention', True),
+    'appId': feishu_app_id,
+    'appSecret': feishu_app_secret,
+  }
 
-    plugins = data.setdefault('plugins', {})
-    entries = plugins.setdefault('entries', {})
-    entries.setdefault('feishu', {}).update({'enabled': True})
+  plugins = data.setdefault('plugins', {})
+  entries = plugins.setdefault('entries', {})
+  entries.setdefault('feishu', {}).update({'enabled': True})
 
-    # Ensure we use stock:feishu (do not keep an installs entry pointing to a global plugin)
-    installs = plugins.setdefault('installs', {})
-    installs.pop('feishu', None)
+  # Ensure we use stock:feishu (do not keep an installs entry pointing to a global plugin)
+  installs = plugins.setdefault('installs', {})
+  installs.pop('feishu', None)
+elif isinstance(feishu_existing, dict):
+  # Keep existing feishu config but with legacy keys removed.
+  channels['feishu'] = feishu_existing
+
+# Cleanup stale plugin path configs so OpenClaw can start even if old linked plugins were removed.
+plugins = data.setdefault('plugins', {})
+load = plugins.get('load') if isinstance(plugins.get('load'), dict) else None
+if load is not None:
+  paths = load.get('paths')
+  if isinstance(paths, list):
+    valid_paths: list[str] = []
+    removed_paths: list[str] = []
+    for plugin_path in paths:
+      plugin_path_str = str(plugin_path).strip()
+      if not plugin_path_str:
+        continue
+      if Path(plugin_path_str).exists():
+        valid_paths.append(plugin_path_str)
+      else:
+        removed_paths.append(plugin_path_str)
+    if removed_paths:
+      print(f"ℹ️ 已移除失效插件路径: {', '.join(removed_paths)}")
+    if valid_paths:
+      load['paths'] = valid_paths
+      plugins['load'] = load
+    else:
+      plugins.pop('load', None)
 
 path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 PY

@@ -3,7 +3,7 @@ FROM node:22-slim
 
 # When set to 1, fail the build if plugin installation fails.
 ARG STRICT_PLUGIN_INSTALL=0
-ARG OPENCLAW_VERSION=2026.3.23
+ARG OPENCLAW_VERSION=2026.3.28
 
 # 设置工作目录
 WORKDIR /app
@@ -27,8 +27,8 @@ RUN apt-get update \
     websockify \
   && rm -rf /var/lib/apt/lists/*
 
-# 更新 npm 到最新版本
-RUN npm install -g npm@latest
+# 更新 npm 到稳定版本（避免 npm@latest 在部分环境出现依赖解析异常）
+RUN npm install -g npm@10
 
 # Ensure npm transitive git dependencies can be fetched without SSH keys
 RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" \
@@ -64,8 +64,12 @@ USER node
 # Reduce flaky GitHub HTTP2 clone errors
 RUN git config --global http.version HTTP/1.1
 
-# 飞书使用 OpenClaw 自带 stock:feishu（不再额外安装社区插件，避免 duplicate plugin id）
-RUN test -d /usr/local/lib/node_modules/openclaw/extensions/feishu
+# 飞书优先使用 OpenClaw 自带 stock:feishu（路径可能随版本变化，不存在时仅告警）
+RUN if [ -d /usr/local/lib/node_modules/openclaw/extensions/feishu ]; then \
+    echo "[ok] stock feishu extension detected"; \
+  else \
+    echo "[warn] stock feishu extension path not found; continue"; \
+  fi
 
 # 安装钉钉插件（从 GitHub clone 后本地安装；失败应让构建失败）
 RUN set -e; \

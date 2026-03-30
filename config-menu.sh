@@ -51,7 +51,7 @@ BG_RED='\033[41m'
 
 # ================================ 配置变量 ================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_OPENCLAW_VERSION="2026.3.23"
+DEFAULT_OPENCLAW_VERSION="2026.3.28"
 RELEASE_MANIFEST_PATH="$SCRIPT_DIR/openclaw-release.yaml"
 CONFIG_DIR="$HOME/.openclaw"
 
