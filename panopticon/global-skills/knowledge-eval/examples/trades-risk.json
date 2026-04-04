@@ -1,0 +1,10 @@
+{
+  "task": "评估当前交易策略是否适合执行，优先参考近期风险规则、仓位约束和验证通过的市场知识。",
+  "agent_slug": "trades",
+  "risk_level": "high",
+  "tags": ["risk", "position", "market"],
+  "limit": 5,
+  "retrieval_mode": "hybrid",
+  "ranking_profile": "precision",
+  "include_rejected": true
+}

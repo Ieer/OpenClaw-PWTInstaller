@@ -1,0 +1,9 @@
+{
+  "task": "评估本周增长实验是否应继续投放，优先关注转化率、样本量和历史同类实验结论。",
+  "agent_slug": "growth",
+  "risk_level": "high",
+  "tags": ["experiment", "funnel", "activation"],
+  "limit": 5,
+  "retrieval_mode": "hybrid",
+  "ranking_profile": "balanced"
+}

@@ -136,6 +136,23 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
 
+### Knowledge Evaluation Default
+
+For nox's common workflows, use `skills/knowledge-eval/` before giving formal recommendations when the task is about:
+
+- roadmap judgement
+- release/change impact assessment
+- product/ops recommendation
+- continue/stop/prioritize decisions
+
+Default behavior:
+
+1. Run `skills/knowledge-eval/scripts/run_eval_artifact.py`
+2. Read `artifacts/<task_id>/artifact.md` and `sources/<task_id>/resolve-response.json`
+3. Answer in nox style: options, risks, dependencies, and required user decisions
+
+If `summary.status` is `no_hit` or `weak_hit`, say that explicitly and do not overstate certainty.
+
 ### Skill Extension Rule (Workspace)
 
 When creating/updating a skill, keep `SKILL.md` explicit on:

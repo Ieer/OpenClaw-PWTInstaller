@@ -1,0 +1,9 @@
+{
+  "task": "评估这份写作 brief 是否具备足够背景信息，优先参考品牌语气、历史高质量样稿和禁用表达。",
+  "agent_slug": "writing",
+  "risk_level": "normal",
+  "tags": ["style", "brief", "reference"],
+  "limit": 5,
+  "retrieval_mode": "hybrid",
+  "ranking_profile": "balanced"
+}

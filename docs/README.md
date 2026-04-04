@@ -27,6 +27,7 @@
 
 | 文件 | 用途 | 重复检查结论 |
 | --- | --- | --- |
+| [agent-evaluation-contract-zh-cn.md](agent-evaluation-contract-zh-cn.md) | 8-Agent 共用评估调用规范 | 固化 resolve 请求字段、调用时机与输出模板，避免规范散落在对话中 |
 | [mission-control-overview-en.md](mission-control-overview-en.md) | Mission Control 英文概览 | 与中文文档保留互补关系，不再重复展开细节 |
 | [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md) | 8-Agent 简中落地手册 | 保留执行导向内容，作为主入口 |
 | [mission-control-personal-panopticon-zh-hant.md](mission-control-personal-panopticon-zh-hant.md) | 8-Agent 繁中完整备案 | 保留设计、治理、演示脚本等完整记录 |
@@ -45,8 +46,9 @@
 1. [../README.md](../README.md)
 2. [../panopticon/README.md](../panopticon/README.md)
 3. [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md)
-4. [knowledge-system-playbook-zh-cn.md](knowledge-system-playbook-zh-cn.md)
-5. [mission-control-personal-panopticon-zh-hant.md](mission-control-personal-panopticon-zh-hant.md)
-6. [mission-control-overview-en.md](mission-control-overview-en.md)
-7. [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md)
-8. [openclaw-json-guide-zh-cn.md](openclaw-json-guide-zh-cn.md)
+4. [agent-evaluation-contract-zh-cn.md](agent-evaluation-contract-zh-cn.md)
+5. [knowledge-system-playbook-zh-cn.md](knowledge-system-playbook-zh-cn.md)
+6. [mission-control-personal-panopticon-zh-hant.md](mission-control-personal-panopticon-zh-hant.md)
+7. [mission-control-overview-en.md](mission-control-overview-en.md)
+8. [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md)
+9. [openclaw-json-guide-zh-cn.md](openclaw-json-guide-zh-cn.md)

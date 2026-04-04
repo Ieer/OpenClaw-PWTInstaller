@@ -330,6 +330,7 @@ curl -fsSL https://raw.githubusercontent.com/Ieer/OpenClaw-PWTInstaller/main/con
 - 理念延伸：个人全景监控与 8-Agent 方法论（繁中）：[docs/mission-control-personal-panopticon-zh-hant.md](docs/mission-control-personal-panopticon-zh-hant.md)
 - 8-Agent 运行编排（Panopticon）：[panopticon/README.md](panopticon/README.md)
 - 工程落地手册（简中，8-agent，含当前实现与扩展边界）：[docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md)
+- 8-Agent 共用评估调用规范（简中，含请求字段/调用时机/输出模板）：[docs/agent-evaluation-contract-zh-cn.md](docs/agent-evaluation-contract-zh-cn.md)
 - Mission Control 通用实现参考（英文，偏设计背景与目标态）：[docs/mission-control-overview-en.md](docs/mission-control-overview-en.md)
 
 每个 Agent 的 SOUL / 契约建议通过“模板与骨架”统一维护：

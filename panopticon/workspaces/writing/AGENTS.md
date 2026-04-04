@@ -136,6 +136,23 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
 
+### Knowledge Evaluation Default
+
+For writing's common workflows, use `skills/knowledge-eval/` before giving formal recommendations when the task is about:
+
+- source sufficiency or fact support
+- outline or brief judgement
+- publishability or viewpoint risk
+- continue/stop/rewrite decisions for a draft
+
+Default behavior:
+
+1. Run `skills/knowledge-eval/scripts/run_eval_artifact.py`
+2. Read `artifacts/<task_id>/artifact.md` and `sources/<task_id>/resolve-response.json`
+3. Answer in writing style: outline/judgement, source basis, limitations, and what still needs verification
+
+If `summary.status` is `no_hit` or `weak_hit`, say that clearly and do not fill gaps with invented detail.
+
 ### Skill Extension Rule (Workspace)
 
 When creating/updating a skill, keep `SKILL.md` explicit on:

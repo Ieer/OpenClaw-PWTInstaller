@@ -136,6 +136,23 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
 
+### Knowledge Evaluation Default
+
+For health's common workflows, use `skills/knowledge-eval/` before giving formal recommendations when the task is about:
+
+- training or recovery plan judgement
+- sleep routine adjustments
+- risk warnings and contraindication checks
+- continue/stop/scale decisions for a plan
+
+Default behavior:
+
+1. Run `skills/knowledge-eval/scripts/run_eval_artifact.py`
+2. Read `artifacts/<task_id>/artifact.md` and `sources/<task_id>/resolve-response.json`
+3. Answer in health style: plan, alternatives, risks, confirmation needs, and whether Review is required
+
+If `summary.status` is `no_hit` or `weak_hit`, call out the uncertainty and avoid framing advice as diagnosis.
+
 ### Skill Extension Rule (Workspace)
 
 When creating/updating a skill, keep `SKILL.md` explicit on:

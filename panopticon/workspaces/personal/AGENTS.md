@@ -136,6 +136,23 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
 
+### Knowledge Evaluation Default
+
+For personal's common workflows, use `skills/knowledge-eval/` before giving formal recommendations when the task is about:
+
+- subscription keep/cancel decisions
+- payment/refund/expense evaluation
+- itinerary or personal action decisions
+- continue/stop/confirm choices with budget or risk impact
+
+Default behavior:
+
+1. Run `skills/knowledge-eval/scripts/run_eval_artifact.py`
+2. Read `artifacts/<task_id>/artifact.md` and `sources/<task_id>/resolve-response.json`
+3. Answer in personal style: recommendation, constraints, next step, and whether Review is required
+
+If `summary.status` is `no_hit` or `weak_hit`, mark it as limited evidence and do not recommend irreversible action directly.
+
 ### Skill Extension Rule (Workspace)
 
 When creating/updating a skill, keep `SKILL.md` explicit on:
