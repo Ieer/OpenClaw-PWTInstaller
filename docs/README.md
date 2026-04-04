@@ -17,6 +17,7 @@
 - `mission-control-overview-en.md`：英文总览
 - `mission-control-playbook-zh-cn.md`：简中工程落地手册
 - `mission-control-personal-panopticon-zh-hant.md`：繁中完整备案
+- `knowledge-system-playbook-zh-cn.md`：知识系统落地手册（普通 U 盘原始资料导入）
 - `feishu-setup-zh-cn.md`：飞书接入指南
 - `openclaw-json-guide-zh-cn.md`：`openclaw.json` 新手配置说明
 
@@ -29,6 +30,7 @@
 | [mission-control-overview-en.md](mission-control-overview-en.md) | Mission Control 英文概览 | 与中文文档保留互补关系，不再重复展开细节 |
 | [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md) | 8-Agent 简中落地手册 | 保留执行导向内容，作为主入口 |
 | [mission-control-personal-panopticon-zh-hant.md](mission-control-personal-panopticon-zh-hant.md) | 8-Agent 繁中完整备案 | 保留设计、治理、演示脚本等完整记录 |
+| [knowledge-system-playbook-zh-cn.md](knowledge-system-playbook-zh-cn.md) | 知识系统落地手册（简中） | 固化“普通 U 盘原始资料 + Mission Control 登记层”SOP |
 | [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md) | 飞书渠道配置 | 独立主题，无重复合并需求 |
 | [openclaw-json-guide-zh-cn.md](openclaw-json-guide-zh-cn.md) | `openclaw.json` 新手说明 | 基于当前仓库实际配置，补充本地 Ollama 正确示例 |
 
@@ -43,7 +45,8 @@
 1. [../README.md](../README.md)
 2. [../panopticon/README.md](../panopticon/README.md)
 3. [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md)
-4. [mission-control-personal-panopticon-zh-hant.md](mission-control-personal-panopticon-zh-hant.md)
-5. [mission-control-overview-en.md](mission-control-overview-en.md)
-6. [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md)
-7. [openclaw-json-guide-zh-cn.md](openclaw-json-guide-zh-cn.md)
+4. [knowledge-system-playbook-zh-cn.md](knowledge-system-playbook-zh-cn.md)
+5. [mission-control-personal-panopticon-zh-hant.md](mission-control-personal-panopticon-zh-hant.md)
+6. [mission-control-overview-en.md](mission-control-overview-en.md)
+7. [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md)
+8. [openclaw-json-guide-zh-cn.md](openclaw-json-guide-zh-cn.md)

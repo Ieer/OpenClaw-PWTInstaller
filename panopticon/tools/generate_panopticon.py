@@ -103,6 +103,7 @@ def render_compose(manifest: dict) -> str:
             environment:
               MC_GLOBAL_SKILLS_DIR: /data/global-skills
               MC_AGENT_HOMES_DIR: /data/agent-homes
+              MC_KNOWLEDGE_RAW_SOURCES_DIR: /data/knowledge-sources
               __API_CONTROLLER_ENV_BLOCK__
             volumes:
               - type: bind
@@ -112,6 +113,9 @@ def render_compose(manifest: dict) -> str:
               - type: bind
                 source: ${{PANOPTICON_DATA_DIR:-.}}/agent-homes
                 target: /data/agent-homes
+              - type: bind
+                source: ${{PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}}/${{PANOPTICON_KNOWLEDGE_USB_SUBDIR:-knowledge-sources}}
+                target: /data/knowledge-sources
             depends_on:
               - mc-redis
               - mc-postgres

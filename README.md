@@ -161,6 +161,9 @@ npm install -g openclaw
 # 1. 可选：设置独立数据目录
 cp panopticon/.env.example panopticon/.env
 
+# 1.1 可选（普通 U 盘推荐）：初始化知识原始资料目录
+bash panopticon/tools/init_usb_knowledge_sources.sh
+
 # 2. 编辑各 agent 的环境变量（至少模型、API Key、Gateway Token）
 $EDITOR panopticon/env/nox.env
 $EDITOR panopticon/env/metrics.env
@@ -949,6 +952,15 @@ rm -rf ~/.openclaw
 ```
 
 ## 📜 更新日志
+
+### 最近更新（2026-04-04）
+- 🧭 明确仓库路线分层：`8-Agent Panopticon + Mission Control` 为主推方案，单 Agent 命令行安装器为轻量入口，根目录单容器 Docker 保持实验性定位。
+- 🕸️ Panopticon 文档与架构说明补齐：新增 `mission-control-agent-controller`、同源 Gateway、8-Agent 编排、Mission Control UI/API、语音桥接与数据目录边界说明。
+- 🧠 Mission Control 知识系统从“原始资料登记”扩展为完整治理链路：已覆盖 `source -> chunk/OCR -> units/embeddings -> validation/policy -> search/resolve -> audit -> feedback/lifecycle`。
+- 🎯 hybrid resolve 第二阶段继续推进：支持可配置 `ranking profile`、排序拆项、阈值控制与基准脚本，不再局限于固定档位。
+- 🚦 策略治理能力增强：新增 dynamic policy 的 `bundle / rule / rollout`、change events、observability summary，以及 bundle / rollout 的 soft rollback。
+- 🧱 Mission Control 数据层切换为 Alembic 单轨迁移，README 已补零停机迁移 SOP、发布门禁与回滚说明。
+- 🔍 文档图示已同步更新：知识系统实现图、决策图，以及 Panopticon 项目整体架构图均已按当前实现重绘。
 
 ### v1.0.0 (2026-01-29)
 - 🎉 首次发布

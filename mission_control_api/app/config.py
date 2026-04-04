@@ -11,6 +11,14 @@ class Settings(BaseModel):
     redis_stream_key: str = "mc:events"
     global_skills_dir: str = "/data/global-skills"
     agent_homes_dir: str = "/data/agent-homes"
+    knowledge_raw_sources_dir: str = "/data/knowledge-sources"
+    knowledge_embedding_enabled: bool = False
+    knowledge_embedding_model: str | None = None
+    knowledge_embedding_base_url: str | None = None
+    knowledge_embedding_api_key: str | None = None
+    knowledge_embedding_api_protocol: str = "openai-embeddings"
+    knowledge_embedding_dimensions: int | None = None
+    knowledge_embedding_timeout_seconds: float = 20.0
     agent_token_map: dict[str, str] = {}
     chat_upstream_port: int = 26216
     chat_force_loopback_headers: bool = True
@@ -38,6 +46,8 @@ def _env_flag(name: str, default: bool) -> bool:
 
 def load_settings() -> Settings:
     import os
+
+    raw_embedding_dimensions = (os.getenv("MC_KNOWLEDGE_EMBEDDING_DIMENSIONS") or "").strip()
     
     token_map_str = os.getenv("MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP", "")
     agent_token_map = {}
@@ -55,6 +65,14 @@ def load_settings() -> Settings:
         redis_stream_key=os.getenv("MC_REDIS_STREAM_KEY") or "mc:events",
         global_skills_dir=os.getenv("MC_GLOBAL_SKILLS_DIR") or "/data/global-skills",
         agent_homes_dir=os.getenv("MC_AGENT_HOMES_DIR") or "/data/agent-homes",
+        knowledge_raw_sources_dir=os.getenv("MC_KNOWLEDGE_RAW_SOURCES_DIR") or "/data/knowledge-sources",
+        knowledge_embedding_enabled=_env_flag("MC_KNOWLEDGE_EMBEDDING_ENABLED", False),
+        knowledge_embedding_model=(os.getenv("MC_KNOWLEDGE_EMBEDDING_MODEL") or "").strip() or None,
+        knowledge_embedding_base_url=(os.getenv("MC_KNOWLEDGE_EMBEDDING_BASE_URL") or "").strip() or None,
+        knowledge_embedding_api_key=(os.getenv("MC_KNOWLEDGE_EMBEDDING_API_KEY") or "").strip() or None,
+        knowledge_embedding_api_protocol=(os.getenv("MC_KNOWLEDGE_EMBEDDING_API_PROTOCOL") or "openai-embeddings").strip() or "openai-embeddings",
+        knowledge_embedding_dimensions=int(raw_embedding_dimensions) if raw_embedding_dimensions else None,
+        knowledge_embedding_timeout_seconds=float((os.getenv("MC_KNOWLEDGE_EMBEDDING_TIMEOUT_SECONDS") or "20.0").strip()),
         agent_token_map=agent_token_map,
         chat_upstream_port=int((os.getenv("MC_CHAT_UPSTREAM_PORT") or "26216").strip()),
         chat_force_loopback_headers=_env_flag("MC_CHAT_PROXY_FORCE_LOOPBACK_HEADERS", True),

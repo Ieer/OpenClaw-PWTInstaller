@@ -34,6 +34,7 @@ Mission Control 数据初始化策略：
 ```mermaid
 flowchart LR
   U[用户浏览器]
+  USB[普通U盘\nknowledge-sources/*]
 
   subgraph G[统一入口层]
     GW[mission-control-gateway\nNginx :18920]
@@ -42,7 +43,10 @@ flowchart LR
   subgraph MC[Mission Control 层]
     UI[mission-control-ui]
     API[mission-control-api :18910]
+    AC[mission-control-agent-controller :9091]
     FEED[event feed / overlay]
+    KQ[Knowledge API\n/v1/knowledge/*]
+    GOV[策略治理\npolicy / rollout / ranking / rollback]
     HB[mc-heartbeat]
     VB[mission-control-voice-bridge\nprofile: voice]
     PG[(mc-postgres)]
@@ -71,15 +75,58 @@ flowchart LR
     GL[gateway-logs/*]
   end
 
+  subgraph KRAW[知识原始资料层（USB 挂载）]
+    KS["/data/knowledge-sources<br/>incoming / processed / archive"]
+  end
+
+  subgraph KPROC[知识治理与检索层]
+    CHUNK[chunk / OCR / parser]
+    KU[(knowledge_units)]
+    KEMB[(knowledge_unit_embeddings)]
+    KVAL[(knowledge_validations)]
+    KPOL[(validation policies\nbundles / rules / rollouts)]
+    KRANK[(ranking profiles)]
+    KAUD[(resolve audits)]
+    KOBS[metrics / observability]
+    KFB[(feedback + lifecycle)]
+  end
+
   U -->|HTTP| GW
   GW -->|/| UI
-  GW -->|/chat/agent/| API
+  GW -->|/chat/<agent>/| API
   GW -->|写入 access/error log（可选）| GL
 
   UI -->|REST/WebSocket| API
   HB -->|POST /v1/events| API
+  UI -->|knowledge 管理/查询| KQ
+  UI -->|board / feed / tasks / control| API
   ROS -->|发布语音 topic| VB
   VB -->|POST voice.* 事件| API
+  USB -->|bind mount| KS
+  KQ -->|import / scan / list / get| KS
+  KQ -->|chunk / search / resolve| CHUNK
+  CHUNK --> KU
+  CHUNK --> KEMB
+  KQ --> KVAL
+  KQ --> KPOL
+  KQ --> KRANK
+  KQ --> GOV
+  GOV --> KPOL
+  GOV --> KRANK
+  GOV --> KAUD
+  KQ --> KAUD
+  KAUD --> KOBS
+  KQ --> KFB
+  KFB --> KU
+  KQ -->|登记元数据| PG
+  KU --> PG
+  KEMB --> PG
+  KVAL --> PG
+  KPOL --> PG
+  KRANK --> PG
+  KAUD --> PG
+  KFB --> PG
+  API -->|容器启停 / 状态查询| AC
   API -->|/chat/agent HTTP/WS 代理| A1
   API -->|/chat/agent HTTP/WS 代理| A2
   API -->|/chat/agent HTTP/WS 代理| A3
@@ -89,6 +136,15 @@ flowchart LR
   API -->|/chat/agent HTTP/WS 代理| A7
   API -->|/chat/agent HTTP/WS 代理| A8
   API -->|写入 chat.gateway.access 事件| FEED
+  KQ -->|可选写入 knowledge.* 事件| FEED
+  AC -->|Docker API| A1
+  AC -->|Docker API| A2
+  AC -->|Docker API| A3
+  AC -->|Docker API| A4
+  AC -->|Docker API| A5
+  AC -->|Docker API| A6
+  AC -->|Docker API| A7
+  AC -->|Docker API| A8
 
   API --> PG
   API --> RD
@@ -116,10 +172,13 @@ flowchart LR
 ### 分层说明
 
 - 统一入口层（Gateway）：`mission-control-gateway` 对外暴露 `18920`，统一承载同源入口，并将 `/` 转发给 `mission-control-ui`、`/chat/<agent>/...` 转发给 `mission-control-api`。
-- Mission Control 层：`mission-control-ui` 提供控制台页面，`mission-control-api` 提供看板/任务/事件接口，同时承担 Chat 的 HTTP/WebSocket 统一代理；`mc-heartbeat` 定时上报心跳事件，`mission-control-voice-bridge` 负责语音事件汇聚。
+- Mission Control 层：`mission-control-ui` 提供控制台页面，`mission-control-api` 提供看板/任务/事件接口，同时承担 Chat 的 HTTP/WebSocket 统一代理；`mc-heartbeat` 定时上报心跳事件，`mission-control-voice-bridge` 负责语音事件汇聚；Knowledge API 现已扩展到 `/v1/knowledge/*`，覆盖 source、chunk、validation、search、resolve、feedback、lifecycle 与治理接口。
+- 容器控制层：`mission-control-agent-controller` 通过 Docker socket / CLI 代表 `mission-control-api` 执行 agent 容器状态查询、启停与编排控制；该服务由 manifest 和生成器统一产出，不建议手改 compose。
+- 知识治理与检索层：知识链路已经从“原始资料登记”扩展为 `source -> chunk/OCR -> units/embeddings -> validation/policy -> search/resolve -> audit/feedback/lifecycle` 的完整治理闭环，并新增 ranking profile、observability summary、bundle/rollout rollback 等发布治理能力。
 - 语音引擎层（可选）：语音服务通过 ROS topics 输出状态与文本；`mission-control-voice-bridge` 订阅并标准化为 `voice.*` 事件写入 Mission Control。
 - Agent 执行层：8 个 `openclaw-*` 容器彼此隔离，每个 agent 拥有独立 home 与 workspace。
 - 数据持久层：统一落盘到 `PANOPTICON_DATA_DIR` 下（Postgres/Redis 数据、agent homes、workspaces、gateway logs）。
+- 知识原始资料层（普通 U 盘）：`PANOPTICON_USB_HOST_PATH/PANOPTICON_KNOWLEDGE_USB_SUBDIR` 挂载到 `mission-control-api` 容器的 `/data/knowledge-sources`，仅用于保存原始资料与归档，不承载 Postgres 热数据。
 
 ### 核心链路（从请求到可观测）
 
@@ -137,6 +196,16 @@ Voice 链路（可选，启用 `voice` profile）：
 1. `mission-control-voice-bridge` 订阅 topics 并映射为 `voice.listening` / `voice.thinking` / `voice.speaking` 等标准事件。
 1. bridge 将标准化事件 POST 到 `mission-control-api /v1/events`。
 1. 事件进入 Mission Control feed 与 overlay，可用于实时状态展示、审计与稳定性观察。
+
+Knowledge 原始资料链路（普通 U 盘推荐）：
+
+1. 将外部资料放入 `${PANOPTICON_USB_HOST_PATH}/${PANOPTICON_KNOWLEDGE_USB_SUBDIR}/incoming`。
+1. `mission-control-api` 通过 bind mount 读取容器内 `/data/knowledge-sources/incoming`。
+1. 调用 `POST /v1/knowledge/sources/scan` 或 `POST /v1/knowledge/sources/import` 完成登记。
+1. 调用 `POST /v1/knowledge/sources/{source_id}/chunk` 后，系统会执行多格式解析、OCR fallback，并生成 `knowledge_units`；启用 embedding 时会同步写入 `knowledge_unit_embeddings`。
+1. `POST /v1/knowledge/resolve` 会按 dynamic policy、rollout、ranking profile 选择知识包，并将命中/拒绝原因写入 `knowledge_resolve_audits`。
+1. `GET /v1/knowledge/resolve/metrics` 与 `GET /v1/knowledge/validation-policy/observability/summary` 可用于观察命中率、拒绝原因、bundle/rollout/ranking profile 使用情况；必要时可通过 rollback 接口回退策略发布。
+1. 原始文件继续保留在 U 盘，结构化元数据、切片、向量、审计和治理状态统一写入 Postgres，用于后续审计、回溯与持续治理。
 
 ### 配置/生成关系（避免手改回滚）
 
@@ -191,6 +260,7 @@ python panopticon/tools/validate_skills_template.py
 - 如需让全部 `openclaw-*` agent 直接访问 U 盘，再额外设置：
   - `PANOPTICON_USB_HOST_PATH=/media/pi/4A21-0000`
   - `PANOPTICON_USB_CONTAINER_PATH=/mnt/usb`
+  - `PANOPTICON_KNOWLEDGE_USB_SUBDIR=knowledge-sources`（普通 U 盘场景：仅放知识原始资料）
   - 建议在 U 盘下使用 `agents/<slug>/` 作为每个 agent 的归档子目录；容器内对应路径为 `/mnt/usb/agents/<slug>`，并通过环境变量 `PANOPTICON_USB_AGENT_DIR` 暴露给 agent。
 
 推荐策略（Git 与运行态分离）：
@@ -198,6 +268,36 @@ python panopticon/tools/validate_skills_template.py
 - `panopticon/workspaces/*` 在仓库里只保留可复用基线（文档、skills、必要源码）。
 - `inbox/outbox/artifacts/state/sources/.openclaw` 与 `memory/YYYY-MM-DD.md` 等运行态数据放在 `PANOPTICON_DATA_DIR/workspaces/*`。
 - 工具脚本默认按以下优先级找 workspace 根目录：`PANOPTICON_WORKSPACES_ROOT` > `PANOPTICON_DATA_DIR/workspaces` > `panopticon/workspaces`。
+
+### 普通 U 盘：仅承载知识原始资料（推荐）
+
+如果你的介质是普通 U 盘（非高性能 USB SSD），建议只把原始知识资料放上去，不要把 Postgres 主库/热索引放在 U 盘。
+
+1) 初始化 U 盘知识目录：
+
+```bash
+bash panopticon/tools/init_usb_knowledge_sources.sh
+```
+
+2) 把资料放到：
+
+```text
+${PANOPTICON_USB_HOST_PATH}/${PANOPTICON_KNOWLEDGE_USB_SUBDIR}/incoming
+```
+
+3) 启动后调用 Mission Control API 扫描入库：
+
+```bash
+curl -X POST http://127.0.0.1:18910/v1/knowledge/sources/scan \
+  -H 'Content-Type: application/json' \
+  -d '{"subdir":"incoming","max_files":200,"dry_run":false}'
+```
+
+4) 查看已登记知识源：
+
+```bash
+curl 'http://127.0.0.1:18910/v1/knowledge/sources?limit=50'
+```
 
 首次搬移到 U 盘/新磁盘后，建议先创建数据目录（等价于 `mkdir -p`）：
 
