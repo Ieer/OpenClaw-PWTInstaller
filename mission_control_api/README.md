@@ -193,5 +193,5 @@ Embedding 配置（P2 第 2 步）：
 
 Panopticon 內建掛載建議：
 
-- host: `${PANOPTICON_USB_HOST_PATH}/${PANOPTICON_KNOWLEDGE_USB_SUBDIR}`
+- host: `${PANOPTICON_KNOWLEDGE_RAW_SOURCES_PATH:-./mission-control/knowledge-sources}`
 - container: `/data/knowledge-sources`

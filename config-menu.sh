@@ -118,6 +118,20 @@ log_warn() {
 log_error() {
     echo -e "${RED}✗${NC} $1"
 }
+append_export_env() {
+    local env_file="$1"
+    local key="$2"
+    local value="$3"
+
+    if [[ ! "$key" =~ ^[A-Z_][A-Z0-9_]*$ ]]; then
+        log_error "无效的环境变量名: $key"
+        return 1
+    fi
+
+    local escaped_value
+    printf -v escaped_value '%q' "$value"
+    printf 'export %s=%s\n' "$key" "$escaped_value" >> "$env_file"
+}
 
 press_enter() {
     echo ""
@@ -3692,16 +3706,21 @@ manage_service() {
                 log_info "正在启动服务..."
                 
                 # 后台启动 Gateway（使用 setsid 完全脱离终端）
+                local quoted_openclaw_env=""
+                if [ -f "$OPENCLAW_ENV" ]; then
+                    printf -v quoted_openclaw_env '%q' "$OPENCLAW_ENV"
+                fi
+
                 if command -v setsid &> /dev/null; then
                     if [ -f "$OPENCLAW_ENV" ]; then
-                        setsid bash -c "source $OPENCLAW_ENV && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
+                        setsid bash -c "source $quoted_openclaw_env && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
                     else
                         setsid openclaw gateway --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
                     fi
                 else
                     # 备用方案：nohup + disown
                     if [ -f "$OPENCLAW_ENV" ]; then
-                        nohup bash -c "source $OPENCLAW_ENV && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
+                        nohup bash -c "source $quoted_openclaw_env && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
                     else
                         nohup openclaw gateway --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
                     fi
@@ -4068,51 +4087,51 @@ EOF
     # 根据 provider 设置对应的环境变量
     case "$provider" in
         anthropic)
-            echo "export ANTHROPIC_API_KEY=$api_key" >> "$env_file"
-            [ -n "$base_url" ] && echo "export ANTHROPIC_BASE_URL=$base_url" >> "$env_file"
+            append_export_env "$env_file" "ANTHROPIC_API_KEY" "$api_key"
+            [ -n "$base_url" ] && append_export_env "$env_file" "ANTHROPIC_BASE_URL" "$base_url"
             ;;
         openai)
-            echo "export OPENAI_API_KEY=$api_key" >> "$env_file"
-            [ -n "$base_url" ] && echo "export OPENAI_BASE_URL=$base_url" >> "$env_file"
+            append_export_env "$env_file" "OPENAI_API_KEY" "$api_key"
+            [ -n "$base_url" ] && append_export_env "$env_file" "OPENAI_BASE_URL" "$base_url"
             ;;
         deepseek)
-            echo "export DEEPSEEK_API_KEY=$api_key" >> "$env_file"
-            echo "export DEEPSEEK_BASE_URL=${base_url:-https://api.deepseek.com}" >> "$env_file"
+            append_export_env "$env_file" "DEEPSEEK_API_KEY" "$api_key"
+            append_export_env "$env_file" "DEEPSEEK_BASE_URL" "${base_url:-https://api.deepseek.com}"
             ;;
         kimi)
-            echo "export MOONSHOT_API_KEY=$api_key" >> "$env_file"
-            echo "export MOONSHOT_BASE_URL=${base_url:-https://api.moonshot.cn/v1}" >> "$env_file"
+            append_export_env "$env_file" "MOONSHOT_API_KEY" "$api_key"
+            append_export_env "$env_file" "MOONSHOT_BASE_URL" "${base_url:-https://api.moonshot.cn/v1}"
             ;;
         google|google-gemini-cli|google-antigravity)
-            echo "export GOOGLE_API_KEY=$api_key" >> "$env_file"
-            [ -n "$base_url" ] && echo "export GOOGLE_BASE_URL=$base_url" >> "$env_file"
+            append_export_env "$env_file" "GOOGLE_API_KEY" "$api_key"
+            [ -n "$base_url" ] && append_export_env "$env_file" "GOOGLE_BASE_URL" "$base_url"
             ;;
         groq)
-            echo "export OPENAI_API_KEY=$api_key" >> "$env_file"
-            echo "export OPENAI_BASE_URL=${base_url:-https://api.groq.com/openai/v1}" >> "$env_file"
+            append_export_env "$env_file" "OPENAI_API_KEY" "$api_key"
+            append_export_env "$env_file" "OPENAI_BASE_URL" "${base_url:-https://api.groq.com/openai/v1}"
             ;;
         mistral)
-            echo "export OPENAI_API_KEY=$api_key" >> "$env_file"
-            echo "export OPENAI_BASE_URL=${base_url:-https://api.mistral.ai/v1}" >> "$env_file"
+            append_export_env "$env_file" "OPENAI_API_KEY" "$api_key"
+            append_export_env "$env_file" "OPENAI_BASE_URL" "${base_url:-https://api.mistral.ai/v1}"
             ;;
         openrouter)
-            echo "export OPENAI_API_KEY=$api_key" >> "$env_file"
-            echo "export OPENAI_BASE_URL=${base_url:-https://openrouter.ai/api/v1}" >> "$env_file"
+            append_export_env "$env_file" "OPENAI_API_KEY" "$api_key"
+            append_export_env "$env_file" "OPENAI_BASE_URL" "${base_url:-https://openrouter.ai/api/v1}"
             ;;
         ollama)
-            echo "export OLLAMA_HOST=${base_url:-http://localhost:11434}" >> "$env_file"
+            append_export_env "$env_file" "OLLAMA_HOST" "${base_url:-http://localhost:11434}"
             ;;
         xai)
-            echo "export XAI_API_KEY=$api_key" >> "$env_file"
+            append_export_env "$env_file" "XAI_API_KEY" "$api_key"
             ;;
         zai)
-            echo "export ZAI_API_KEY=$api_key" >> "$env_file"
+            append_export_env "$env_file" "ZAI_API_KEY" "$api_key"
             ;;
         minimax|minimax-cn)
-            echo "export MINIMAX_API_KEY=$api_key" >> "$env_file"
+            append_export_env "$env_file" "MINIMAX_API_KEY" "$api_key"
             ;;
         opencode)
-            echo "export OPENCODE_API_KEY=$api_key" >> "$env_file"
+            append_export_env "$env_file" "OPENCODE_API_KEY" "$api_key"
             ;;
     esac
     
@@ -4879,15 +4898,12 @@ quick_test_feishu() {
     local app_secret=""
     
     # 尝试从 JSON 配置文件中读取
-    if [ -f "$OPENCLAW_JSON" ]; then
-        if command -v node &> /dev/null; then
             app_id=$(node -e "
 try {
     const config = JSON.parse(require('fs').readFileSync('$OPENCLAW_JSON', 'utf8'));
     console.log(config.channels?.feishu?.appId || '');
 } catch (e) { console.log(''); }
 " 2>/dev/null)
-            app_secret=$(node -e "
 try {
     const config = JSON.parse(require('fs').readFileSync('$OPENCLAW_JSON', 'utf8'));
     console.log(config.channels?.feishu?.appSecret || '');

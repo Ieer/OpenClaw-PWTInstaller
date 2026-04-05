@@ -77,6 +77,8 @@ README-mo.md
 # ------------------------------
 panopticon/mission-control/redis-data/
 panopticon/mission-control/postgres-data/
+panopticon/mission-control/knowledge-sources/
+panopticon/shared-usb/
 panopticon/agent-homes/
 panopticon/workspaces/*/.git/
 panopticon/workspaces/*/.openclaw/

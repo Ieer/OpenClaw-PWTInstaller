@@ -82,6 +82,21 @@ log_step() {
     echo -e "${BLUE}[STEP]${NC} $1"
 }
 
+append_export_env() {
+    local env_file="$1"
+    local key="$2"
+    local value="$3"
+
+    if [[ ! "$key" =~ ^[A-Z_][A-Z0-9_]*$ ]]; then
+        log_error "无效的环境变量名: $key"
+        return 1
+    fi
+
+    local escaped_value
+    printf -v escaped_value '%q' "$value"
+    printf 'export %s=%s\n' "$key" "$escaped_value" >> "$env_file"
+}
+
 spinner() {
     local pid=$1
     local delay=0.1
@@ -381,39 +396,39 @@ EOF
     # 根据 AI_PROVIDER 设置对应的环境变量
     case "$AI_PROVIDER" in
         anthropic)
-            echo "export ANTHROPIC_API_KEY=$AI_KEY" >> "$env_file"
-            [ -n "$BASE_URL" ] && echo "export ANTHROPIC_BASE_URL=$BASE_URL" >> "$env_file"
+            append_export_env "$env_file" "ANTHROPIC_API_KEY" "$AI_KEY"
+            [ -n "$BASE_URL" ] && append_export_env "$env_file" "ANTHROPIC_BASE_URL" "$BASE_URL"
             ;;
         openai)
-            echo "export OPENAI_API_KEY=$AI_KEY" >> "$env_file"
-            [ -n "$BASE_URL" ] && echo "export OPENAI_BASE_URL=$BASE_URL" >> "$env_file"
+            append_export_env "$env_file" "OPENAI_API_KEY" "$AI_KEY"
+            [ -n "$BASE_URL" ] && append_export_env "$env_file" "OPENAI_BASE_URL" "$BASE_URL"
             ;;
         deepseek)
-            echo "export DEEPSEEK_API_KEY=$AI_KEY" >> "$env_file"
-            echo "export DEEPSEEK_BASE_URL=${BASE_URL:-https://api.deepseek.com}" >> "$env_file"
+            append_export_env "$env_file" "DEEPSEEK_API_KEY" "$AI_KEY"
+            append_export_env "$env_file" "DEEPSEEK_BASE_URL" "${BASE_URL:-https://api.deepseek.com}"
             ;;
         kimi)
-            echo "export MOONSHOT_API_KEY=$AI_KEY" >> "$env_file"
-            echo "export MOONSHOT_BASE_URL=${BASE_URL:-https://api.moonshot.cn/v1}" >> "$env_file"
+            append_export_env "$env_file" "MOONSHOT_API_KEY" "$AI_KEY"
+            append_export_env "$env_file" "MOONSHOT_BASE_URL" "${BASE_URL:-https://api.moonshot.cn/v1}"
             ;;
         google)
-            echo "export GOOGLE_API_KEY=$AI_KEY" >> "$env_file"
-            [ -n "$BASE_URL" ] && echo "export GOOGLE_BASE_URL=$BASE_URL" >> "$env_file"
+            append_export_env "$env_file" "GOOGLE_API_KEY" "$AI_KEY"
+            [ -n "$BASE_URL" ] && append_export_env "$env_file" "GOOGLE_BASE_URL" "$BASE_URL"
             ;;
         groq)
-            echo "export OPENAI_API_KEY=$AI_KEY" >> "$env_file"
-            echo "export OPENAI_BASE_URL=${BASE_URL:-https://api.groq.com/openai/v1}" >> "$env_file"
+            append_export_env "$env_file" "OPENAI_API_KEY" "$AI_KEY"
+            append_export_env "$env_file" "OPENAI_BASE_URL" "${BASE_URL:-https://api.groq.com/openai/v1}"
             ;;
         mistral)
-            echo "export OPENAI_API_KEY=$AI_KEY" >> "$env_file"
-            echo "export OPENAI_BASE_URL=${BASE_URL:-https://api.mistral.ai/v1}" >> "$env_file"
+            append_export_env "$env_file" "OPENAI_API_KEY" "$AI_KEY"
+            append_export_env "$env_file" "OPENAI_BASE_URL" "${BASE_URL:-https://api.mistral.ai/v1}"
             ;;
         openrouter)
-            echo "export OPENAI_API_KEY=$AI_KEY" >> "$env_file"
-            echo "export OPENAI_BASE_URL=${BASE_URL:-https://openrouter.ai/api/v1}" >> "$env_file"
+            append_export_env "$env_file" "OPENAI_API_KEY" "$AI_KEY"
+            append_export_env "$env_file" "OPENAI_BASE_URL" "${BASE_URL:-https://openrouter.ai/api/v1}"
             ;;
         ollama)
-            echo "export OLLAMA_HOST=${BASE_URL:-http://localhost:11434}" >> "$env_file"
+            append_export_env "$env_file" "OLLAMA_HOST" "${BASE_URL:-http://localhost:11434}"
             ;;
     esac
     
@@ -1463,17 +1478,22 @@ start_openclaw_service() {
     
     # 后台启动 Gateway（使用 setsid 完全脱离终端）
     log_step "正在后台启动 Gateway..."
+
+    local quoted_env_file=""
+    if [ -f "$env_file" ]; then
+        printf -v quoted_env_file '%q' "$env_file"
+    fi
     
     if command -v setsid &> /dev/null; then
         if [ -f "$env_file" ]; then
-            setsid bash -c "source $env_file && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
+            setsid bash -c "source $quoted_env_file && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
         else
             setsid openclaw gateway --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
         fi
     else
         # 备用方案：nohup + disown
         if [ -f "$env_file" ]; then
-            nohup bash -c "source $env_file && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
+            nohup bash -c "source $quoted_env_file && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
         else
             nohup openclaw gateway --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
         fi

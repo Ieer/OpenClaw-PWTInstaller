@@ -38,6 +38,7 @@ services:
     image: mission-control-api:local
     env_file:
       - ./env/mission-control.env.example
+      - ./env/mission-control.env
       - ./env/mission-control-ui.env
     environment:
       MC_GLOBAL_SKILLS_DIR: /data/global-skills
@@ -46,6 +47,10 @@ services:
       MC_AGENT_CONTROLLER_URL: http://mission-control-agent-controller:9091
     volumes:
       - type: bind
+        source: ./agents.manifest.yaml
+        target: /app/panopticon_agents.manifest.yaml
+        read_only: true
+      - type: bind
         source: ./global-skills
         target: /data/global-skills
         read_only: true
@@ -53,7 +58,7 @@ services:
         source: ${PANOPTICON_DATA_DIR:-.}/agent-homes
         target: /data/agent-homes
       - type: bind
-        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}/${PANOPTICON_KNOWLEDGE_USB_SUBDIR:-knowledge-sources}
+        source: ${PANOPTICON_KNOWLEDGE_RAW_SOURCES_PATH:-./mission-control/knowledge-sources}
         target: /data/knowledge-sources
     depends_on:
       - mc-redis
@@ -72,6 +77,9 @@ services:
       context: ./agent-controller
       dockerfile: Dockerfile
     image: mission-control-agent-controller:local
+    env_file:
+      - ./env/mission-control.env.example
+      - ./env/mission-control.env
     environment:
       MC_AGENT_CONTROLLER_ALLOWED_AGENTS: nox,metrics,email,growth,trades,health,writing,personal
     volumes:
@@ -88,13 +96,10 @@ services:
       dockerfile: Dockerfile
     image: mission-control-ui:local
     env_file:
+      - ./env/mission-control.env.example
+      - ./env/mission-control.env
       - ./env/mission-control-ui.env.example
       - ./env/mission-control-ui.env
-    volumes:
-      - type: bind
-        source: ./agents.manifest.yaml
-        target: /app/panopticon_agents.manifest.yaml
-        read_only: true
     depends_on:
       - mission-control-api
     restart: unless-stopped
@@ -124,6 +129,7 @@ services:
     image: python:3.12-alpine
     env_file:
       - ./env/mission-control.env.example
+      - ./env/mission-control.env
     environment:
       MC_API_URL: http://mission-control-api:9090
       MC_HEARTBEAT_AGENTS: nox,metrics,email,growth,trades,health,writing,personal
@@ -146,6 +152,7 @@ services:
     profiles: ["voice"]
     env_file:
       - ./env/mission-control.env.example
+      - ./env/mission-control.env
       - ./env/mission-control-voice-bridge.env.example
     volumes:
       - type: bind
@@ -187,7 +194,7 @@ services:
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/nox
         target: /home/node/.openclaw/workspace
       - type: bind
-        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        source: ${PANOPTICON_USB_HOST_PATH:-./shared-usb}
         target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
@@ -227,7 +234,7 @@ services:
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/metrics
         target: /home/node/.openclaw/workspace
       - type: bind
-        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        source: ${PANOPTICON_USB_HOST_PATH:-./shared-usb}
         target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
@@ -267,7 +274,7 @@ services:
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/email
         target: /home/node/.openclaw/workspace
       - type: bind
-        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        source: ${PANOPTICON_USB_HOST_PATH:-./shared-usb}
         target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
@@ -307,7 +314,7 @@ services:
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/growth
         target: /home/node/.openclaw/workspace
       - type: bind
-        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        source: ${PANOPTICON_USB_HOST_PATH:-./shared-usb}
         target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
@@ -347,7 +354,7 @@ services:
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/trades
         target: /home/node/.openclaw/workspace
       - type: bind
-        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        source: ${PANOPTICON_USB_HOST_PATH:-./shared-usb}
         target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
@@ -387,7 +394,7 @@ services:
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/health
         target: /home/node/.openclaw/workspace
       - type: bind
-        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        source: ${PANOPTICON_USB_HOST_PATH:-./shared-usb}
         target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
@@ -427,7 +434,7 @@ services:
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/writing
         target: /home/node/.openclaw/workspace
       - type: bind
-        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        source: ${PANOPTICON_USB_HOST_PATH:-./shared-usb}
         target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:
@@ -467,7 +474,7 @@ services:
         source: ${PANOPTICON_DATA_DIR:-.}/workspaces/personal
         target: /home/node/.openclaw/workspace
       - type: bind
-        source: ${PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}
+        source: ${PANOPTICON_USB_HOST_PATH:-./shared-usb}
         target: ${PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}
       - /home/node/.openclaw/extensions
     ports:

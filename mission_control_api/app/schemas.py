@@ -140,6 +140,19 @@ class AgentControlActionOut(BaseModel):
     detail: str = ""
 
 
+class AgentCatalogItemOut(BaseModel):
+    slug: str
+    label: str
+    enabled: bool = True
+    gateway_host_port: int | None = None
+    bridge_host_port: int | None = None
+    direct_url: str = ""
+    embed_path: str = ""
+    gateway_token: str = ""
+    open_mode: str = "iframe"
+    order: int = 0
+
+
 class BoardColumn(BaseModel):
     title: str
     count: int

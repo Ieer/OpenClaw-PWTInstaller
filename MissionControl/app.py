@@ -14,8 +14,6 @@ from flask import Response
 APP_TITLE = "Mission Control"
 
 MISSION_CONTROL_API_URL = os.getenv("MISSION_CONTROL_API_URL") or "http://localhost:18910"
-MISSION_CONTROL_AGENT_MANIFEST_PATH = os.getenv("MISSION_CONTROL_AGENT_MANIFEST_PATH") or "/app/panopticon_agents.manifest.yaml"
-MISSION_CONTROL_AGENT_SLUGS = os.getenv("MISSION_CONTROL_AGENT_SLUGS") or ""
 MISSION_CONTROL_DOCS_URL = os.getenv("MISSION_CONTROL_DOCS_URL") or (
     "https://github.com/Ieer/OpenClaw-PWTInstaller/blob/main/panopticon/README.md"
 )
@@ -26,14 +24,8 @@ MISSION_CONTROL_AUTH_TOKEN = (
     or ""
 ).strip()
 MISSION_CONTROL_CHAT_HOST = (os.getenv("MISSION_CONTROL_CHAT_HOST") or "127.0.0.1").strip() or "127.0.0.1"
-MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT = int((os.getenv("MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT") or "26216").strip())
-MISSION_CONTROL_CHAT_AUTH_SCHEME = (os.getenv("MISSION_CONTROL_CHAT_AUTH_SCHEME") or "Bearer").strip() or "Bearer"
-MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP = (os.getenv("MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP") or "").strip()
 MISSION_CONTROL_ENABLE_LEGACY_CHAT_PROXY = (
     (os.getenv("MISSION_CONTROL_ENABLE_LEGACY_CHAT_PROXY") or "0").strip().lower() in {"1", "true", "yes", "on"}
-)
-MISSION_CONTROL_ENABLE_DIRECT_AGENT_LINKS = (
-    (os.getenv("MISSION_CONTROL_ENABLE_DIRECT_AGENT_LINKS") or "0").strip().lower() in {"1", "true", "yes", "on"}
 )
 MISSION_CONTROL_CHAT_EVENT_BRIDGE_ENABLED = (
     (os.getenv("MISSION_CONTROL_CHAT_EVENT_BRIDGE_ENABLED") or "1").strip().lower() in {"1", "true", "yes", "on"}
@@ -106,42 +98,6 @@ def _format_mapping_failure_summary(failed: list[dict], *, limit: int = 8) -> st
     return "Failed items: " + "; ".join(lines) + suffix
 
 
-def _load_static_agent_names() -> list[str]:
-    names: list[str] = []
-    seen: set[str] = set()
-
-    env_names = [part.strip() for part in MISSION_CONTROL_AGENT_SLUGS.split(",") if part.strip()]
-    for name in env_names:
-        if name not in seen:
-            seen.add(name)
-            names.append(name)
-
-    manifest_path = MISSION_CONTROL_AGENT_MANIFEST_PATH.strip()
-    if not manifest_path:
-        return names
-
-    if not os.path.exists(manifest_path):
-        return names
-
-    try:
-        with open(manifest_path, "r", encoding="utf-8") as f:
-            for line in f:
-                match = re.match(r"^\s*-\s*slug\s*:\s*([A-Za-z0-9_-]+)\s*$", line)
-                if not match:
-                    continue
-                slug = match.group(1).strip()
-                if slug and slug not in seen:
-                    seen.add(slug)
-                    names.append(slug)
-    except OSError:
-        return names
-
-    return names
-
-
-STATIC_AGENT_NAMES = _load_static_agent_names()
-
-
 def _slug_label(slug: str) -> str:
     return slug.replace("-", " ").replace("_", " ").strip().title() or slug
 
@@ -152,140 +108,6 @@ def _is_placeholder_token(token: str | None) -> bool:
         return True
     upper = raw.upper()
     return upper.startswith("CHANGE_ME") or upper in {"TODO", "REPLACE_ME", "YOUR_TOKEN"}
-
-
-def _parse_agent_token_overrides(raw: str) -> dict[str, str]:
-    out: dict[str, str] = {}
-    text = (raw or "").strip()
-    if not text:
-        return out
-    for chunk in re.split(r"[;,\n]", text):
-        item = chunk.strip()
-        if not item:
-            continue
-        if "=" in item:
-            slug, token = item.split("=", 1)
-        elif ":" in item:
-            slug, token = item.split(":", 1)
-        else:
-            continue
-        slug_key = slug.strip()
-        token_val = token.strip()
-        if not slug_key or _is_placeholder_token(token_val):
-            continue
-        out[slug_key] = token_val
-    return out
-
-
-CHAT_AGENT_TOKEN_OVERRIDES = _parse_agent_token_overrides(MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP)
-
-
-def _load_chat_agent_configs() -> list[dict]:
-    configs: list[dict] = []
-    seen: set[str] = set()
-
-    manifest_path = MISSION_CONTROL_AGENT_MANIFEST_PATH.strip()
-    if manifest_path and os.path.exists(manifest_path):
-        current: dict | None = None
-        try:
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                for raw in f:
-                    line = raw.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    slug_match = re.match(r"^-\s*slug\s*:\s*([A-Za-z0-9_-]+)$", line)
-                    if slug_match:
-                        if current and current.get("slug"):
-                            configs.append(current)
-                        current = {
-                            "slug": slug_match.group(1).strip(),
-                            "enabled": True,
-                            "gateway_host_port": None,
-                            "bridge_host_port": None,
-                            "gateway_token": "",
-                        }
-                        continue
-                    if current is None:
-                        continue
-                    enabled_match = re.match(r"^enabled\s*:\s*(true|false)$", line, flags=re.IGNORECASE)
-                    if enabled_match:
-                        current["enabled"] = enabled_match.group(1).lower() == "true"
-                        continue
-                    gateway_match = re.match(r"^gateway_host_port\s*:\s*([0-9]+)$", line)
-                    if gateway_match:
-                        current["gateway_host_port"] = int(gateway_match.group(1))
-                        continue
-                    bridge_match = re.match(r"^bridge_host_port\s*:\s*([0-9]+)$", line)
-                    if bridge_match:
-                        current["bridge_host_port"] = int(bridge_match.group(1))
-                        continue
-                    token_match = re.match(r"^gateway_token\s*:\s*(.+)$", line)
-                    if token_match:
-                        token_text = token_match.group(1).strip().strip('"').strip("'")
-                        current["gateway_token"] = token_text
-            if current and current.get("slug"):
-                configs.append(current)
-        except OSError:
-            configs = []
-
-    out: list[dict] = []
-    for idx, item in enumerate(configs):
-        slug = str(item.get("slug") or "").strip()
-        if not slug or slug in seen:
-            continue
-        seen.add(slug)
-        gateway_port = item.get("gateway_host_port")
-        token_candidate = CHAT_AGENT_TOKEN_OVERRIDES.get(slug) or str(item.get("gateway_token") or "").strip()
-        gateway_token = "" if _is_placeholder_token(token_candidate) else token_candidate
-        if gateway_port is None and MISSION_CONTROL_ENABLE_DIRECT_AGENT_LINKS:
-            gateway_port = 18801 + idx * 10
-        direct_url = f"http://{MISSION_CONTROL_CHAT_HOST}:{int(gateway_port)}" if gateway_port else ""
-        out.append(
-            {
-                "slug": slug,
-                "label": _slug_label(slug),
-                "enabled": bool(item.get("enabled", True)),
-                "direct_url": direct_url,
-                "gateway_token": gateway_token,
-                "open_mode": "iframe",
-                "order": idx,
-            }
-        )
-
-    if out:
-        return [item for item in out if item.get("enabled", True)]
-
-    fallback = []
-    for idx, slug in enumerate(STATIC_AGENT_NAMES):
-        gateway_port = 18801 + idx * 10 if MISSION_CONTROL_ENABLE_DIRECT_AGENT_LINKS else None
-        token_candidate = CHAT_AGENT_TOKEN_OVERRIDES.get(slug) or ""
-        gateway_token = "" if _is_placeholder_token(token_candidate) else token_candidate
-        fallback.append(
-            {
-                "slug": slug,
-                "label": _slug_label(slug),
-                "enabled": True,
-                "direct_url": f"http://{MISSION_CONTROL_CHAT_HOST}:{gateway_port}" if gateway_port else "",
-                "gateway_token": gateway_token,
-                "open_mode": "iframe",
-                "order": idx,
-            }
-        )
-    return fallback
-
-
-CHAT_AGENT_CONFIGS = _load_chat_agent_configs()
-CHAT_AGENT_DIRECT_URL_MAP = {
-    item["slug"]: item.get("direct_url") or ""
-    for item in CHAT_AGENT_CONFIGS
-    if item.get("slug")
-}
-CHAT_AGENT_TOKEN_MAP = {
-    item["slug"]: str(item.get("gateway_token") or "").strip()
-    for item in CHAT_AGENT_CONFIGS
-    if item.get("slug") and str(item.get("gateway_token") or "").strip()
-}
-CHAT_AGENT_EMBED_URL_MAP = {item["slug"]: f"/chat/{item['slug']}/" for item in CHAT_AGENT_CONFIGS if item.get("slug")}
 
 
 WS_LOCK = threading.Lock()
@@ -541,6 +363,68 @@ def api_post_json(path: str, body: dict, *, timeout: float = 3.0):
     return resp.json()
 
 
+_AGENT_CATALOG_CACHE = {
+    "generated_at": 0.0,
+    "data": [],
+}
+
+
+def _normalize_agent_catalog_items(raw_items) -> list[dict]:
+    if not isinstance(raw_items, list):
+        return []
+
+    out: list[dict] = []
+    seen: set[str] = set()
+    for idx, item in enumerate(raw_items):
+        if not isinstance(item, dict):
+            continue
+
+        slug = str(item.get("slug") or "").strip()
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+
+        gateway_token = str(item.get("gateway_token") or "").strip()
+        out.append(
+            {
+                "slug": slug,
+                "label": str(item.get("label") or _slug_label(slug)).strip() or _slug_label(slug),
+                "enabled": bool(item.get("enabled", True)),
+                "gateway_host_port": item.get("gateway_host_port"),
+                "bridge_host_port": item.get("bridge_host_port"),
+                "direct_url": str(item.get("direct_url") or "").strip(),
+                "embed_path": str(item.get("embed_path") or f"/chat/{slug}/").strip() or f"/chat/{slug}/",
+                "gateway_token": "" if _is_placeholder_token(gateway_token) else gateway_token,
+                "open_mode": str(item.get("open_mode") or "iframe").strip() or "iframe",
+                "order": int(item.get("order") if item.get("order") is not None else idx),
+            }
+        )
+    return out
+
+
+def _get_agent_catalog(*, force_refresh: bool = False, timeout: float = 2.0) -> list[dict]:
+    cached = _AGENT_CATALOG_CACHE.get("data")
+    if isinstance(cached, list) and cached:
+        stale_cache = cached
+    else:
+        stale_cache = []
+
+    now = time.time()
+    if not force_refresh and now - float(_AGENT_CATALOG_CACHE.get("generated_at") or 0.0) <= 4.0:
+        if isinstance(cached, list) and cached:
+            return cached
+
+    catalog: list[dict] = []
+    try:
+        catalog = _normalize_agent_catalog_items(api_get_json("/v1/agents/catalog", timeout=timeout))
+    except Exception:
+        catalog = stale_cache
+
+    _AGENT_CATALOG_CACHE["generated_at"] = now
+    _AGENT_CATALOG_CACHE["data"] = catalog
+    return catalog
+
+
 def emit_chat_event(agent_slug: str, event_type: str, payload: dict):
     if not MISSION_CONTROL_CHAT_EVENT_BRIDGE_ENABLED:
         return
@@ -651,8 +535,14 @@ def _settings_summary_hint(total_tokens_7d: int, total_cost_7d: float, missing_c
     return "Cost data is available for the current 7d assessment window."
 
 
-def _build_agents(board: dict, feed: list[dict], usage_by_agent: dict[str, dict] | None = None) -> list[dict]:
-    names: set[str] = set(STATIC_AGENT_NAMES)
+def _build_agents(
+    board: dict,
+    feed: list[dict],
+    usage_by_agent: dict[str, dict] | None = None,
+    agent_catalog: list[dict] | None = None,
+) -> list[dict]:
+    catalog = agent_catalog if isinstance(agent_catalog, list) else _get_agent_catalog()
+    names: set[str] = {str(item.get("slug")) for item in catalog if item.get("slug") and item.get("enabled", True)}
     last_seen: dict[str, datetime] = {}
     usage_by_agent = usage_by_agent or {}
 
@@ -1755,7 +1645,8 @@ def open_chat_from_voice_overlay(_, chat_ui, voice_ui):
     }
     voice_state = voice_ui if isinstance(voice_ui, dict) else {}
 
-    available_slugs = [str(item.get("slug")) for item in CHAT_AGENT_CONFIGS if item.get("slug")]
+    agent_catalog = _get_agent_catalog()
+    available_slugs = [str(item.get("slug")) for item in agent_catalog if item.get("slug") and item.get("enabled", True)]
     preferred_agent = str(voice_state.get("agent") or "").strip()
     if preferred_agent not in available_slugs:
         preferred_agent = data.get("selected_agent") or data.get("last_agent") or (available_slugs[0] if available_slugs else "")
@@ -1992,7 +1883,7 @@ def render_settings_modal(_, settings_ui):
         ],
     )
 
-    by_slug = {str(item.get("slug")): item for item in CHAT_AGENT_CONFIGS if item.get("slug")}
+    by_slug = {str(item.get("slug")): item for item in _get_agent_catalog() if item.get("slug")}
 
     items = []
     for row in rows_sorted:
@@ -2123,7 +2014,8 @@ def update_chat_ui(_, __, ___, ____, selected_agent, data):
     }
     trigger = ctx.triggered_id
 
-    available_slugs = [str(item.get("slug")) for item in CHAT_AGENT_CONFIGS if item.get("slug")]
+    agent_catalog = _get_agent_catalog()
+    available_slugs = [str(item.get("slug")) for item in agent_catalog if item.get("slug") and item.get("enabled", True)]
     default_slug = data.get("last_agent") or (available_slugs[0] if available_slugs else "")
 
     if trigger == "open-chat":
@@ -2320,7 +2212,7 @@ def render_skills_modal(_, skills_ui, global_search, agent_search, selected_skil
     if not agent_pool:
         agent_pool = sorted({str(g.get("agent_slug")) for g in workspace_groups if g.get("agent_slug")})
     if not agent_pool:
-        agent_pool = list(STATIC_AGENT_NAMES)
+        agent_pool = [str(item.get("slug")) for item in _get_agent_catalog() if item.get("slug")]
 
     all_agent_options = [{"label": a, "value": a} for a in agent_pool]
     selected_agent_slugs = [a for a in (selected_agent_slugs or []) if a in set(agent_pool)]
@@ -2436,12 +2328,13 @@ def render_chat_modal(_, chat_ui):
     window_mode = str(chat_ui.get("window_mode") or "floating")
     panel_mode = str(chat_ui.get("panel_mode") or "split")
 
+    agent_catalog = _get_agent_catalog()
     options = [
         {
             "label": f"{item.get('label') or item.get('slug')} ({item.get('slug')})",
             "value": item.get("slug"),
         }
-        for item in CHAT_AGENT_CONFIGS
+        for item in agent_catalog
         if item.get("enabled", True) and item.get("slug")
     ]
     values = [str(opt.get("value")) for opt in options if opt.get("value")]
@@ -2450,10 +2343,12 @@ def render_chat_modal(_, chat_ui):
     if selected not in values:
         selected = values[0] if values else ""
 
-    embed_url = CHAT_AGENT_EMBED_URL_MAP.get(selected, "")
+    by_slug = {str(item.get("slug")): item for item in agent_catalog if item.get("slug")}
+    selected_config = by_slug.get(selected) or {}
+    embed_url = str(selected_config.get("embed_path") or "")
     # Prefer the same-origin proxy path for external open as well.
     # Direct 188xx gateway URLs do not inject token into localStorage and will prompt for manual token paste.
-    external_url = embed_url or (CHAT_AGENT_DIRECT_URL_MAP.get(selected, "") or "#")
+    external_url = embed_url or (str(selected_config.get("direct_url") or "") or "#")
     iframe_src = embed_url or "about:blank"
 
     notice = ""
@@ -2564,6 +2459,7 @@ def refresh_data(n_intervals, state):
     try:
         board_json = api_get_json("/v1/boards/default")
         feed_json = api_get_json("/v1/feed-lite?limit=80")
+        agent_catalog = _get_agent_catalog(force_refresh=True)
         usage_by_agent = {}
         try:
             usage_rows = api_get_json("/v1/usage/agents?days=7", timeout=2.0)
@@ -2578,7 +2474,7 @@ def refresh_data(n_intervals, state):
 
         columns = _convert_board(board_json)
         feed = _convert_feed(feed_json)
-        agents = _build_agents(board_json, feed_json, usage_by_agent)
+        agents = _build_agents(board_json, feed_json, usage_by_agent, agent_catalog)
 
         visible_columns = _filter_board(columns, board_filter)
         visible_feed = _filter_feed(feed, feed_filter)

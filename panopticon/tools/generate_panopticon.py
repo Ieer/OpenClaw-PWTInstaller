@@ -26,7 +26,7 @@ def render_compose(manifest: dict) -> str:
     runtime = manifest["agent_runtime"]
     agents = [agent for agent in manifest["agents"] if agent.get("enabled", True)]
     agent_slugs = ",".join(agent["slug"] for agent in agents)
-    controller_enabled = bool(mission_control.get("agent_controller_enabled", True))
+    controller_enabled = bool(mission_control.get("agent_controller_enabled", False))
     controller_url = str(mission_control.get("agent_controller_url") or "http://mission-control-agent-controller:9091").strip()
 
     api_controller_env_block = ""
@@ -44,6 +44,9 @@ def render_compose(manifest: dict) -> str:
                 context: ./agent-controller
                 dockerfile: Dockerfile
               image: mission-control-agent-controller:local
+              env_file:
+                - ./env/mission-control.env.example
+                - ./env/mission-control.env
               environment:
                 MC_AGENT_CONTROLLER_ALLOWED_AGENTS: {agent_slugs}
               volumes:
@@ -99,6 +102,7 @@ def render_compose(manifest: dict) -> str:
             image: mission-control-api:local
             env_file:
               - ./env/mission-control.env.example
+              - ./env/mission-control.env
               - ./env/mission-control-ui.env
             environment:
               MC_GLOBAL_SKILLS_DIR: /data/global-skills
@@ -107,6 +111,10 @@ def render_compose(manifest: dict) -> str:
               __API_CONTROLLER_ENV_BLOCK__
             volumes:
               - type: bind
+                source: ./agents.manifest.yaml
+                target: /app/panopticon_agents.manifest.yaml
+                read_only: true
+              - type: bind
                 source: ./global-skills
                 target: /data/global-skills
                 read_only: true
@@ -114,7 +122,7 @@ def render_compose(manifest: dict) -> str:
                 source: ${{PANOPTICON_DATA_DIR:-.}}/agent-homes
                 target: /data/agent-homes
               - type: bind
-                source: ${{PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}}/${{PANOPTICON_KNOWLEDGE_USB_SUBDIR:-knowledge-sources}}
+                source: ${{PANOPTICON_KNOWLEDGE_RAW_SOURCES_PATH:-./mission-control/knowledge-sources}}
                 target: /data/knowledge-sources
             depends_on:
               - mc-redis
@@ -133,13 +141,10 @@ def render_compose(manifest: dict) -> str:
               dockerfile: Dockerfile
             image: mission-control-ui:local
             env_file:
+              - ./env/mission-control.env.example
+              - ./env/mission-control.env
               - ./env/mission-control-ui.env.example
               - ./env/mission-control-ui.env
-            volumes:
-              - type: bind
-                source: ./agents.manifest.yaml
-                target: /app/panopticon_agents.manifest.yaml
-                read_only: true
             depends_on:
               - mission-control-api
             restart: unless-stopped
@@ -169,6 +174,7 @@ def render_compose(manifest: dict) -> str:
             image: python:3.12-alpine
             env_file:
               - ./env/mission-control.env.example
+              - ./env/mission-control.env
             environment:
               MC_API_URL: http://mission-control-api:9090
               MC_HEARTBEAT_AGENTS: {agent_slugs}
@@ -191,6 +197,7 @@ def render_compose(manifest: dict) -> str:
             profiles: ["voice"]
             env_file:
               - ./env/mission-control.env.example
+              - ./env/mission-control.env
               - ./env/mission-control-voice-bridge.env.example
             volumes:
               - type: bind
@@ -257,7 +264,7 @@ def render_compose(manifest: dict) -> str:
                   source: ${{PANOPTICON_DATA_DIR:-.}}/workspaces/{slug}
                   target: /home/node/.openclaw/workspace
                 - type: bind
-                  source: ${{PANOPTICON_USB_HOST_PATH:-/media/pi/4A21-0000}}
+                  source: ${{PANOPTICON_USB_HOST_PATH:-./shared-usb}}
                   target: ${{PANOPTICON_USB_CONTAINER_PATH:-/mnt/usb}}
                 - /home/node/.openclaw/extensions
               ports:
@@ -298,7 +305,7 @@ def render_agent_env(template: str, agent: dict, runtime: dict) -> str:
   return template.format(
     slug=agent["slug"],
     role=agent.get("role", "agent"),
-    gateway_token=agent.get("gateway_token", f"CHANGE_ME_{agent['slug'].upper()}"),
+    gateway_token=agent.get("gateway_token", ""),
     gateway_port=runtime.get("container_gateway_port", 26216),
     bridge_port=runtime.get("container_bridge_port", 18790),
     gateway_auth_mode=runtime.get("gateway_auth_mode", "token"),

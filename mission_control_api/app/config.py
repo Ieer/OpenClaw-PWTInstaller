@@ -1,6 +1,14 @@
 from pydantic import BaseModel
 
 
+def _is_placeholder_token(value: str | None) -> bool:
+    raw = str(value or "").strip()
+    if not raw:
+        return True
+    upper = raw.upper()
+    return upper.startswith("CHANGE_ME") or upper in {"TODO", "REPLACE_ME", "YOUR_TOKEN"}
+
+
 class Settings(BaseModel):
     auth_token: str | None = None
 
@@ -20,6 +28,10 @@ class Settings(BaseModel):
     knowledge_embedding_dimensions: int | None = None
     knowledge_embedding_timeout_seconds: float = 20.0
     agent_token_map: dict[str, str] = {}
+    agent_manifest_path: str = "/app/panopticon_agents.manifest.yaml"
+    agent_slugs: str = ""
+    chat_host: str = "127.0.0.1"
+    enable_direct_agent_links: bool = False
     chat_upstream_port: int = 26216
     chat_force_loopback_headers: bool = True
     chat_inject_script_enabled: bool = True
@@ -32,6 +44,7 @@ class Settings(BaseModel):
     chat_rewrite_control_ui_config: bool = True
     chat_rewrite_avatar_payloads: bool = True
     agent_controller_url: str = "http://mission-control-agent-controller:9091"
+    agent_controller_auth_token: str | None = None
     agent_controller_timeout_seconds: float = 5.0
 
 
@@ -48,14 +61,16 @@ def load_settings() -> Settings:
     import os
 
     raw_embedding_dimensions = (os.getenv("MC_KNOWLEDGE_EMBEDDING_DIMENSIONS") or "").strip()
-    
-    token_map_str = os.getenv("MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP", "")
+
+    token_map_str = (os.getenv("MC_CHAT_AGENT_TOKEN_MAP") or os.getenv("MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP") or "").strip()
     agent_token_map = {}
     if token_map_str:
         for pair in token_map_str.split(","):
             if "=" in pair:
                 k, v = pair.split("=", 1)
-                agent_token_map[k.strip()] = v.strip()
+                token_value = v.strip()
+                if k.strip() and not _is_placeholder_token(token_value):
+                    agent_token_map[k.strip()] = token_value
 
     return Settings(
         auth_token=os.getenv("MC_AUTH_TOKEN") or None,
@@ -74,6 +89,14 @@ def load_settings() -> Settings:
         knowledge_embedding_dimensions=int(raw_embedding_dimensions) if raw_embedding_dimensions else None,
         knowledge_embedding_timeout_seconds=float((os.getenv("MC_KNOWLEDGE_EMBEDDING_TIMEOUT_SECONDS") or "20.0").strip()),
         agent_token_map=agent_token_map,
+        agent_manifest_path=(os.getenv("MISSION_CONTROL_AGENT_MANIFEST_PATH") or "/app/panopticon_agents.manifest.yaml").strip() or "/app/panopticon_agents.manifest.yaml",
+        agent_slugs=(os.getenv("MISSION_CONTROL_AGENT_SLUGS") or "").strip(),
+        chat_host=(os.getenv("MC_CHAT_HOST") or os.getenv("MISSION_CONTROL_CHAT_HOST") or "127.0.0.1").strip() or "127.0.0.1",
+        enable_direct_agent_links=(
+            _env_flag("MC_CHAT_ENABLE_DIRECT_AGENT_LINKS", False)
+            if os.getenv("MC_CHAT_ENABLE_DIRECT_AGENT_LINKS") is not None
+            else _env_flag("MISSION_CONTROL_ENABLE_DIRECT_AGENT_LINKS", False)
+        ),
         chat_upstream_port=int((os.getenv("MC_CHAT_UPSTREAM_PORT") or "26216").strip()),
         chat_force_loopback_headers=_env_flag("MC_CHAT_PROXY_FORCE_LOOPBACK_HEADERS", True),
         chat_inject_script_enabled=_env_flag("MC_CHAT_COMPAT_INJECT_SCRIPT_ENABLED", True),
@@ -86,5 +109,6 @@ def load_settings() -> Settings:
         chat_rewrite_control_ui_config=_env_flag("MC_CHAT_COMPAT_REWRITE_CONTROL_UI_CONFIG", True),
         chat_rewrite_avatar_payloads=_env_flag("MC_CHAT_COMPAT_REWRITE_AVATAR_PAYLOADS", True),
         agent_controller_url=(os.getenv("MC_AGENT_CONTROLLER_URL") or "http://mission-control-agent-controller:9091").strip(),
+        agent_controller_auth_token=(os.getenv("MC_AGENT_CONTROLLER_AUTH_TOKEN") or "").strip() or None,
         agent_controller_timeout_seconds=float((os.getenv("MC_AGENT_CONTROLLER_TIMEOUT_SECONDS") or "5.0").strip()),
     )

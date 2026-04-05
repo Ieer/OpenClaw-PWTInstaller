@@ -13,6 +13,7 @@ ENV_DIR = ROOT / "env"
 RELEASE_PATH = ROOT.parent / "openclaw-release.yaml"
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+PLACEHOLDER_VALUE_RE = re.compile(r"^(CHANGE_ME|TODO|REPLACE_ME|YOUR_TOKEN)(?:[_-].*)?$", re.IGNORECASE)
 
 
 def load_manifest(path: Path) -> dict:
@@ -31,6 +32,26 @@ def load_release(path: Path) -> dict:
     return data
 
 
+def _is_placeholder_value(value: object) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return True
+    return bool(PLACEHOLDER_VALUE_RE.match(text))
+
+
+def _load_env_file(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not path.exists() or not path.is_file():
+        return values
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values
+
+
 def validate_manifest(manifest: dict) -> list[str]:
     errors: list[str] = []
 
@@ -45,6 +66,8 @@ def validate_manifest(manifest: dict) -> list[str]:
             errors.append(f"missing mission_control.{key}")
         elif not isinstance(mission_control[key], int):
             errors.append(f"mission_control.{key} must be int")
+    if "agent_controller_enabled" in mission_control and not isinstance(mission_control["agent_controller_enabled"], bool):
+        errors.append("mission_control.agent_controller_enabled must be bool")
 
     runtime = manifest.get("agent_runtime", {})
     for key in ["cnim_build_context", "cnim_dockerfile", "cnim_image", "container_gateway_port", "container_bridge_port"]:
@@ -64,6 +87,7 @@ def validate_manifest(manifest: dict) -> list[str]:
 
     seen_slugs: set[str] = set()
     used_ports: dict[int, str] = {}
+    gateway_auth_mode = str(runtime.get("gateway_auth_mode") or "token").strip().lower() or "token"
 
     for index, agent in enumerate(agents):
         prefix = f"agents[{index}]"
@@ -98,7 +122,41 @@ def validate_manifest(manifest: dict) -> list[str]:
 
         if not agent.get("gateway_token"):
             errors.append(f"{prefix}.gateway_token is required for enabled agent")
+        elif gateway_auth_mode == "token" and _is_placeholder_value(agent.get("gateway_token")):
+            errors.append(
+                f"{prefix}.gateway_token must not use placeholder values like CHANGE_ME/TODO/REPLACE_ME/YOUR_TOKEN when agent_runtime.gateway_auth_mode=token"
+            )
 
+    return errors
+
+
+def validate_controller_security(manifest: dict) -> list[str]:
+    errors: list[str] = []
+    mission_control = manifest.get("mission_control", {})
+    controller_enabled = bool(mission_control.get("agent_controller_enabled", False))
+    if not controller_enabled:
+        return errors
+
+    example_env_path = ENV_DIR / "mission-control.env.example"
+    local_env_path = ENV_DIR / "mission-control.env"
+    if not example_env_path.exists() and not local_env_path.exists():
+        errors.append(
+            "mission-control.env.example or mission-control.env is required when mission_control.agent_controller_enabled=true; create a local panopticon/env/mission-control.env and set MC_AGENT_CONTROLLER_AUTH_TOKEN to a random long token"
+        )
+        return errors
+
+    env_values = _load_env_file(example_env_path)
+    if local_env_path.exists():
+        env_values.update(_load_env_file(local_env_path))
+    token = env_values.get("MC_AGENT_CONTROLLER_AUTH_TOKEN", "")
+    if not str(token or "").strip():
+        errors.append(
+            "mission-control.env(.example): MC_AGENT_CONTROLLER_AUTH_TOKEN is empty while mission_control.agent_controller_enabled=true; set it in panopticon/env/mission-control.env or disable agent_controller_enabled if remote container actions are not needed"
+        )
+    elif _is_placeholder_value(token):
+        errors.append(
+            "mission-control.env(.example): MC_AGENT_CONTROLLER_AUTH_TOKEN still uses a placeholder while mission_control.agent_controller_enabled=true; replace it in panopticon/env/mission-control.env with a random long token or disable agent_controller_enabled"
+        )
     return errors
 
 
@@ -168,6 +226,7 @@ if __name__ == "__main__":
     errors = validate_manifest(manifest)
     errors.extend(validate_generated_files(manifest))
     errors.extend(validate_release_alignment(manifest, release))
+    errors.extend(validate_controller_security(manifest))
 
     if errors:
         print("Validation failed:")

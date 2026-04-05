@@ -6,7 +6,7 @@ import shlex
 import subprocess
 from dataclasses import dataclass
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 
@@ -27,6 +27,7 @@ class ControlActionOut(BaseModel):
 class ControllerSettings:
     docker_bin: str
     allowed_agents: set[str]
+    auth_token: str
 
 
 def _load_allowed_agents() -> set[str]:
@@ -45,7 +46,19 @@ def _settings() -> ControllerSettings:
     return ControllerSettings(
         docker_bin=(os.getenv("MC_AGENT_CONTROLLER_DOCKER_BIN") or "docker").strip() or "docker",
         allowed_agents=_load_allowed_agents(),
+        auth_token=(os.getenv("MC_AGENT_CONTROLLER_AUTH_TOKEN") or "").strip(),
     )
+
+
+def _require_auth(settings: ControllerSettings, authorization: str | None) -> None:
+    expected = settings.auth_token
+    if not expected:
+        raise HTTPException(status_code=503, detail="agent controller auth token is not configured")
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="missing bearer token")
+    token = authorization.split(" ", 1)[1].strip()
+    if token != expected:
+        raise HTTPException(status_code=403, detail="invalid token")
 
 
 def _validate_slug(slug: str) -> str:
@@ -103,8 +116,13 @@ def health() -> dict:
 
 
 @app.post("/v1/containers/{agent}/control", response_model=ControlActionOut)
-def control_agent(agent: str, body: ControlActionIn) -> ControlActionOut:
+def control_agent(
+    agent: str,
+    body: ControlActionIn,
+    authorization: str | None = Header(default=None),
+) -> ControlActionOut:
     settings = _settings()
+    _require_auth(settings, authorization)
 
     slug = _validate_slug(agent)
     if settings.allowed_agents and slug not in settings.allowed_agents:

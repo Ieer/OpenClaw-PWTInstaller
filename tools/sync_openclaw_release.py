@@ -100,11 +100,6 @@ def main() -> None:
     )
     replace_pattern(
         ROOT / "panopticon" / "env" / "mission-control-ui.env.example",
-        r'^MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT=.+$',
-        f'MISSION_CONTROL_CHAT_CONTAINER_GATEWAY_PORT={gateway_port}',
-    )
-    replace_pattern(
-        ROOT / "panopticon" / "env" / "mission-control-ui.env.example",
         r'^MISSION_CONTROL_ENABLE_LEGACY_CHAT_PROXY=.+$',
         f'MISSION_CONTROL_ENABLE_LEGACY_CHAT_PROXY={legacy_chat_proxy_enabled}',
     )

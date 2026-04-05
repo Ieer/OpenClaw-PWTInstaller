@@ -20,6 +20,7 @@ import httpx
 import asyncio
 from redis.asyncio import Redis
 
+from .agent_catalog import build_agent_catalog
 from .config import Settings, load_settings
 from .db import create_engine, create_session_factory
 from .models import (
@@ -43,6 +44,7 @@ from .models import (
 )
 from .schemas import (
     AgentControlActionIn,
+    AgentCatalogItemOut,
     AgentControlActionOut,
     AgentSkillMappingOut,
     AgentUsageSnapshotOut,
@@ -1814,13 +1816,17 @@ async def _forward_agent_control(
     base_url = (settings.agent_controller_url or "").strip().rstrip("/")
     if not base_url:
         raise HTTPException(status_code=503, detail="agent controller is not configured")
+    token = (settings.agent_controller_auth_token or "").strip()
+    if not token:
+        raise HTTPException(status_code=503, detail="agent controller auth token is not configured")
 
     target_url = f"{base_url}/v1/containers/{urllib.parse.quote(agent, safe='')}/control"
     timeout = max(1.0, float(settings.agent_controller_timeout_seconds or 5.0))
+    headers = {"Authorization": f"Bearer {token}"}
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(target_url, json={"action": action})
+            resp = await client.post(target_url, json={"action": action}, headers=headers)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"agent controller unavailable: {exc.__class__.__name__}")
 
@@ -2450,6 +2456,12 @@ def create_app() -> FastAPI:
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
     ) -> list[AgentUsageSnapshotOut]:
         return _get_agent_usage_snapshot(settings, days)
+
+    @app.get("/v1/agents/catalog", response_model=list[AgentCatalogItemOut])
+    async def get_agent_catalog(
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+    ) -> list[AgentCatalogItemOut]:
+        return [AgentCatalogItemOut(**item) for item in build_agent_catalog(settings)]
 
     @app.post("/v1/knowledge/sources/import", response_model=KnowledgeSourceOut)
     async def import_knowledge_source(
