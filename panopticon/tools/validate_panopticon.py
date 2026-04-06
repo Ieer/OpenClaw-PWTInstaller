@@ -12,6 +12,13 @@ COMPOSE_PATH = ROOT / "docker-compose.panopticon.yml"
 ENV_DIR = ROOT / "env"
 RELEASE_PATH = ROOT.parent / "openclaw-release.yaml"
 
+REQUIRED_STATIC_ENV_EXAMPLES = {
+    "mission-control.env.example",
+    "mission-control-ui.env.example",
+    "mission-control-gateway.env.example",
+    "mission-control-voice-bridge.env.example",
+}
+
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 PLACEHOLDER_VALUE_RE = re.compile(r"^(CHANGE_ME|TODO|REPLACE_ME|YOUR_TOKEN)(?:[_-].*)?$", re.IGNORECASE)
 
@@ -50,6 +57,15 @@ def _load_env_file(path: Path) -> dict[str, str]:
         key, value = line.split("=", 1)
         values[key.strip()] = value.strip()
     return values
+
+
+def _load_agent_runtime_env(slug: str) -> tuple[dict[str, str], bool]:
+    example_values = _load_env_file(ENV_DIR / f"{slug}.env.example")
+    local_env_path = ENV_DIR / f"{slug}.env"
+    local_values = _load_env_file(local_env_path)
+    merged = dict(example_values)
+    merged.update(local_values)
+    return merged, local_env_path.exists()
 
 
 def validate_manifest(manifest: dict) -> list[str]:
@@ -120,12 +136,16 @@ def validate_manifest(manifest: dict) -> list[str]:
             else:
                 used_ports[value] = slug
 
-        if not agent.get("gateway_token"):
+        manifest_token = str(agent.get("gateway_token") or "").strip()
+        if not manifest_token:
             errors.append(f"{prefix}.gateway_token is required for enabled agent")
-        elif gateway_auth_mode == "token" and _is_placeholder_value(agent.get("gateway_token")):
-            errors.append(
-                f"{prefix}.gateway_token must not use placeholder values like CHANGE_ME/TODO/REPLACE_ME/YOUR_TOKEN when agent_runtime.gateway_auth_mode=token"
-            )
+        elif gateway_auth_mode == "token":
+            runtime_env, has_local_env = _load_agent_runtime_env(slug)
+            runtime_token = str(runtime_env.get("OPENCLAW_GATEWAY_TOKEN", manifest_token) or "").strip()
+            if has_local_env and _is_placeholder_value(runtime_token):
+                errors.append(
+                    f"panopticon/env/{slug}.env must set OPENCLAW_GATEWAY_TOKEN to a non-placeholder value when present"
+                )
 
     return errors
 
@@ -146,16 +166,13 @@ def validate_controller_security(manifest: dict) -> list[str]:
         return errors
 
     env_values = _load_env_file(example_env_path)
-    if local_env_path.exists():
+    has_local_env = local_env_path.exists()
+    if has_local_env:
         env_values.update(_load_env_file(local_env_path))
     token = env_values.get("MC_AGENT_CONTROLLER_AUTH_TOKEN", "")
-    if not str(token or "").strip():
+    if has_local_env and _is_placeholder_value(token):
         errors.append(
-            "mission-control.env(.example): MC_AGENT_CONTROLLER_AUTH_TOKEN is empty while mission_control.agent_controller_enabled=true; set it in panopticon/env/mission-control.env or disable agent_controller_enabled if remote container actions are not needed"
-        )
-    elif _is_placeholder_value(token):
-        errors.append(
-            "mission-control.env(.example): MC_AGENT_CONTROLLER_AUTH_TOKEN still uses a placeholder while mission_control.agent_controller_enabled=true; replace it in panopticon/env/mission-control.env with a random long token or disable agent_controller_enabled"
+            "panopticon/env/mission-control.env must set MC_AGENT_CONTROLLER_AUTH_TOKEN to a random long token when mission_control.agent_controller_enabled=true"
         )
     return errors
 
@@ -165,6 +182,11 @@ def validate_generated_files(manifest: dict) -> list[str]:
 
     if not COMPOSE_PATH.exists():
         errors.append(f"missing generated compose file: {COMPOSE_PATH}")
+
+    for file_name in sorted(REQUIRED_STATIC_ENV_EXAMPLES):
+        env_path = ENV_DIR / file_name
+        if not env_path.exists():
+            errors.append(f"missing static env example: {env_path}")
 
     enabled_agents = [a for a in manifest.get("agents", []) if a.get("enabled", True)]
     for agent in enabled_agents:

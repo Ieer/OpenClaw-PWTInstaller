@@ -12,6 +12,51 @@ COMPOSE_PATH = ROOT / "docker-compose.panopticon.yml"
 ENV_DIR = ROOT / "env"
 TEMPLATE_PATH = ROOT / "templates" / "agent.env.tpl"
 
+STATIC_ENV_EXAMPLES = {
+  "mission-control-gateway.env.example": """# Mission Control gateway (nginx local env override)
+# 说明：当前主路线由 mission-control-api 负责按 agent 注入 Authorization，
+# 这里保留 TOKEN_* 变量模板，便于本地覆盖、排障和后续兼容扩展。
+
+TOKEN_NOX=
+TOKEN_METRICS=
+TOKEN_EMAIL=
+TOKEN_GROWTH=
+TOKEN_TRADES=
+TOKEN_HEALTH=
+TOKEN_WRITING=
+TOKEN_PERSONAL=
+""",
+  "mission-control-voice-bridge.env.example": """# Mission Control voice bridge (ROS topics -> Mission Control events)
+# 该文件只定义语音桥接自身的行为；Mission Control API 地址与鉴权继续从
+# mission-control.env(.example) 读取。
+
+# 事件中写入的 agent 名称。
+MC_VOICE_AGENT=voice-engine
+
+# ROS topic 名称。
+MC_VOICE_TOPIC_WAKEUP=wakeup
+MC_VOICE_TOPIC_ASR=asr
+MC_VOICE_TOPIC_TEXT_RESPONSE=text_response
+MC_VOICE_TOPIC_TTS=tts_topic
+
+# 行为开关。
+MC_VOICE_ENABLE_LLM_FIRST_TOKEN=1
+MC_VOICE_IDLE_AFTER_TTS_S=6.0
+
+# 发送队列与重试参数。
+MC_VOICE_BRIDGE_QUEUE_SIZE=2000
+MC_VOICE_BRIDGE_MAX_ATTEMPTS=8
+MC_VOICE_BRIDGE_MAX_EVENT_AGE_S=120.0
+MC_VOICE_BRIDGE_BACKOFF_BASE_S=0.2
+MC_VOICE_BRIDGE_BACKOFF_CAP_S=5.0
+MC_VOICE_BRIDGE_EVENTKEY_TTL_S=600.0
+MC_VOICE_BRIDGE_EVENTKEY_MAX=10000
+
+# 调试项。
+MC_VOICE_BRIDGE_LOG_PAYLOAD=0
+""",
+}
+
 
 def load_manifest(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as f:
@@ -217,8 +262,15 @@ def render_compose(manifest: dict) -> str:
       agent_slugs=agent_slugs,
     )
 
-    compose_header = compose_header.replace("__API_CONTROLLER_ENV_BLOCK__", api_controller_env_block)
-    compose_header = compose_header.replace("__API_CONTROLLER_DEP_BLOCK__", api_controller_dep_block)
+    if api_controller_env_block:
+      compose_header = compose_header.replace("      __API_CONTROLLER_ENV_BLOCK__\n", f"      {api_controller_env_block}\n")
+    else:
+      compose_header = compose_header.replace("      __API_CONTROLLER_ENV_BLOCK__\n", "")
+
+    if api_controller_dep_block:
+      compose_header = compose_header.replace("      __API_CONTROLLER_DEP_BLOCK__\n", f"      {api_controller_dep_block}\n")
+    else:
+      compose_header = compose_header.replace("      __API_CONTROLLER_DEP_BLOCK__\n", "")
     if controller_service_block:
       compose_header = compose_header.replace(
         "  mission-control-ui:\n",
@@ -313,6 +365,11 @@ def render_agent_env(template: str, agent: dict, runtime: dict) -> str:
   )
 
 
+def write_static_env_examples() -> None:
+  for file_name, content in STATIC_ENV_EXAMPLES.items():
+    (ENV_DIR / file_name).write_text(content.rstrip() + "\n", encoding="utf-8")
+
+
 def generate(manifest_path: Path, prune: bool = False) -> None:
   manifest = load_manifest(manifest_path)
   runtime = manifest["agent_runtime"]
@@ -322,6 +379,7 @@ def generate(manifest_path: Path, prune: bool = False) -> None:
 
   template = TEMPLATE_PATH.read_text(encoding="utf-8")
   ENV_DIR.mkdir(parents=True, exist_ok=True)
+  write_static_env_examples()
 
   active_slugs: set[str] = set()
   for agent in manifest["agents"]:
@@ -336,7 +394,7 @@ def generate(manifest_path: Path, prune: bool = False) -> None:
     static_files = {
       "mission-control.env.example",
       "mission-control-ui.env.example",
-      "mission-control-gateway.env.example",
+      *STATIC_ENV_EXAMPLES.keys(),
     }
     for env_file in ENV_DIR.glob("*.env.example"):
       if env_file.name in static_files:

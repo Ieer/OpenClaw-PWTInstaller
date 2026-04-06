@@ -5,8 +5,6 @@ set -euo pipefail
 #
 # - Generates strong random tokens (not printed)
 # - Writes local override env files under panopticon/env/*.env (gitignored)
-# - Writes the same tokens back into panopticon/agents.manifest.yaml
-# - Regenerates compose/env.example artifacts from the updated manifest
 # - Updates panopticon/agent-homes/<agent>/openclaw.json gateway.auth.token
 # - Force-recreates relevant containers so new env is loaded
 # - Runs endpoint checks
@@ -34,7 +32,7 @@ if ! command -v python >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[1/6] Generating tokens + writing local env overrides (gitignored)"
+echo "[1/5] Generating tokens + writing local env overrides (gitignored)"
 python - <<'PY'
 import json
 import secrets
@@ -43,7 +41,6 @@ from pathlib import Path
 repo = Path('.').resolve()
 env_dir = repo / 'panopticon' / 'env'
 agent_homes = repo / 'panopticon' / 'agent-homes'
-manifest_path = repo / 'panopticon' / 'agents.manifest.yaml'
 slugs = ['nox','metrics','email','growth','trades','health','writing','personal']
 
 env_dir.mkdir(parents=True, exist_ok=True)
@@ -84,39 +81,19 @@ for slug, token in tokens.items():
     data['gateway']['auth']['token'] = token
     p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
-# patch manifest gateway_token fields in-place to keep validation and generated env templates aligned
-lines = manifest_path.read_text(encoding='utf-8').splitlines()
-patched: list[str] = []
-current_slug = None
-for line in lines:
-    stripped = line.strip()
-    if stripped.startswith('- slug:'):
-        current_slug = stripped.split(':', 1)[1].strip()
-        patched.append(line)
-        continue
-    if current_slug in tokens and stripped.startswith('gateway_token:'):
-        indent = line[: len(line) - len(line.lstrip(' '))]
-        patched.append(f"{indent}gateway_token: {tokens[current_slug]}")
-        continue
-    patched.append(line)
-manifest_path.write_text('\n'.join(patched) + '\n', encoding='utf-8')
-
 print('ok')
 PY
 
-echo "[2/6] Regenerating compose/env.example from updated manifest"
-python panopticon/tools/generate_panopticon.py
-
-echo "[3/6] Validating updated panopticon manifest and generated artifacts"
+echo "[2/5] Validating panopticon manifest and generated artifacts"
 python panopticon/tools/validate_panopticon.py
 
-echo "[4/6] Force-recreating services to load new env"
+echo "[3/5] Force-recreating services to load new env"
 # Recreate API/UI/gateway and agents so env_file changes are applied.
 docker compose -f "$COMPOSE_FILE" up -d --no-build --force-recreate \
   mission-control-api mission-control-ui mission-control-gateway \
   openclaw-nox openclaw-metrics openclaw-email openclaw-growth openclaw-trades openclaw-health openclaw-writing openclaw-personal
 
-echo "[5/6] Waiting for gateways to become reachable"
+echo "[4/5] Waiting for gateways to become reachable"
 # Gateways can take a bit to come up after token reload.
 for i in {1..30}; do
   if bash panopticon/tools/check_agent_endpoints.sh >/dev/null 2>&1; then
@@ -131,7 +108,7 @@ for i in {1..30}; do
   fi
 done
 
-echo "[6/6] Smoke checks"
+echo "[5/5] Smoke checks"
 # Check the unified entrypoint is alive.
 for i in {1..10}; do
   code="$(curl -L -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18920 || true)"
@@ -154,4 +131,4 @@ for i in {1..20}; do
 done
 
 echo "Done. Tokens rotated and services restarted."
-echo "Note: token files are under panopticon/env/*.env (gitignored)."
+echo "Note: runtime tokens are stored only in panopticon/env/*.env (gitignored)."

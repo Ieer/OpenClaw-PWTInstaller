@@ -40,6 +40,10 @@ jobs:
       - name: Generated artifacts drift check
         run: |
           python panopticon/tools/generate_panopticon.py --prune
+          test -f panopticon/env/mission-control.env.example
+          test -f panopticon/env/mission-control-ui.env.example
+          test -f panopticon/env/mission-control-gateway.env.example
+          test -f panopticon/env/mission-control-voice-bridge.env.example
           git diff --exit-code -- panopticon/docker-compose.panopticon.yml panopticon/env/*.env.example
 
       - name: Compose configuration sanity check

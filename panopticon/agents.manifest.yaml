@@ -3,7 +3,9 @@ version: 1
 mission_control:
   api_port: 18910
   ui_port: 18920
-  agent_controller_enabled: true
+  # High-risk capability: this service mounts docker.sock and can control openclaw-* containers.
+  # Keep this disabled in the public manifest; enable locally only when remote container control is required.
+  agent_controller_enabled: false
   agent_controller_url: http://mission-control-agent-controller:9091
 
 agent_runtime:

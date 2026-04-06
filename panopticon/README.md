@@ -56,7 +56,7 @@ done
 bash panopticon/tools/rotate_gateway_tokens.sh
 ```
 
-`validate_panopticon.py` 会拒绝 `CHANGE_ME_*`、`TODO`、`REPLACE_ME` 一类占位值。
+公开仓库中的 manifest 和 `*.env.example` 会保留占位值；`rotate_gateway_tokens.sh` 会把真实 token 写入 gitignored 的本地 `panopticon/env/*.env`。
 
 ### 4. 编辑必要配置
 
@@ -78,7 +78,7 @@ bash panopticon/tools/rotate_gateway_tokens.sh
 
 按需启用的附加文件：
 
-- 远程容器控制：编辑本地 `mission-control.env`，来源见 [env/mission-control.env.example](env/mission-control.env.example)
+- 远程容器控制：默认关闭；如需启用，先在本地把 `agents.manifest.yaml` 中的 `mission_control.agent_controller_enabled` 改为 `true`，再编辑本地 `mission-control.env`，来源见 [env/mission-control.env.example](env/mission-control.env.example)
 - 语音桥接：编辑本地 `mission-control-voice-bridge.env`，来源见 [env/mission-control-voice-bridge.env.example](env/mission-control-voice-bridge.env.example)
 
 ### 5. 可选：指定数据目录
