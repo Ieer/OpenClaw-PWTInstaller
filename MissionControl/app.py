@@ -98,6 +98,141 @@ def _format_mapping_failure_summary(failed: list[dict], *, limit: int = 8) -> st
     return "Failed items: " + "; ".join(lines) + suffix
 
 
+def _parse_text_list(value: str | None) -> list[str]:
+    raw = str(value or "").strip()
+
+    parts = re.split(r"[\n,]", raw)
+    out: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        item = str(part or "").strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def _scope_badge_tone(scope: str) -> str:
+    normalized = _normalize_text(scope)
+    if normalized == "global":
+        return "scope-global"
+    if normalized == "workspace":
+        return "scope-workspace"
+    if normalized == "runtime":
+        return "scope-runtime"
+    return "scope-neutral"
+
+
+def _render_metric_cards(metrics: list[dict]):
+    if not metrics:
+        return [html.Div("No skills metrics available.", className="column-empty")]
+
+    cards = []
+    for item in metrics:
+        tone = _normalize_text(item.get("tone")) or "neutral"
+        cards.append(
+            html.Div(
+                className=f"skills-metric-card tone-{tone}",
+                children=[
+                    html.Div(str(item.get("label") or "Metric"), className="skills-metric-label"),
+                    html.Div(str(item.get("value") or "-"), className="skills-metric-value"),
+                    html.Div(str(item.get("detail") or ""), className="skills-metric-detail"),
+                ],
+            )
+        )
+    return cards
+
+
+def _render_inventory_children(items: list[dict], *, limit: int = 24):
+    if not items:
+        return [html.Div("No inventory items discovered.", className="column-empty")]
+
+    scope_order = {"global": 0, "workspace": 1, "runtime": 2}
+    ordered = sorted(
+        items,
+        key=lambda item: (
+            scope_order.get(_normalize_text(item.get("scope")), 99),
+            str(item.get("agent_slug") or ""),
+            str(item.get("slug") or ""),
+        ),
+    )
+
+    children = []
+    for item in ordered[:limit]:
+        mapped_agents = item.get("mapped_agents") or []
+        runtime_agents = item.get("runtime_agents") or []
+        badges = [
+            html.Span(str(item.get("scope") or "unknown").title(), className=f"skills-scope-badge {_scope_badge_tone(str(item.get('scope') or ''))}")
+        ]
+        if item.get("agent_slug"):
+            badges.append(html.Span(str(item.get("agent_slug")), className="skills-meta-chip"))
+        if mapped_agents:
+            badges.append(html.Span(f"Mapped {len(mapped_agents)}", className="skills-meta-chip"))
+        if runtime_agents:
+            badges.append(html.Span(f"Runtime {len(runtime_agents)}", className="skills-meta-chip"))
+
+        meta_lines = []
+        if item.get("description"):
+            meta_lines.append(html.Div(str(item.get("description")), className="skills-item-copy"))
+        meta_lines.append(html.Div(str(item.get("path") or ""), className="skills-item-path"))
+
+        children.append(
+            html.Div(
+                className="skills-item",
+                children=[
+                    html.Div(
+                        className="skills-item-head",
+                        children=[
+                            html.Div(str(item.get("slug") or "-"), className="skills-item-title"),
+                            html.Div(badges, className="skills-item-badges"),
+                        ],
+                    ),
+                    html.Div(meta_lines, className="skills-item-body skills-item-body-stack"),
+                ],
+            )
+        )
+
+    hidden = len(ordered) - len(children)
+    if hidden > 0:
+        children.append(html.Div(f"Showing first {len(children)} items; {hidden} more hidden.", className="skills-hint"))
+    return children
+
+
+def _render_drift_children(items: list[dict], *, empty_text: str):
+    if not items:
+        return [html.Div(empty_text, className="column-empty")]
+
+    children = []
+    for item in items:
+        severity = _normalize_text(item.get("severity")) or "neutral"
+        meta_bits = [str(item.get("category") or "issue")]
+        if item.get("skill_slug"):
+            meta_bits.append(str(item.get("skill_slug")))
+        if item.get("path"):
+            meta_bits.append(str(item.get("path")))
+        children.append(
+            html.Div(
+                className=f"skills-drift-item severity-{severity}",
+                children=[
+                    html.Div(str(item.get("message") or "Issue detected."), className="skills-drift-message"),
+                    html.Div(" · ".join(meta_bits), className="skills-drift-meta"),
+                ],
+            )
+        )
+    return children
+
+
+def _render_skill_group(items: list[dict], *, empty_text: str):
+    if not items:
+        return html.Div(empty_text, className="column-empty")
+
+    return html.Div(
+        [html.Span(str(item.get("slug") or "-"), className="tag") for item in items],
+        className="skills-item-body",
+    )
+
+
 def _slug_label(slug: str) -> str:
     return slug.replace("-", " ").replace("_", " ").strip().title() or slug
 
@@ -918,6 +1053,7 @@ app.layout = html.Div(
                 "revision": 0,
                 "message": "",
                 "message_tone": "neutral",
+                "detail_agent": "",
             },
         ),
         dcc.Store(
@@ -1237,6 +1373,7 @@ app.layout = html.Div(
                             id="skills-notice",
                             className="skills-notice",
                         ),
+                        html.Div(id="skills-overview", className="skills-overview"),
                         html.Div(
                             className="skills-grid",
                             children=[
@@ -1257,7 +1394,14 @@ app.layout = html.Div(
                                                 html.Button("Clear", id="skills-global-clear", className="ghost-button"),
                                             ],
                                         ),
-                                        dcc.Checklist(id="skills-global-checklist", options=[], value=[]),
+                                        dcc.Checklist(
+                                            id="skills-global-checklist",
+                                            options=[],
+                                            value=[],
+                                            className="skills-checklist skills-global-checklist",
+                                            inputClassName="skills-checklist-input",
+                                            labelClassName="skills-checklist-label skills-global-checklist-label",
+                                        ),
                                     ],
                                 ),
                                 html.Div(
@@ -1278,6 +1422,14 @@ app.layout = html.Div(
                                             ],
                                         ),
                                         dcc.Checklist(id="skills-agent-checklist", options=[], value=[]),
+                                        html.Div("Inspect Agent", className="skills-field-label"),
+                                        dcc.Dropdown(
+                                            id="skills-detail-agent",
+                                            options=[],
+                                            value=None,
+                                            clearable=False,
+                                            className="skills-detail-select",
+                                        ),
                                         html.Div(
                                             className="skills-actions",
                                             children=[
@@ -1300,17 +1452,79 @@ app.layout = html.Div(
                                 html.Div(
                                     className="skills-list-block",
                                     children=[
-                                        html.Div("Assigned Global Skills", className="skills-col-title"),
-                                        html.Div(id="skills-mapping-view", className="skills-scroll"),
+                                        html.Div("Inventory", className="skills-col-title"),
+                                        html.Div(id="skills-inventory-view", className="skills-scroll skills-scroll-tall"),
                                     ],
                                 ),
                                 html.Div(
-                                    className="skills-list-block",
+                                    className="skills-list-block skills-detail-block",
                                     children=[
-                                        html.Div("Workspace Skills (agent-homes/<agent>/skills)", className="skills-col-title"),
-                                        html.Div(id="skills-workspace-view", className="skills-scroll"),
+                                        html.Div("Agent Detail", className="skills-col-title"),
+                                        html.Div(id="skills-agent-detail-view", className="skills-detail-view"),
+                                        html.Div(
+                                            className="skills-runtime-editor",
+                                            children=[
+                                                html.Div("Runtime Config", className="skills-col-title"),
+                                                html.Div(
+                                                    className="skills-runtime-grid",
+                                                    children=[
+                                                        html.Div(
+                                                            className="skills-runtime-field",
+                                                            children=[
+                                                                html.Div("nativeSkills mode", className="skills-field-label"),
+                                                                dcc.Input(
+                                                                    id="skills-runtime-native-mode",
+                                                                    type="text",
+                                                                    placeholder="auto",
+                                                                    className="skills-search-input",
+                                                                ),
+                                                            ],
+                                                        ),
+                                                        html.Div(
+                                                            className="skills-runtime-field",
+                                                            children=[
+                                                                html.Div("allowBundled", className="skills-field-label"),
+                                                                dcc.Textarea(
+                                                                    id="skills-runtime-allow-bundled",
+                                                                    placeholder="One per line or comma-separated",
+                                                                    className="skills-textarea",
+                                                                ),
+                                                            ],
+                                                        ),
+                                                        html.Div(
+                                                            className="skills-runtime-field skills-runtime-field-wide",
+                                                            children=[
+                                                                html.Div("extraDirs", className="skills-field-label"),
+                                                                dcc.Textarea(
+                                                                    id="skills-runtime-extra-dirs",
+                                                                    placeholder="One per line or comma-separated",
+                                                                    className="skills-textarea",
+                                                                ),
+                                                            ],
+                                                        ),
+                                                    ],
+                                                ),
+                                                html.Div(
+                                                    className="skills-actions",
+                                                    children=[
+                                                        html.Button("Save Runtime Config", id="skills-runtime-save", className="ghost-button"),
+                                                    ],
+                                                ),
+                                                html.Div(
+                                                    "Only skill-related runtime fields are edited here. Restart the agent container after changes.",
+                                                    className="skills-hint",
+                                                ),
+                                            ],
+                                        ),
                                     ],
                                 ),
+                            ],
+                        ),
+                        html.Div(
+                            className="skills-list-block skills-report-block",
+                            children=[
+                                html.Div("Report Issues", className="skills-col-title"),
+                                html.Div(id="skills-report-view", className="skills-scroll"),
                             ],
                         ),
                     ],
@@ -1980,7 +2194,7 @@ def render_settings_modal(_, settings_ui):
     prevent_initial_call=True,
 )
 def toggle_skills_modal(_, __, data):
-    data = data or {"open": False, "revision": 0, "message": "", "message_tone": "neutral"}
+    data = data or {"open": False, "revision": 0, "message": "", "message_tone": "neutral", "detail_agent": ""}
     trigger = ctx.triggered_id
     if trigger == "open-skills":
         data["open"] = True
@@ -2060,7 +2274,7 @@ def update_chat_ui(_, __, ___, ____, selected_agent, data):
 def patch_skill_mappings(add_clicks, remove_clicks, skill_slugs, agent_slugs, data):
     _ = add_clicks
     _ = remove_clicks
-    data = data or {"open": False, "revision": 0, "message": "", "message_tone": "neutral"}
+    data = data or {"open": False, "revision": 0, "message": "", "message_tone": "neutral", "detail_agent": ""}
     trigger = ctx.triggered_id
 
     selected_skills = [s for s in (skill_slugs or []) if s]
@@ -2091,10 +2305,57 @@ def patch_skill_mappings(add_clicks, remove_clicks, skill_slugs, agent_slugs, da
         data["message_tone"] = "ok"
         if failed and updated == 0:
             data["message_tone"] = "warn"
+        if selected_agents:
+            data["detail_agent"] = str(selected_agents[0])
         data["revision"] = int(data.get("revision") or 0) + 1
     except Exception as e:
         data["message"] = f"Update failed: {e}"
         data["message_tone"] = "error"
+    return data
+
+
+@app.callback(
+    Output("skills-ui", "data", allow_duplicate=True),
+    Input("skills-runtime-save", "n_clicks"),
+    State("skills-detail-agent", "value"),
+    State("skills-runtime-native-mode", "value"),
+    State("skills-runtime-allow-bundled", "value"),
+    State("skills-runtime-extra-dirs", "value"),
+    State("skills-ui", "data"),
+    prevent_initial_call=True,
+)
+def save_skill_runtime_config(_, detail_agent, native_mode, allow_bundled, extra_dirs, data):
+    data = data or {"open": False, "revision": 0, "message": "", "message_tone": "neutral", "detail_agent": ""}
+    agent_slug = str(detail_agent or "").strip()
+    if not agent_slug:
+        data["message"] = "Choose an agent before saving runtime config."
+        data["message_tone"] = "warn"
+        return data
+
+    body = {
+        "agent_slug": agent_slug,
+        "native_skills_mode": str(native_mode or "").strip(),
+        "allow_bundled": _parse_text_list(allow_bundled),
+        "extra_dirs": _parse_text_list(extra_dirs),
+    }
+
+    try:
+        resp = api_patch_json("/v1/skills/runtime-config", body, timeout=6.0)
+        updated = bool(resp.get("updated"))
+        restart_hint = str(resp.get("restart_hint") or "")
+        drift = resp.get("drift") or []
+        data["detail_agent"] = agent_slug
+        data["message"] = (
+            f"{agent_slug}: runtime config saved. {restart_hint}" if updated else f"{agent_slug}: {restart_hint}"
+        )
+        data["message_tone"] = "ok" if updated else "warn"
+        if drift and not updated:
+            data["message_tone"] = "warn"
+        data["revision"] = int(data.get("revision") or 0) + 1
+    except Exception as e:
+        data["message"] = f"Runtime config update failed: {e}"
+        data["message_tone"] = "error"
+
     return data
 
 
@@ -2133,25 +2394,59 @@ def bulk_select_agents(_, __, options, current):
 
 
 @app.callback(
+    Output("skills-detail-agent", "value"),
+    Input("skills-detail-agent", "options"),
+    Input("skills-ui", "data"),
+    State("skills-detail-agent", "value"),
+    State("skills-agent-checklist", "value"),
+    prevent_initial_call=False,
+)
+def sync_skills_detail_agent(options, skills_ui, current_value, selected_agent_slugs):
+    valid_values = [str(opt.get("value")) for opt in (options or []) if opt.get("value")]
+    if not valid_values:
+        return None
+
+    current = str(current_value or "").strip()
+    preferred = str((skills_ui or {}).get("detail_agent") or "").strip()
+    selected_agents = [str(item) for item in (selected_agent_slugs or []) if item]
+
+    if preferred and preferred in valid_values:
+        return preferred
+    if selected_agents:
+        for agent_slug in selected_agents:
+            if agent_slug in valid_values:
+                return agent_slug
+    if current in valid_values:
+        return current
+    return valid_values[0]
+
+
+@app.callback(
     Output("skills-modal", "className"),
     Output("skills-global-checklist", "options"),
     Output("skills-global-checklist", "value"),
     Output("skills-agent-checklist", "options"),
     Output("skills-agent-checklist", "value"),
-    Output("skills-mapping-view", "children"),
-    Output("skills-workspace-view", "children"),
+    Output("skills-detail-agent", "options"),
+    Output("skills-overview", "children"),
+    Output("skills-inventory-view", "children"),
+    Output("skills-agent-detail-view", "children"),
+    Output("skills-runtime-native-mode", "value"),
+    Output("skills-runtime-allow-bundled", "value"),
+    Output("skills-runtime-extra-dirs", "value"),
+    Output("skills-report-view", "children"),
     Output("skills-selection-summary", "children"),
     Output("skills-notice", "children"),
     Output("skills-notice", "className"),
-    Input("refresh", "n_intervals"),
     Input("skills-ui", "data"),
     Input("skills-global-search", "value"),
     Input("skills-agent-search", "value"),
+    Input("skills-detail-agent", "value"),
     State("skills-global-checklist", "value"),
     State("skills-agent-checklist", "value"),
     prevent_initial_call=False,
 )
-def render_skills_modal(_, skills_ui, global_search, agent_search, selected_skill_slugs, selected_agent_slugs):
+def render_skills_modal(skills_ui, global_search, agent_search, selected_detail_agent, selected_skill_slugs, selected_agent_slugs):
     skills_ui = skills_ui or {}
     is_open = bool(skills_ui.get("open"))
 
@@ -2162,8 +2457,14 @@ def render_skills_modal(_, skills_ui, global_search, agent_search, selected_skil
             [],
             [],
             [],
-            html.Div("Open Skills to load mappings.", className="column-empty"),
-            html.Div("Open Skills to load workspace skills.", className="column-empty"),
+            [],
+            [html.Div("Open Skills to load overview.", className="column-empty")],
+            [html.Div("Open Skills to load inventory.", className="column-empty")],
+            [html.Div("Choose an agent to inspect skills and runtime config.", className="column-empty")],
+            "",
+            "",
+            "",
+            [html.Div("Open Skills to load report issues.", className="column-empty")],
             "Select one or more global skills and agents to prepare a batch change.",
             "",
             "skills-notice",
@@ -2171,8 +2472,9 @@ def render_skills_modal(_, skills_ui, global_search, agent_search, selected_skil
 
     try:
         global_skills = api_get_json("/v1/skills/global")
-        workspace_groups = api_get_json("/v1/skills/workspace")
-        mappings = api_get_json("/v1/skills/mappings")
+        agent_details = api_get_json("/v1/skills/agents")
+        inventory = api_get_json("/v1/skills/inventory")
+        report = api_get_json("/v1/skills/report")
     except Exception as e:
         msg = f"Unable to load skills data: {e}"
         return (
@@ -2181,8 +2483,14 @@ def render_skills_modal(_, skills_ui, global_search, agent_search, selected_skil
             [],
             [],
             [],
-            html.Div(msg, className="column-empty"),
-            html.Div(msg, className="column-empty"),
+            [],
+            [html.Div(msg, className="column-empty")],
+            [html.Div(msg, className="column-empty")],
+            [html.Div(msg, className="column-empty")],
+            "",
+            "",
+            "",
+            [html.Div(msg, className="column-empty")],
             "",
             msg,
             "skills-notice error",
@@ -2208,9 +2516,10 @@ def render_skills_modal(_, skills_ui, global_search, agent_search, selected_skil
         or global_query in _normalize_text(opt.get("value"))
     ]
 
-    agent_pool = sorted({str(m.get("agent_slug")) for m in mappings if m.get("agent_slug")})
-    if not agent_pool:
-        agent_pool = sorted({str(g.get("agent_slug")) for g in workspace_groups if g.get("agent_slug")})
+    details = [item for item in (agent_details or []) if isinstance(item, dict)]
+    detail_by_agent = {str(item.get("agent_slug")): item for item in details if item.get("agent_slug")}
+
+    agent_pool = sorted(detail_by_agent.keys())
     if not agent_pool:
         agent_pool = [str(item.get("slug")) for item in _get_agent_catalog() if item.get("slug")]
 
@@ -2226,55 +2535,105 @@ def render_skills_modal(_, skills_ui, global_search, agent_search, selected_skil
         or agent_query in _normalize_text(opt.get("value"))
     ]
 
-    mapping_by_agent: dict[str, list[str]] = {}
-    for row in mappings:
-        agent = str(row.get("agent_slug") or "")
-        skill = str(row.get("skill_slug") or "")
-        if not agent or not skill:
-            continue
-        mapping_by_agent.setdefault(agent, []).append(skill)
-    for agent in mapping_by_agent:
-        mapping_by_agent[agent] = sorted(set(mapping_by_agent[agent]))
+    detail_options = [
+        {
+            "label": str(detail.get("label") or detail.get("agent_slug") or "-"),
+            "value": str(detail.get("agent_slug") or ""),
+        }
+        for detail in details
+        if detail.get("agent_slug")
+    ]
 
-    focused_agents = selected_agent_slugs or sorted(mapping_by_agent.keys())[:8]
-    if focused_agents:
-        mapping_children = []
-        for agent in focused_agents:
-            skills = mapping_by_agent.get(agent) or []
-            mapping_children.append(
-                html.Div(
-                    className="skills-item",
-                    children=[
-                        html.Div(agent, className="skills-item-title"),
-                        html.Div(
-                            [html.Span(s, className="tag") for s in skills] if skills else "No mapped global skills",
-                            className="skills-item-body",
-                        ),
-                    ],
-                )
-            )
-    else:
-        mapping_children = [html.Div("No agents selected.", className="column-empty")]
+    chosen_detail_agent = str(selected_detail_agent or "").strip()
+    if not chosen_detail_agent:
+        chosen_detail_agent = str(skills_ui.get("detail_agent") or "").strip()
+    if not chosen_detail_agent and selected_agent_slugs:
+        chosen_detail_agent = str(selected_agent_slugs[0])
+    valid_detail_values = {str(opt.get("value")) for opt in detail_options if opt.get("value")}
+    if chosen_detail_agent not in valid_detail_values and detail_options:
+        chosen_detail_agent = str(detail_options[0].get("value") or "")
 
-    workspace_children = []
-    for group in workspace_groups:
-        agent = group.get("agent_slug")
-        skills = group.get("skills") or []
-        skill_slugs = [str(s.get("slug")) for s in skills if s.get("slug")]
-        workspace_children.append(
+    selected_detail = detail_by_agent.get(chosen_detail_agent) or {}
+    runtime_config = selected_detail.get("runtime_config") or {}
+    mapped_global_skills = selected_detail.get("mapped_global_skills") or []
+    workspace_skills = selected_detail.get("workspace_skills") or []
+    runtime_skills = selected_detail.get("runtime_skills") or []
+    detail_drift = selected_detail.get("drift") or []
+
+    overview_children = _render_metric_cards(report.get("metrics") or []) if isinstance(report, dict) else [html.Div("No report data available.", className="column-empty")]
+    inventory_children = _render_inventory_children([item for item in (inventory or []) if isinstance(item, dict)])
+
+    detail_children = []
+    if selected_detail:
+        detail_children = [
             html.Div(
-                className="skills-item",
+                className="skills-item skills-item-emphasis",
                 children=[
-                    html.Div(str(agent), className="skills-item-title"),
                     html.Div(
-                        [html.Span(s, className="tag") for s in skill_slugs] if skill_slugs else "No workspace skills",
-                        className="skills-item-body",
+                        className="skills-item-head",
+                        children=[
+                            html.Div(str(selected_detail.get("label") or chosen_detail_agent or "-"), className="skills-item-title"),
+                            html.Div(
+                                [
+                                    html.Span(str(chosen_detail_agent or "-"), className="skills-meta-chip"),
+                                    html.Span(
+                                        f"Drift {len(detail_drift)}",
+                                        className=f"skills-meta-chip {_scope_badge_tone('runtime') if detail_drift else 'scope-neutral'}",
+                                    ),
+                                ],
+                                className="skills-item-badges",
+                            ),
+                        ],
+                    ),
+                    html.Div(str(selected_detail.get("restart_hint") or ""), className="skills-item-copy"),
+                    html.Div(str(runtime_config.get("config_path") or ""), className="skills-item-path"),
+                ],
+            ),
+            html.Div(
+                className="skills-detail-grid",
+                children=[
+                    html.Div(
+                        className="skills-detail-section",
+                        children=[
+                            html.Div("Mapped Global Skills", className="skills-subsection-title"),
+                            _render_skill_group(mapped_global_skills, empty_text="No mapped global skills."),
+                        ],
+                    ),
+                    html.Div(
+                        className="skills-detail-section",
+                        children=[
+                            html.Div("Workspace Skills", className="skills-subsection-title"),
+                            _render_skill_group(workspace_skills, empty_text="No workspace skills."),
+                        ],
+                    ),
+                    html.Div(
+                        className="skills-detail-section",
+                        children=[
+                            html.Div("Runtime Skills", className="skills-subsection-title"),
+                            _render_skill_group(runtime_skills, empty_text="No runtime skills discovered from extraDirs."),
+                        ],
                     ),
                 ],
-            )
-        )
-    if not workspace_children:
-        workspace_children = [html.Div("No workspace agents discovered.", className="column-empty")]
+            ),
+            html.Div(
+                className="skills-detail-section",
+                children=[
+                    html.Div("Drift", className="skills-subsection-title"),
+                    html.Div(_render_drift_children(detail_drift, empty_text="No drift detected for this agent."), className="skills-drift-list"),
+                ],
+            ),
+        ]
+    else:
+        detail_children = [html.Div("Choose an agent to inspect skills and runtime config.", className="column-empty")]
+
+    report_children = _render_drift_children(
+        [item for item in (report.get("drift") or []) if isinstance(item, dict)] if isinstance(report, dict) else [],
+        empty_text="No cross-agent drift issues detected.",
+    )
+
+    native_mode_value = str(runtime_config.get("native_skills_mode") or "")
+    allow_bundled_value = "\n".join(str(item) for item in (runtime_config.get("allow_bundled") or []))
+    extra_dirs_value = "\n".join(str(item) for item in (runtime_config.get("extra_dirs") or []))
 
     message = str(skills_ui.get("message") or "")
     tone = str(skills_ui.get("message_tone") or "neutral")
@@ -2286,10 +2645,11 @@ def render_skills_modal(_, skills_ui, global_search, agent_search, selected_skil
     total_global_count = len(all_global_options)
     visible_agent_count = len(agent_options)
     total_agent_count = len(all_agent_options)
+    drift_total = int(report.get("drift_total") or 0) if isinstance(report, dict) else 0
     selection_summary = (
         f"Ready to apply: {len(selected_skill_slugs)} skill(s) × {len(selected_agent_slugs)} agent(s). "
         f"Visible now: {visible_global_count}/{total_global_count} global skills, "
-        f"{visible_agent_count}/{total_agent_count} agents."
+        f"{visible_agent_count}/{total_agent_count} agents. Inspecting: {chosen_detail_agent or '-'} · Drift: {drift_total}."
     )
 
     return (
@@ -2298,8 +2658,14 @@ def render_skills_modal(_, skills_ui, global_search, agent_search, selected_skil
         selected_skill_slugs,
         agent_options,
         selected_agent_slugs,
-        mapping_children,
-        workspace_children,
+        detail_options,
+        overview_children,
+        inventory_children,
+        detail_children,
+        native_mode_value,
+        allow_bundled_value,
+        extra_dirs_value,
+        report_children,
         selection_summary,
         message,
         notice_class,

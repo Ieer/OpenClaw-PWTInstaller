@@ -46,7 +46,11 @@ from .schemas import (
     AgentControlActionIn,
     AgentCatalogItemOut,
     AgentControlActionOut,
+    AgentSkillsDetailOut,
     AgentSkillMappingOut,
+    AgentSkillRuntimeConfigOut,
+    AgentSkillRuntimeConfigPatchIn,
+    AgentSkillRuntimeConfigPatchOut,
     AgentUsageSnapshotOut,
     BoardColumn,
     BoardOut,
@@ -101,9 +105,13 @@ from .schemas import (
     HealthSignalOut,
     ObservabilitySummaryOut,
     SkillItem,
+    SkillInventoryItem,
+    SkillsDriftItem,
+    SkillsMetricOut,
     SkillsMappingFailureItem,
     SkillsMappingPatchIn,
     SkillsMappingPatchOut,
+    SkillsReportOut,
     TaskCreate,
     TaskOut,
     WorkspaceSkillGroup,
@@ -1739,6 +1747,18 @@ def _parse_skill_frontmatter(skill_file: Path, fallback_slug: str) -> tuple[str,
     return name, description
 
 
+def _skill_item_from_file(skill_file: Path, *, scope: str) -> SkillItem:
+    slug = skill_file.parent.name
+    name, description = _parse_skill_frontmatter(skill_file, slug)
+    return SkillItem(
+        slug=slug,
+        name=name,
+        description=description,
+        path=str(skill_file),
+        scope=scope,
+    )
+
+
 def _scan_global_skills(settings: Settings) -> list[SkillItem]:
     root = Path(settings.global_skills_dir)
     if not root.exists() or not root.is_dir():
@@ -1746,17 +1766,7 @@ def _scan_global_skills(settings: Settings) -> list[SkillItem]:
 
     out: list[SkillItem] = []
     for skill_file in sorted(root.glob("*/SKILL.md")):
-        slug = skill_file.parent.name
-        name, description = _parse_skill_frontmatter(skill_file, slug)
-        out.append(
-            SkillItem(
-                slug=slug,
-                name=name,
-                description=description,
-                path=str(skill_file),
-                scope="global",
-            )
-        )
+        out.append(_skill_item_from_file(skill_file, scope="global"))
     return out
 
 
@@ -1777,20 +1787,205 @@ def _scan_workspace_skills(settings: Settings, agent_slug: str | None = None) ->
         skill_items: list[SkillItem] = []
         if skills_dir.exists() and skills_dir.is_dir():
             for skill_file in sorted(skills_dir.glob("*/SKILL.md")):
-                s_slug = skill_file.parent.name
-                s_name, s_desc = _parse_skill_frontmatter(skill_file, s_slug)
-                skill_items.append(
-                    SkillItem(
-                        slug=s_slug,
-                        name=s_name,
-                        description=s_desc,
-                        path=str(skill_file),
-                        scope="workspace",
-                    )
-                )
+                skill_items.append(_skill_item_from_file(skill_file, scope="workspace"))
 
         groups.append(WorkspaceSkillGroup(agent_slug=slug, skills=skill_items))
     return groups
+
+
+def _normalize_string_list(value) -> list[str]:
+    if value is None:
+        return []
+
+    if isinstance(value, str):
+        items = [value]
+    elif isinstance(value, (list, tuple, set)):
+        items = list(value)
+    else:
+        return []
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        normalized = str(item or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        out.append(normalized)
+    return out
+
+
+def _agent_home_dir(settings: Settings, agent_slug: str) -> Path:
+    return Path(settings.agent_homes_dir) / agent_slug
+
+
+def _agent_workspace_dir(settings: Settings, agent_slug: str) -> Path:
+    return Path(settings.workspaces_dir) / agent_slug
+
+
+def _agent_config_path(settings: Settings, agent_slug: str) -> Path:
+    return _agent_home_dir(settings, agent_slug) / "openclaw.json"
+
+
+def _resolve_runtime_dir(settings: Settings, agent_slug: str, raw_path: str) -> Path:
+    agent_home = _agent_home_dir(settings, agent_slug)
+    agent_workspace = _agent_workspace_dir(settings, agent_slug)
+    candidate = Path(str(raw_path or "").strip()).expanduser()
+    if not candidate.is_absolute():
+        candidate = agent_home / candidate
+        return candidate.resolve(strict=False)
+
+    agent_home_prefix = Path("/home/node/.openclaw")
+    agent_workspace_prefix = agent_home_prefix / "workspace"
+
+    try:
+        relative_workspace = candidate.relative_to(agent_workspace_prefix)
+    except ValueError:
+        relative_workspace = None
+    if relative_workspace is not None:
+        return (agent_workspace / relative_workspace).resolve(strict=False)
+
+    try:
+        relative_home = candidate.relative_to(agent_home_prefix)
+    except ValueError:
+        relative_home = None
+    if relative_home is not None:
+        return (agent_home / relative_home).resolve(strict=False)
+
+    return candidate.resolve(strict=False)
+
+
+def _load_agent_runtime_payload(settings: Settings, agent_slug: str) -> tuple[dict, bool, str | None]:
+    config_path = _agent_config_path(settings, agent_slug)
+    if not config_path.exists() or not config_path.is_file():
+        return {}, False, None
+
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return {}, True, f"unable to read runtime config: {exc}"
+    except json.JSONDecodeError as exc:
+        return {}, True, f"invalid JSON in runtime config: line {exc.lineno} column {exc.colno}"
+
+    if not isinstance(payload, dict):
+        return {}, True, "runtime config root must be a JSON object"
+    return payload, True, None
+
+
+def _runtime_config_from_payload(settings: Settings, agent_slug: str, payload: dict, *, config_exists: bool) -> AgentSkillRuntimeConfigOut:
+    commands = payload.get("commands") if isinstance(payload.get("commands"), dict) else {}
+    skills = payload.get("skills") if isinstance(payload.get("skills"), dict) else {}
+    load = skills.get("load") if isinstance(skills.get("load"), dict) else {}
+
+    native_skills_mode = str(commands.get("nativeSkills") or "").strip() or None
+    allow_bundled = _normalize_string_list(skills.get("allowBundled"))
+    extra_dirs = _normalize_string_list(load.get("extraDirs"))
+
+    return AgentSkillRuntimeConfigOut(
+        agent_slug=agent_slug,
+        config_path=str(_agent_config_path(settings, agent_slug)),
+        config_exists=config_exists,
+        native_skills_mode=native_skills_mode,
+        allow_bundled=allow_bundled,
+        extra_dirs=extra_dirs,
+    )
+
+
+def _scan_skill_directory_root(root: Path, *, scope: str) -> list[SkillItem]:
+    if not root.exists() or not root.is_dir():
+        return []
+
+    out: list[SkillItem] = []
+    direct_skill_file = root / "SKILL.md"
+    if direct_skill_file.exists() and direct_skill_file.is_file():
+        out.append(_skill_item_from_file(direct_skill_file, scope=scope))
+
+    for skill_file in sorted(root.glob("*/SKILL.md")):
+        out.append(_skill_item_from_file(skill_file, scope=scope))
+
+    deduped: list[SkillItem] = []
+    seen: set[tuple[str, str]] = set()
+    for item in out:
+        key = (item.slug, item.path)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def _scan_runtime_skill_items(
+    settings: Settings,
+    agent_slug: str,
+    runtime_config: AgentSkillRuntimeConfigOut,
+    *,
+    parse_error: str | None = None,
+) -> tuple[list[SkillItem], list[SkillsDriftItem]]:
+    drifts: list[SkillsDriftItem] = []
+
+    if parse_error:
+        drifts.append(
+            SkillsDriftItem(
+                severity="error",
+                category="runtime_config_invalid",
+                agent_slug=agent_slug,
+                path=runtime_config.config_path,
+                message=parse_error,
+            )
+        )
+        return [], drifts
+
+    if not runtime_config.config_exists:
+        drifts.append(
+            SkillsDriftItem(
+                severity="warn",
+                category="runtime_config_missing",
+                agent_slug=agent_slug,
+                path=runtime_config.config_path,
+                message="openclaw.json is missing for this agent home.",
+            )
+        )
+        return [], drifts
+
+    runtime_items: list[SkillItem] = []
+    for raw_path in runtime_config.extra_dirs:
+        resolved = _resolve_runtime_dir(settings, agent_slug, raw_path)
+        if not resolved.exists() or not resolved.is_dir():
+            drifts.append(
+                SkillsDriftItem(
+                    severity="warn",
+                    category="runtime_extra_dir_missing",
+                    agent_slug=agent_slug,
+                    path=raw_path,
+                    message=f"Configured extraDir does not exist: {raw_path}",
+                )
+            )
+            continue
+
+        discovered = _scan_skill_directory_root(resolved, scope="runtime")
+        if not discovered:
+            drifts.append(
+                SkillsDriftItem(
+                    severity="warn",
+                    category="runtime_extra_dir_empty",
+                    agent_slug=agent_slug,
+                    path=raw_path,
+                    message=f"No SKILL.md files were discovered under extraDir: {raw_path}",
+                )
+            )
+            continue
+
+        runtime_items.extend(discovered)
+
+    deduped: list[SkillItem] = []
+    seen: set[tuple[str, str]] = set()
+    for item in runtime_items:
+        key = (item.slug, item.path)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped, drifts
 
 
 def _scan_agent_slugs(settings: Settings) -> list[str]:
@@ -1805,6 +2000,335 @@ def _known_agent_slugs(settings: Settings) -> set[str]:
     if not root.exists() or not root.is_dir():
         return set()
     return {path.name for path in root.iterdir() if path.is_dir()}
+
+
+def _agent_label_map(settings: Settings) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    for item in build_agent_catalog(settings):
+        slug = str(item.get("slug") or "").strip()
+        if slug:
+            labels[slug] = str(item.get("label") or slug).strip() or slug
+    return labels
+
+
+def _ordered_agent_slugs(settings: Settings, extra_slugs: list[str] | None = None) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    for item in build_agent_catalog(settings):
+        slug = str(item.get("slug") or "").strip()
+        if slug and slug not in seen:
+            seen.add(slug)
+            ordered.append(slug)
+
+    for slug in _scan_agent_slugs(settings):
+        if slug not in seen:
+            seen.add(slug)
+            ordered.append(slug)
+
+    for slug in extra_slugs or []:
+        normalized = str(slug or "").strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            ordered.append(normalized)
+
+    return ordered
+
+
+async def _fetch_skill_mapping_rows(session, *, agent_slug: str | None = None) -> list[AgentSkillMappingOut]:
+    stmt = sa.select(
+        agent_skill_mappings.c.id,
+        agent_skill_mappings.c.agent_slug,
+        agent_skill_mappings.c.skill_slug,
+        agent_skill_mappings.c.created_at,
+    ).order_by(agent_skill_mappings.c.agent_slug.asc(), agent_skill_mappings.c.skill_slug.asc())
+    if agent_slug:
+        stmt = stmt.where(agent_skill_mappings.c.agent_slug == agent_slug)
+    rows = (await session.execute(stmt)).all()
+    return [AgentSkillMappingOut(**row._asdict()) for row in rows]
+
+
+def _mapping_by_agent(rows: list[AgentSkillMappingOut]) -> dict[str, list[str]]:
+    grouped: dict[str, list[str]] = {}
+    for row in rows:
+        grouped.setdefault(row.agent_slug, []).append(row.skill_slug)
+    for agent_slug, skill_slugs in grouped.items():
+        grouped[agent_slug] = sorted(set(skill_slugs))
+    return grouped
+
+
+def _mapping_by_skill(rows: list[AgentSkillMappingOut]) -> dict[str, list[str]]:
+    grouped: dict[str, list[str]] = {}
+    for row in rows:
+        grouped.setdefault(row.skill_slug, []).append(row.agent_slug)
+    for skill_slug, agent_slugs in grouped.items():
+        grouped[skill_slug] = sorted(set(agent_slugs))
+    return grouped
+
+
+def _build_agent_skills_detail(
+    settings: Settings,
+    *,
+    agent_slug: str,
+    label_map: dict[str, str],
+    global_by_slug: dict[str, SkillItem],
+    workspace_by_agent: dict[str, list[SkillItem]],
+    mapping_by_agent: dict[str, list[str]],
+) -> AgentSkillsDetailOut:
+    payload, config_exists, parse_error = _load_agent_runtime_payload(settings, agent_slug)
+    runtime_config = _runtime_config_from_payload(settings, agent_slug, payload, config_exists=config_exists)
+    runtime_skills, runtime_drifts = _scan_runtime_skill_items(
+        settings,
+        agent_slug,
+        runtime_config,
+        parse_error=parse_error,
+    )
+
+    workspace_skills = list(workspace_by_agent.get(agent_slug) or [])
+    mapped_slugs = list(mapping_by_agent.get(agent_slug) or [])
+    mapped_global_skills: list[SkillItem] = []
+    drifts = list(runtime_drifts)
+
+    for skill_slug in mapped_slugs:
+        global_item = global_by_slug.get(skill_slug)
+        if global_item is None:
+            drifts.append(
+                SkillsDriftItem(
+                    severity="error",
+                    category="mapped_global_skill_missing",
+                    agent_slug=agent_slug,
+                    skill_slug=skill_slug,
+                    message=f"Mapped global skill is missing from {settings.global_skills_dir}: {skill_slug}",
+                )
+            )
+            mapped_global_skills.append(
+                SkillItem(
+                    slug=skill_slug,
+                    name=skill_slug,
+                    description="Missing global skill source",
+                    path="",
+                    scope="global",
+                )
+            )
+            continue
+        mapped_global_skills.append(global_item)
+
+    global_slugs = set(global_by_slug.keys())
+    workspace_slugs = {item.slug for item in workspace_skills}
+    runtime_slugs = {item.slug for item in runtime_skills}
+
+    for skill_slug in sorted(workspace_slugs & global_slugs):
+        drifts.append(
+            SkillsDriftItem(
+                severity="info",
+                category="workspace_overrides_global",
+                agent_slug=agent_slug,
+                skill_slug=skill_slug,
+                message=f"Workspace skill shadows a global skill: {skill_slug}",
+            )
+        )
+
+    for skill_slug in sorted(runtime_slugs & (workspace_slugs | global_slugs)):
+        drifts.append(
+            SkillsDriftItem(
+                severity="info",
+                category="runtime_overlaps_existing",
+                agent_slug=agent_slug,
+                skill_slug=skill_slug,
+                message=f"Runtime extraDir exposes a skill slug already present elsewhere: {skill_slug}",
+            )
+        )
+
+    return AgentSkillsDetailOut(
+        agent_slug=agent_slug,
+        label=label_map.get(agent_slug) or agent_slug,
+        enabled=True,
+        mapped_global_skills=mapped_global_skills,
+        workspace_skills=workspace_skills,
+        runtime_skills=runtime_skills,
+        runtime_config=runtime_config,
+        drift=drifts,
+        restart_required=False,
+        restart_hint="Restart the affected agent container after applying mapping or runtime-config changes.",
+    )
+
+
+def _build_skill_inventory(
+    *,
+    global_skills: list[SkillItem],
+    workspace_groups: list[WorkspaceSkillGroup],
+    mapping_rows: list[AgentSkillMappingOut],
+    details_by_agent: dict[str, AgentSkillsDetailOut],
+) -> list[SkillInventoryItem]:
+    mapping_by_skill = _mapping_by_skill(mapping_rows)
+    runtime_agents_by_skill: dict[str, list[str]] = {}
+    for agent_slug, detail in details_by_agent.items():
+        for item in detail.runtime_skills:
+            runtime_agents_by_skill.setdefault(item.slug, []).append(agent_slug)
+
+    inventory: list[SkillInventoryItem] = []
+    for item in global_skills:
+        inventory.append(
+            SkillInventoryItem(
+                slug=item.slug,
+                name=item.name,
+                description=item.description,
+                path=item.path,
+                scope=item.scope,
+                mapped_agents=list(mapping_by_skill.get(item.slug) or []),
+                runtime_agents=sorted(set(runtime_agents_by_skill.get(item.slug) or [])),
+            )
+        )
+
+    for group in workspace_groups:
+        for item in group.skills:
+            inventory.append(
+                SkillInventoryItem(
+                    slug=item.slug,
+                    name=item.name,
+                    description=item.description,
+                    path=item.path,
+                    scope=item.scope,
+                    agent_slug=group.agent_slug,
+                )
+            )
+
+    for agent_slug, detail in details_by_agent.items():
+        for item in detail.runtime_skills:
+            inventory.append(
+                SkillInventoryItem(
+                    slug=item.slug,
+                    name=item.name,
+                    description=item.description,
+                    path=item.path,
+                    scope=item.scope,
+                    agent_slug=agent_slug,
+                    runtime_agents=[agent_slug],
+                )
+            )
+
+    return inventory
+
+
+def _build_skills_report(
+    *,
+    ordered_agents: list[str],
+    global_skills: list[SkillItem],
+    workspace_groups: list[WorkspaceSkillGroup],
+    mapping_rows: list[AgentSkillMappingOut],
+    details_by_agent: dict[str, AgentSkillsDetailOut],
+) -> SkillsReportOut:
+    total_agents = len(ordered_agents)
+    total_global_skills = len(global_skills)
+    total_workspace_skills = sum(len(group.skills) for group in workspace_groups)
+    total_runtime_skills = sum(len(detail.runtime_skills) for detail in details_by_agent.values())
+    total_mappings = len(mapping_rows)
+    mapped_agents = sum(1 for detail in details_by_agent.values() if detail.mapped_global_skills)
+    workspace_agents = sum(1 for detail in details_by_agent.values() if detail.workspace_skills)
+    runtime_override_agents = sum(
+        1
+        for detail in details_by_agent.values()
+        if detail.runtime_config.extra_dirs or detail.runtime_config.allow_bundled or detail.runtime_config.native_skills_mode
+    )
+    coverage_ratio = float(mapped_agents) / float(max(total_agents, 1))
+
+    all_drifts: list[SkillsDriftItem] = []
+    for detail in details_by_agent.values():
+        all_drifts.extend(detail.drift)
+
+    drift_total = len(all_drifts)
+    drift_agents = len({item.agent_slug for item in all_drifts if item.agent_slug})
+    coverage_pct = int(round(coverage_ratio * 100.0))
+
+    metrics = [
+        SkillsMetricOut(
+            key="agents-covered",
+            label="Mapped Coverage",
+            value=f"{mapped_agents}/{total_agents}",
+            tone="ok" if coverage_ratio >= 0.75 else "warn" if coverage_ratio >= 0.4 else "error",
+            detail=f"{coverage_pct}% of agents have mapped global skills.",
+        ),
+        SkillsMetricOut(
+            key="workspace-skills",
+            label="Workspace Skills",
+            value=str(total_workspace_skills),
+            tone="neutral",
+            detail=f"Across {workspace_agents} agent home(s).",
+        ),
+        SkillsMetricOut(
+            key="runtime-overrides",
+            label="Runtime Overrides",
+            value=str(runtime_override_agents),
+            tone="warn" if runtime_override_agents else "neutral",
+            detail=f"Agents with nativeSkills/allowBundled/extraDirs configured: {runtime_override_agents}.",
+        ),
+        SkillsMetricOut(
+            key="drift-total",
+            label="Drift",
+            value=str(drift_total),
+            tone="error" if drift_total else "ok",
+            detail=f"Detected across {drift_agents} agent(s).",
+        ),
+    ]
+
+    return SkillsReportOut(
+        generated_at=datetime.now(timezone.utc),
+        total_agents=total_agents,
+        total_global_skills=total_global_skills,
+        total_workspace_skills=total_workspace_skills,
+        total_runtime_skills=total_runtime_skills,
+        total_mappings=total_mappings,
+        mapped_agents=mapped_agents,
+        workspace_agents=workspace_agents,
+        runtime_override_agents=runtime_override_agents,
+        coverage_ratio=coverage_ratio,
+        drift_total=drift_total,
+        pending_restart_agents=[],
+        metrics=metrics,
+        drift=all_drifts,
+    )
+
+
+async def _load_skills_snapshot(
+    settings: Settings,
+    session,
+    *,
+    agent_slug: str | None = None,
+) -> tuple[
+    list[str],
+    dict[str, str],
+    list[SkillItem],
+    list[WorkspaceSkillGroup],
+    list[AgentSkillMappingOut],
+    dict[str, AgentSkillsDetailOut],
+]:
+    mapping_rows = await _fetch_skill_mapping_rows(session, agent_slug=agent_slug)
+    global_skills = _scan_global_skills(settings)
+    workspace_groups = _scan_workspace_skills(settings, agent_slug=agent_slug)
+    workspace_by_agent = {group.agent_slug: list(group.skills) for group in workspace_groups}
+    global_by_slug = {item.slug: item for item in global_skills}
+    mapping_groups = _mapping_by_agent(mapping_rows)
+    label_map = _agent_label_map(settings)
+
+    extra_slugs = list(mapping_groups.keys()) + [group.agent_slug for group in workspace_groups]
+    if agent_slug:
+        ordered_agents = [agent_slug]
+    else:
+        ordered_agents = _ordered_agent_slugs(settings, extra_slugs=extra_slugs)
+
+    details_by_agent = {
+        slug: _build_agent_skills_detail(
+            settings,
+            agent_slug=slug,
+            label_map=label_map,
+            global_by_slug=global_by_slug,
+            workspace_by_agent=workspace_by_agent,
+            mapping_by_agent=mapping_groups,
+        )
+        for slug in ordered_agents
+    }
+
+    return ordered_agents, label_map, global_skills, workspace_groups, mapping_rows, details_by_agent
 
 
 async def _forward_agent_control(
@@ -2205,6 +2729,42 @@ def create_app() -> FastAPI:
             },
         )
 
+    async def enqueue_local_event(
+        session,
+        *,
+        event_type: str,
+        agent: str | None = None,
+        task_id: UUID | None = None,
+        payload: dict | None = None,
+    ) -> dict:
+        stmt = (
+            events.insert()
+            .values(
+                id=uuid4(),
+                type=event_type,
+                agent=agent,
+                task_id=task_id,
+                payload=payload or {},
+            )
+            .returning(
+                events.c.id,
+                events.c.type,
+                events.c.agent,
+                events.c.task_id,
+                events.c.payload,
+                events.c.created_at,
+            )
+        )
+        row = (await session.execute(stmt)).one()
+        return {
+            "id": str(row.id),
+            "type": row.type,
+            "agent": row.agent,
+            "task_id": str(row.task_id) if row.task_id else None,
+            "payload": row.payload,
+            "created_at": row.created_at.isoformat(),
+        }
+
     @app.get("/health", response_model=Health)
     async def healthcheck() -> Health:
         return Health(ok=True)
@@ -2449,6 +3009,177 @@ def create_app() -> FastAPI:
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
     ) -> list[WorkspaceSkillGroup]:
         return _scan_workspace_skills(settings, agent_slug=agent_slug)
+
+    @app.get("/v1/skills/inventory", response_model=list[SkillInventoryItem])
+    async def get_skill_inventory(
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> list[SkillInventoryItem]:
+        _, _, global_skills, workspace_groups, mapping_rows, details_by_agent = await _load_skills_snapshot(
+            settings,
+            session,
+        )
+        return _build_skill_inventory(
+            global_skills=global_skills,
+            workspace_groups=workspace_groups,
+            mapping_rows=mapping_rows,
+            details_by_agent=details_by_agent,
+        )
+
+    @app.get("/v1/skills/report", response_model=SkillsReportOut)
+    async def get_skills_report(
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> SkillsReportOut:
+        ordered_agents, _, global_skills, workspace_groups, mapping_rows, details_by_agent = await _load_skills_snapshot(
+            settings,
+            session,
+        )
+        return _build_skills_report(
+            ordered_agents=ordered_agents,
+            global_skills=global_skills,
+            workspace_groups=workspace_groups,
+            mapping_rows=mapping_rows,
+            details_by_agent=details_by_agent,
+        )
+
+    @app.get("/v1/skills/agents", response_model=list[AgentSkillsDetailOut])
+    async def get_agent_skills_details(
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> list[AgentSkillsDetailOut]:
+        ordered_agents, _, _, _, _, details_by_agent = await _load_skills_snapshot(settings, session)
+        return [details_by_agent[slug] for slug in ordered_agents if slug in details_by_agent]
+
+    @app.get("/v1/skills/agents/{agent_slug}", response_model=AgentSkillsDetailOut)
+    async def get_agent_skills_detail(
+        agent_slug: str,
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> AgentSkillsDetailOut:
+        slug = str(agent_slug or "").strip()
+        if not slug:
+            raise HTTPException(status_code=400, detail="agent_slug is required")
+
+        _, _, _, _, _, details_by_agent = await _load_skills_snapshot(settings, session, agent_slug=slug)
+        detail = details_by_agent.get(slug)
+        if detail is None:
+            raise HTTPException(status_code=404, detail=f"unknown agent: {slug}")
+        return detail
+
+    @app.patch("/v1/skills/runtime-config", response_model=AgentSkillRuntimeConfigPatchOut)
+    async def patch_skill_runtime_config(
+        body: AgentSkillRuntimeConfigPatchIn,
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> AgentSkillRuntimeConfigPatchOut:
+        agent_slug = str(body.agent_slug or "").strip()
+        if not agent_slug:
+            raise HTTPException(status_code=400, detail="agent_slug is required")
+
+        payload, config_exists, parse_error = _load_agent_runtime_payload(settings, agent_slug)
+        if not config_exists:
+            raise HTTPException(status_code=404, detail=f"runtime config not found for agent: {agent_slug}")
+        if parse_error:
+            raise HTTPException(status_code=422, detail=parse_error)
+
+        config_path = _agent_config_path(settings, agent_slug)
+        agent_home = _agent_home_dir(settings, agent_slug)
+        before_runtime = _runtime_config_from_payload(settings, agent_slug, payload, config_exists=True)
+
+        working = dict(payload)
+        updated = False
+
+        if body.native_skills_mode is not None:
+            commands = dict(working.get("commands") or {}) if isinstance(working.get("commands"), dict) else {}
+            normalized_mode = str(body.native_skills_mode or "").strip()
+            if normalized_mode:
+                if commands.get("nativeSkills") != normalized_mode:
+                    updated = True
+                commands["nativeSkills"] = normalized_mode
+            elif "nativeSkills" in commands:
+                commands.pop("nativeSkills", None)
+                updated = True
+            if commands:
+                working["commands"] = commands
+            else:
+                working.pop("commands", None)
+
+        if body.allow_bundled is not None or body.extra_dirs is not None:
+            skills = dict(working.get("skills") or {}) if isinstance(working.get("skills"), dict) else {}
+
+            if body.allow_bundled is not None:
+                normalized_allow_bundled = _normalize_string_list(body.allow_bundled)
+                previous_allow_bundled = _normalize_string_list(skills.get("allowBundled"))
+                if previous_allow_bundled != normalized_allow_bundled:
+                    updated = True
+                if normalized_allow_bundled:
+                    skills["allowBundled"] = normalized_allow_bundled
+                else:
+                    skills.pop("allowBundled", None)
+
+            if body.extra_dirs is not None:
+                normalized_extra_dirs: list[str] = []
+                for raw_path in _normalize_string_list(body.extra_dirs):
+                    resolved = _resolve_runtime_dir(settings, agent_slug, raw_path)
+                    if not resolved.exists() or not resolved.is_dir():
+                        raise HTTPException(status_code=422, detail=f"extra_dirs path must exist and be a directory: {raw_path}")
+                    normalized_extra_dirs.append(raw_path)
+
+                load = dict(skills.get("load") or {}) if isinstance(skills.get("load"), dict) else {}
+                previous_extra_dirs = _normalize_string_list(load.get("extraDirs"))
+                if previous_extra_dirs != normalized_extra_dirs:
+                    updated = True
+                if normalized_extra_dirs:
+                    load["extraDirs"] = normalized_extra_dirs
+                else:
+                    load.pop("extraDirs", None)
+
+                if load:
+                    skills["load"] = load
+                else:
+                    skills.pop("load", None)
+
+            if skills:
+                working["skills"] = skills
+            else:
+                working.pop("skills", None)
+
+        if updated:
+            try:
+                config_path.write_text(json.dumps(working, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            except OSError as exc:
+                raise HTTPException(status_code=500, detail=f"failed to write runtime config: {exc}")
+
+        after_runtime = _runtime_config_from_payload(settings, agent_slug, working, config_exists=True)
+
+        queued_event: dict | None = None
+        if updated:
+            queued_event = await enqueue_local_event(
+                session,
+                event_type="skill.runtime_config.updated",
+                agent=agent_slug,
+                payload={
+                    "before": before_runtime.model_dump(),
+                    "after": after_runtime.model_dump(),
+                },
+            )
+            await session.commit()
+            await publish_event(redis, stream_key=settings.redis_stream_key, event=queued_event)
+
+        _, _, _, _, _, details_by_agent = await _load_skills_snapshot(settings, session, agent_slug=agent_slug)
+        detail = details_by_agent[agent_slug]
+        return AgentSkillRuntimeConfigPatchOut(
+            updated=updated,
+            agent_slug=agent_slug,
+            runtime_config=detail.runtime_config,
+            drift=detail.drift,
+            restart_hint=(
+                "Runtime config saved. Restart the affected agent container to apply changes."
+                if updated
+                else "No runtime-config changes were applied."
+            ),
+        )
 
     @app.get("/v1/usage/agents", response_model=list[AgentUsageSnapshotOut])
     async def get_agent_usage_snapshot(
@@ -5105,16 +5836,7 @@ def create_app() -> FastAPI:
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
         session=Depends(get_session),
     ) -> list[AgentSkillMappingOut]:
-        stmt = sa.select(
-            agent_skill_mappings.c.id,
-            agent_skill_mappings.c.agent_slug,
-            agent_skill_mappings.c.skill_slug,
-            agent_skill_mappings.c.created_at,
-        ).order_by(agent_skill_mappings.c.agent_slug.asc(), agent_skill_mappings.c.skill_slug.asc())
-        if agent_slug:
-            stmt = stmt.where(agent_skill_mappings.c.agent_slug == agent_slug)
-        rows = (await session.execute(stmt)).all()
-        return [AgentSkillMappingOut(**row._asdict()) for row in rows]
+        return await _fetch_skill_mapping_rows(session, agent_slug=agent_slug)
 
     @app.patch("/v1/skills/mappings", response_model=SkillsMappingPatchOut)
     async def patch_skill_mappings(
@@ -5258,7 +5980,20 @@ def create_app() -> FastAPI:
                 result = await session.execute(delete_stmt)
                 updated += int(result.rowcount or 0)
 
+        queued_event: dict | None = await enqueue_local_event(
+            session,
+            event_type="skill.mapping.updated",
+            payload={
+                "agent_slugs": valid_agents,
+                "add_skill_slugs": valid_add_skill_slugs,
+                "remove_skill_slugs": valid_remove_skill_slugs,
+                "updated": updated,
+                "failed_count": len(failed),
+            },
+        )
         await session.commit()
+
+        await publish_event(redis, stream_key=settings.redis_stream_key, event=queued_event)
 
         return SkillsMappingPatchOut(
             updated=updated,

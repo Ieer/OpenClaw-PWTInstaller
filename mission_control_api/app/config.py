@@ -19,6 +19,7 @@ class Settings(BaseModel):
     redis_stream_key: str = "mc:events"
     global_skills_dir: str = "/data/global-skills"
     agent_homes_dir: str = "/data/agent-homes"
+    workspaces_dir: str = "/data/workspaces"
     knowledge_raw_sources_dir: str = "/data/knowledge-sources"
     knowledge_embedding_enabled: bool = False
     knowledge_embedding_model: str | None = None
@@ -80,6 +81,7 @@ def load_settings() -> Settings:
         redis_stream_key=os.getenv("MC_REDIS_STREAM_KEY") or "mc:events",
         global_skills_dir=os.getenv("MC_GLOBAL_SKILLS_DIR") or "/data/global-skills",
         agent_homes_dir=os.getenv("MC_AGENT_HOMES_DIR") or "/data/agent-homes",
+        workspaces_dir=os.getenv("MC_WORKSPACES_DIR") or "/data/workspaces",
         knowledge_raw_sources_dir=os.getenv("MC_KNOWLEDGE_RAW_SOURCES_DIR") or "/data/knowledge-sources",
         knowledge_embedding_enabled=_env_flag("MC_KNOWLEDGE_EMBEDDING_ENABLED", False),
         knowledge_embedding_model=(os.getenv("MC_KNOWLEDGE_EMBEDDING_MODEL") or "").strip() or None,

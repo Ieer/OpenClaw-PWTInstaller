@@ -203,6 +203,88 @@ class SkillsMappingPatchOut(BaseModel):
     failed: list[SkillsMappingFailureItem] = Field(default_factory=list)
 
 
+class SkillsDriftItem(BaseModel):
+    severity: str
+    category: str
+    agent_slug: str | None = None
+    skill_slug: str | None = None
+    path: str | None = None
+    message: str
+
+
+class SkillsMetricOut(BaseModel):
+    key: str
+    label: str
+    value: str
+    tone: str = "neutral"
+    detail: str | None = None
+
+
+class SkillInventoryItem(BaseModel):
+    slug: str
+    name: str
+    description: str | None = None
+    path: str
+    scope: str
+    agent_slug: str | None = None
+    mapped_agents: list[str] = Field(default_factory=list)
+    runtime_agents: list[str] = Field(default_factory=list)
+
+
+class AgentSkillRuntimeConfigOut(BaseModel):
+    agent_slug: str
+    config_path: str
+    config_exists: bool
+    native_skills_mode: str | None = None
+    allow_bundled: list[str] = Field(default_factory=list)
+    extra_dirs: list[str] = Field(default_factory=list)
+
+
+class AgentSkillRuntimeConfigPatchIn(BaseModel):
+    agent_slug: str
+    native_skills_mode: str | None = None
+    allow_bundled: list[str] | None = None
+    extra_dirs: list[str] | None = None
+
+
+class AgentSkillRuntimeConfigPatchOut(BaseModel):
+    updated: bool
+    agent_slug: str
+    runtime_config: AgentSkillRuntimeConfigOut
+    drift: list[SkillsDriftItem] = Field(default_factory=list)
+    restart_hint: str
+
+
+class AgentSkillsDetailOut(BaseModel):
+    agent_slug: str
+    label: str
+    enabled: bool = True
+    mapped_global_skills: list[SkillItem] = Field(default_factory=list)
+    workspace_skills: list[SkillItem] = Field(default_factory=list)
+    runtime_skills: list[SkillItem] = Field(default_factory=list)
+    runtime_config: AgentSkillRuntimeConfigOut
+    drift: list[SkillsDriftItem] = Field(default_factory=list)
+    restart_required: bool = False
+    restart_hint: str = ""
+
+
+class SkillsReportOut(BaseModel):
+    generated_at: datetime
+    total_agents: int
+    total_global_skills: int
+    total_workspace_skills: int
+    total_runtime_skills: int
+    total_mappings: int
+    mapped_agents: int
+    workspace_agents: int
+    runtime_override_agents: int
+    coverage_ratio: float
+    drift_total: int
+    pending_restart_agents: list[str] = Field(default_factory=list)
+    metrics: list[SkillsMetricOut] = Field(default_factory=list)
+    drift: list[SkillsDriftItem] = Field(default_factory=list)
+
+
 class KnowledgeSourceImportIn(BaseModel):
     source_type: str = "file"
     title: str
