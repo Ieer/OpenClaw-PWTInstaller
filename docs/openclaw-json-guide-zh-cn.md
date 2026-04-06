@@ -870,43 +870,20 @@ Ollama API error 500: model requires more system memory
 
 ---
 
-## 23. 常用命令
+## 23. 命令入口
 
-### 校验配置
+为了避免这篇配置说明和 CLI 文档两处重复维护，命令总览不再在本文单独展开。
 
-```bash
-openclaw config validate
-```
+统一入口如下：
 
-### 修复部分配置问题
+- 想看 OpenClaw 2026.3.28 的初始化、配置、模型、agent、gateway、运维与安全命令总览，直接看 [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md)
+- 想看 8-Agent Panopticon 的 compose、巡检、恢复和主路线运维命令，直接看 [../panopticon/README.md](../panopticon/README.md)
 
-```bash
-openclaw doctor --fix
-```
+本文正文里仍然保留少量命令示例，但只限于解释 `openclaw.json` 字段时必需的上下文，例如：
 
-### 查看模型状态
-
-```bash
-openclaw models status
-```
-
-### 查看模型列表
-
-```bash
-openclaw models list
-```
-
-### 普通安装重启 gateway
-
-```bash
-openclaw gateway restart
-```
-
-### Panopticon 中重启某个 Agent
-
-```bash
-docker restart openclaw-nox
-```
+- 配置修复：`openclaw doctor --fix`
+- 配置生效后的重启：`openclaw gateway restart`
+- Panopticon 场景中的容器重启：`docker restart openclaw-nox`
 
 ---
 
@@ -949,6 +926,6 @@ docker restart openclaw-nox
 
 ---
 
-**文档版本**：1.1  
+**文档版本**：1.2  
 **适合人群**：OpenClaw / Panopticon 新手用户  
-**最后更新**：2026-03-21
+**最后更新**：2026-04-06

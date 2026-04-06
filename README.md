@@ -123,6 +123,7 @@ docker compose -f panopticon/docker-compose.panopticon.yml up -d
 | --- | --- |
 | 第一次进入仓库，想 15 分钟跑通最小安装 | [docs/new-user-15-minute-install-checklist-zh-cn.md](docs/new-user-15-minute-install-checklist-zh-cn.md) |
 | 快速安装单 Agent | [README.md](README.md) 当前页 + [docs/openclaw-json-guide-zh-cn.md](docs/openclaw-json-guide-zh-cn.md) |
+| 查 OpenClaw CLI 生命周期命令 | [docs/openclaw-cli-cheatsheet-zh-cn.md](docs/openclaw-cli-cheatsheet-zh-cn.md) |
 | 搭建 8-Agent 主路线 | [panopticon/README.md](panopticon/README.md) |
 | 理解 Mission Control 工程设计 | [docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md) |
 | 理解知识系统治理 | [docs/knowledge-system-playbook-zh-cn.md](docs/knowledge-system-playbook-zh-cn.md) |
