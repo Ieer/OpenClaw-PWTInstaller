@@ -94,7 +94,7 @@ docker compose -f panopticon/docker-compose.panopticon.yml up -d
 - 多模型接入：Claude、OpenAI、Gemini、OpenRouter、Ollama 等。
 - 多渠道接入：Telegram、Discord、Feishu、WhatsApp。
 - 多 Agent 运行时：nox、metrics、email、growth、trades、health、writing、personal。
-- 统一控制面：Mission Control UI、事件流、任务板、同源聊天入口。
+- 统一控制面：Mission Control UI、事件流、任务板、同源聊天入口。UI 里的 Agents 状态只分两档：`RECENT` 表示最近 30 分钟内有活动，`IDLE` 表示更久未见活动，状态色现在收敛到头像上。
 - 知识系统：原始资料导入、切片、OCR、validation policy、resolve、审计与回流。
 - 工程化工具：manifest 生成、skills 校验、最小 CI gate、专项验证脚本。
 

@@ -7,7 +7,7 @@
 ## 这一套东西包含什么
 
 - 8 个隔离的 OpenClaw agent：`nox / metrics / email / growth / trades / health / writing / personal`
-- Mission Control UI：统一入口、状态面板、feed、嵌入式聊天
+- Mission Control UI：统一入口、状态面板、feed、嵌入式聊天。Agents 状态只分两档：`RECENT` 表示最近 30 分钟内有活动，`IDLE` 表示更久未见活动；状态色体现在头像上，不再单独占用右侧状态块。
 - Mission Control API：事件、任务、chat 代理、knowledge API
 - Mission Control Gateway：同源入口，统一承载 `/` 与 `/chat/<agent>/`
 - manifest、env 模板、生成器、校验器和运维脚本
