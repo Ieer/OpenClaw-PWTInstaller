@@ -872,7 +872,7 @@ def agent_card(agent):
     return html.Div(
         className="agent-card",
         children=[
-            html.Div(className="agent-avatar", children=agent["name"][0]),
+            html.Div(className=f"agent-avatar status-{status}", children=agent["name"][0]),
             html.Div(
                 className="agent-meta",
                 children=[
@@ -885,13 +885,6 @@ def agent_card(agent):
                     ),
                     html.Div(agent["role"], className="agent-role"),
                     html.Div(agent.get("usage_text") or "Usage 24h 0 · 7d 0 · Cost $0.0000", className="agent-usage"),
-                ],
-            ),
-            html.Div(
-                className=f"agent-status status-{status}",
-                children=[
-                    html.Span(className="status-dot"),
-                    html.Span(agent["status"], className="status-text"),
                 ],
             ),
         ],

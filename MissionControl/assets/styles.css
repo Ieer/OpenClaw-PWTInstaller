@@ -28,11 +28,17 @@ body {
   background: radial-gradient(circle at top, #fff7ea 0%, #f5efe5 40%, #efe4d6 100%);
   color: var(--ink);
   font-family: "Space Grotesk", system-ui, sans-serif;
+  overflow: hidden;
 }
 
 .page {
   min-height: 100vh;
+  height: 100vh;
   padding: 24px 28px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow: hidden;
 }
 
 .topbar {
@@ -251,7 +257,8 @@ body {
   display: grid;
   grid-template-columns: 240px 1fr 300px;
   gap: 18px;
-  margin-top: 20px;
+  flex: 1;
+  min-height: 0;
 }
 
 .panel {
@@ -260,6 +267,10 @@ body {
   border-radius: 20px;
   padding: 16px;
   box-shadow: 0 14px 32px var(--shadow);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .panel-title {
@@ -269,6 +280,7 @@ body {
   gap: 8px;
   font-weight: 700;
   margin-bottom: 12px;
+  flex: 0 0 auto;
 }
 
 .panel-count {
@@ -304,13 +316,18 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .agent-card {
   display: grid;
-  grid-template-columns: 36px 1fr auto;
+  grid-template-columns: 36px minmax(0, 1fr);
   gap: 10px;
-  align-items: center;
+  align-items: start;
   padding: 10px;
   border-radius: 14px;
   background: var(--cream);
@@ -326,22 +343,39 @@ body {
   display: grid;
   place-items: center;
   font-weight: 700;
+  transition: background 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.agent-avatar.status-idle {
+  background: #b49a73;
+  box-shadow: 0 0 0 4px rgba(180, 154, 115, 0.16);
+}
+
+.agent-avatar.status-recent {
+  background: #3bb273;
+  box-shadow: 0 0 0 4px rgba(59, 178, 115, 0.16);
 }
 
 .agent-meta {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .agent-header {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .agent-name {
   font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agent-badge {
@@ -363,50 +397,17 @@ body {
   opacity: 0.95;
 }
 
-.agent-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  color: #2f6f3e;
-  text-transform: uppercase;
-  font-weight: 700;
-  letter-spacing: 0.6px;
-}
-
-.agent-status.status-idle {
-  color: #8a6a42;
-}
-
-.agent-status.status-idle .status-dot {
-  background: #b49a73;
-  box-shadow: 0 0 0 4px rgba(180, 154, 115, 0.2);
-}
-
-.agent-status.status-recent {
-  color: #2f6f3e;
-}
-
-.agent-status.status-recent .status-dot {
-  background: #3bb273;
-  box-shadow: 0 0 0 4px rgba(59, 178, 115, 0.2);
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  background: #3bb273;
-  border-radius: 50%;
-  display: inline-block;
-  box-shadow: 0 0 0 4px rgba(59, 178, 115, 0.2);
-}
-
 .board {
   display: grid;
   grid-template-columns: repeat(5, minmax(180px, 1fr));
   gap: 12px;
-  overflow-x: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
   padding-bottom: 4px;
+  align-content: start;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .board-column {
@@ -528,6 +529,11 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .feed-item {
@@ -1561,6 +1567,16 @@ body {
 }
 
 @media (max-width: 1200px) {
+  body {
+    overflow: auto;
+  }
+
+  .page {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
   .topbar-row {
     align-items: flex-start;
     flex-direction: column;
@@ -1576,6 +1592,9 @@ body {
 
   .main {
     grid-template-columns: 1fr;
+    flex: none;
+    min-height: auto;
+    overflow: visible;
   }
 
   .panel.left,
@@ -1585,6 +1604,27 @@ body {
 
   .panel.center {
     order: 1;
+  }
+
+  .panel {
+    display: block;
+    overflow: visible;
+    min-height: auto;
+  }
+
+  .agent-list,
+  .board,
+  .feed {
+    flex: none;
+    min-height: auto;
+    overflow: visible;
+    scrollbar-gutter: auto;
+    overscroll-behavior: auto;
+  }
+
+  .board {
+    overflow-x: auto;
+    overflow-y: visible;
   }
 
   .skills-grid,
