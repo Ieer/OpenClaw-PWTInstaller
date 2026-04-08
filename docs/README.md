@@ -11,6 +11,7 @@
 | 搭建 8-Agent 主路线 | [../panopticon/README.md](../panopticon/README.md) |
 | 理解 Mission Control 的落地方式 | [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md) |
 | 理解知识系统导入与治理 | [knowledge-system-playbook-zh-cn.md](knowledge-system-playbook-zh-cn.md) |
+| 想看任务编排模板和具体示例 | [task-orchestration-templates-zh-cn.md](task-orchestration-templates-zh-cn.md) |
 | 需要一份 CLI 生命周期速查表 | [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md) |
 | 配飞书消息渠道 | [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md) |
 | 看 openclaw.json 实际写法 | [openclaw-json-guide-zh-cn.md](openclaw-json-guide-zh-cn.md) |
@@ -46,6 +47,7 @@
 | [agent-evaluation-contract-zh-cn.md](agent-evaluation-contract-zh-cn.md) | 8-Agent 共用评估调用规范 | 统一 resolve / review 契约时 |
 | [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md) | 中文落地手册 | 想按工程视角搭系统时 |
 | [knowledge-system-playbook-zh-cn.md](knowledge-system-playbook-zh-cn.md) | 知识系统实施手册 | 做资料导入、chunk、policy、resolve 时 |
+| [task-orchestration-templates-zh-cn.md](task-orchestration-templates-zh-cn.md) | 任务编排模板与具体示例 | 想提升任务写法、分工和交接体验时 |
 | [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md) | CLI 全流程速查表 | 需要命令总览、版本对齐与运维基线时 |
 | [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md) | 飞书接入指南 | 配置渠道时 |
 | [openclaw-json-guide-zh-cn.md](openclaw-json-guide-zh-cn.md) | 新手配置说明 | 需要手动理解配置项时 |
