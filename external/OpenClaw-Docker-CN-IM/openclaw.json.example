@@ -93,7 +93,8 @@
       },
       "workspace": "/home/node/.openclaw/workspace",
       "compaction": {
-        "mode": "safeguard"
+        "mode": "safeguard",
+        "reserveTokensFloor": 20000
       },
       "elevatedDefault": "full",
       "maxConcurrent": 4,

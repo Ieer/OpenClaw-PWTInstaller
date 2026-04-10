@@ -25,6 +25,38 @@ def replace_pattern(path: Path, pattern: str, replacement: str) -> None:
     path.write_text(updated, encoding="utf-8")
 
 
+def replace_any_pattern(
+    path: Path,
+    patterns: list[str],
+    replacement: str,
+    *,
+    insert_after_pattern: str | None = None,
+) -> None:
+    content = path.read_text(encoding="utf-8")
+
+    for pattern in patterns:
+        updated, count = re.subn(pattern, replacement, content, count=1, flags=re.MULTILINE)
+        if count == 1:
+            path.write_text(updated, encoding="utf-8")
+            return
+
+    if insert_after_pattern is None:
+        raise ValueError(f"expected exactly one match in {path} for one of {patterns!r}")
+
+    updated, count = re.subn(
+        insert_after_pattern,
+        lambda match: f"{match.group(0)}\n{replacement}",
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if count != 1:
+        raise ValueError(
+            f"expected exactly one anchor match in {path} for {insert_after_pattern!r} when inserting {replacement!r}"
+        )
+    path.write_text(updated, encoding="utf-8")
+
+
 def main() -> None:
     release = load_release()
 
@@ -103,10 +135,14 @@ def main() -> None:
         r'^MISSION_CONTROL_ENABLE_LEGACY_CHAT_PROXY=.+$',
         f'MISSION_CONTROL_ENABLE_LEGACY_CHAT_PROXY={legacy_chat_proxy_enabled}',
     )
-    replace_pattern(
+    replace_any_pattern(
         ROOT / "panopticon" / "env" / "mission-control-ui.env.example",
-        r'^MISSION_CONTROL_ENABLE_DIRECT_AGENT_LINKS=.+$',
-        f'MISSION_CONTROL_ENABLE_DIRECT_AGENT_LINKS={direct_agent_links_enabled}',
+        [
+            r'^MISSION_CONTROL_ENABLE_DIRECT_AGENT_LINKS=.+$',
+            r'^MC_CHAT_ENABLE_DIRECT_AGENT_LINKS=.+$',
+        ],
+        f'MC_CHAT_ENABLE_DIRECT_AGENT_LINKS={direct_agent_links_enabled}',
+        insert_after_pattern=r'^MISSION_CONTROL_ENABLE_LEGACY_CHAT_PROXY=.+$',
     )
     replace_pattern(
         ROOT / "panopticon" / "env" / "mission-control.env.example",

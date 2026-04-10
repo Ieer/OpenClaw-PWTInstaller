@@ -7,7 +7,7 @@
 
 FROM node:22-alpine
 
-ARG OPENCLAW_VERSION=2026.3.28
+ARG OPENCLAW_VERSION=2026.4.9
 
 LABEL maintainer="OpenClaw Community"
 LABEL description="OpenClaw - Your Personal AI Assistant"

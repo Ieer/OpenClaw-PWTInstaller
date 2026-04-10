@@ -45,6 +45,7 @@ if [ ! -f /home/node/.openclaw/openclaw.json ]; then
     OPENCLAW_GATEWAY_AUTH_MODE="${OPENCLAW_GATEWAY_AUTH_MODE:-token}"
     OPENCLAW_GATEWAY_PASSWORD="${OPENCLAW_GATEWAY_PASSWORD}"
     OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH="${OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH:-1}"
+    OPENCLAW_COMPACTION_RESERVE_TOKENS_FLOOR="${OPENCLAW_COMPACTION_RESERVE_TOKENS_FLOOR:-20000}"
     
     # 生成配置文件
     cat > /home/node/.openclaw/openclaw.json <<EOF
@@ -98,7 +99,8 @@ if [ ! -f /home/node/.openclaw/openclaw.json ]; then
       },
       "workspace": "$WORKSPACE",
       "compaction": {
-        "mode": "safeguard"
+        "mode": "safeguard",
+        "reserveTokensFloor": $OPENCLAW_COMPACTION_RESERVE_TOKENS_FLOOR
       },
       "elevatedDefault": "full",
       "maxConcurrent": 4,
@@ -361,6 +363,7 @@ else
   OPENCLAW_GATEWAY_AUTH_MODE="${OPENCLAW_GATEWAY_AUTH_MODE:-token}"
   OPENCLAW_GATEWAY_PASSWORD="${OPENCLAW_GATEWAY_PASSWORD}"
   OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH="${OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH:-1}"
+  OPENCLAW_COMPACTION_RESERVE_TOKENS_FLOOR="${OPENCLAW_COMPACTION_RESERVE_TOKENS_FLOOR:-20000}"
 
   python3 - <<'PY'
 import json
@@ -377,6 +380,7 @@ gateway_port_raw = os.environ.get('OPENCLAW_GATEWAY_PORT', '').strip() or '26216
 gateway_token = os.environ.get('OPENCLAW_GATEWAY_TOKEN', '').strip()
 gateway_auth_mode = os.environ.get('OPENCLAW_GATEWAY_AUTH_MODE', '').strip() or 'token'
 gateway_password = os.environ.get('OPENCLAW_GATEWAY_PASSWORD', '').strip()
+reserve_tokens_floor_raw = os.environ.get('OPENCLAW_COMPACTION_RESERVE_TOKENS_FLOOR', '').strip() or '20000'
 disable_device_auth_raw = os.environ.get('OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH', '').strip().lower()
 disable_device_auth = disable_device_auth_raw not in {'', '0', 'false', 'no', 'off'}
 
@@ -384,6 +388,11 @@ try:
   gateway_port = int(gateway_port_raw)
 except ValueError:
   gateway_port = 26216
+
+try:
+  reserve_tokens_floor = int(reserve_tokens_floor_raw)
+except ValueError:
+  reserve_tokens_floor = 20000
 
 gateway = data.setdefault('gateway', {})
 gateway['port'] = gateway_port
@@ -404,7 +413,13 @@ if gateway_password:
 else:
   auth.pop('password', None)
 
-# OpenClaw 2026.3.28 schema no longer accepts messages.tts.edge.
+agents = data.setdefault('agents', {})
+defaults = agents.setdefault('defaults', {})
+compaction = defaults.setdefault('compaction', {})
+compaction['mode'] = compaction.get('mode', 'safeguard') or 'safeguard'
+compaction['reserveTokensFloor'] = reserve_tokens_floor
+
+# Current OpenClaw schema no longer accepts messages.tts.edge.
 messages = data.get('messages') if isinstance(data.get('messages'), dict) else None
 if messages is not None:
   tts = messages.get('tts') if isinstance(messages.get('tts'), dict) else None

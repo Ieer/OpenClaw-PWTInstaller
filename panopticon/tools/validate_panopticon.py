@@ -182,6 +182,16 @@ def validate_generated_files(manifest: dict) -> list[str]:
 
     if not COMPOSE_PATH.exists():
         errors.append(f"missing generated compose file: {COMPOSE_PATH}")
+    else:
+        compose_text = COMPOSE_PATH.read_text(encoding="utf-8")
+        if "MC_WORKSPACES_DIR: /data/workspaces" not in compose_text:
+            errors.append(
+                "generated compose file is missing MC_WORKSPACES_DIR for mission-control-api"
+            )
+        if "source: ${PANOPTICON_DATA_DIR:-.}/workspaces\n        target: /data/workspaces" not in compose_text:
+            errors.append(
+                "generated compose file is missing PANOPTICON_DATA_DIR workspaces bind for mission-control-api"
+            )
 
     for file_name in sorted(REQUIRED_STATIC_ENV_EXAMPLES):
         env_path = ENV_DIR / file_name
