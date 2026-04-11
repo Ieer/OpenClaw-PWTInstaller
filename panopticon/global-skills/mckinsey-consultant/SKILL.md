@@ -19,6 +19,30 @@ metadata:
 - V3.0: 最小核心 + 按需加载 → 节省70%上下文
 - V3.1: 页面依赖关系标注 → 跨对话续写更智能
 
+## When to Use
+
+- 需要用 McKinsey 风格方法拆解商业问题、形成假设树并输出研究结论时使用。
+- 需要把问题分析、Dummy Pages 设计、逐页内容生成串成统一工作流时使用。
+- 需要在多轮对话中续写同一个分析项目，并保留页面依赖关系时使用。
+
+## Quick Start
+
+- 新项目：让模型从 STEP 1 开始定义问题边界，例如“用 mckinsey-consultant 分析某行业增长机会”。
+- 跨对话续写：提供既有 Dummy Pages 或已完成素材，要求从指定页继续。
+- 首次介绍：如果用户刚添加技能或不熟悉技能，严格按“首次使用引导”里的 4 行话术响应。
+
+## Deliverables
+
+- 问题定义、Issue Tree、Hypotheses 等中间分析产物。
+- 带页面依赖关系标注的 Dummy Pages 设计稿。
+- 按页面逐步生成的 PPT/研究内容，以及需要时的 Word 交付物。
+
+## Execution Rules
+
+- 必须遵守下方 CRITICAL BEHAVIOR RULES，尤其是首次使用响应规则、问题澄清规则和流程启动规则。
+- 详细 references 文档只按需加载，不要预加载全部资料。
+- 逐页生成时保持阶段化处理，用完即释放上下文，避免一次性展开全部页面。
+
 ---
 
 # ⚠️ CRITICAL BEHAVIOR RULES

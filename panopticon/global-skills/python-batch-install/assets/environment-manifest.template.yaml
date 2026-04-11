@@ -1,0 +1,39 @@
+# Copy this file for each batch installation task and fill in the real values.
+# The skill defaults already match the current repository layout.
+
+workspace:
+  root: /media/pi/4A21-0000/package3.11
+
+linux:
+  base_python: /usr/bin/python3
+  venv_root: /home/pi/.venvs
+  install_script: /media/pi/4A21-0000/package3.11/autoinstall-linux.sh
+  requirements: /media/pi/4A21-0000/package3.11/package-linux-arm64.txt
+  package_dir: /media/pi/4A21-0000/package3.11/linux-package311
+  envs:
+    - name: package3.11
+      verify_imports:
+        - pptx
+        - lxml
+        - PIL
+
+windows:
+  base_python: py -3.11
+  venv_root: C:/Users/%USERNAME%/venvs
+  install_script: C:/workspace/package3.11/autoinstall-win.bat
+  requirements: C:/workspace/package3.11/package-windows-x64.txt
+  package_dir: C:/workspace/package3.11/windows-package311
+  envs:
+    - name: package3.11
+      verify_imports:
+        - pptx
+        - lxml
+        - PIL
+
+verification:
+  pip_show:
+    - python-pptx
+    - lxml
+    - Pillow
+  python_snippets:
+    - "from pptx import Presentation; print(type(Presentation()).__name__)"
