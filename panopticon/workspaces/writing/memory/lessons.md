@@ -17,3 +17,5 @@
 - 设计系统可提升复用性（PPTX 技能中 4 种设计系统 + 预渲染组件库）
 - 资源池化可降低重复开销（浏览器池避免频繁启动成本）
 - 测试驱动验证（每个优先级都包含测试验证）
+- 环境适配优先级：优先移除强依赖（如 LibreOffice），改用 Python 原生库（python-pptx + PIL）
+- Debian PEP 668 限制解决方案：使用 `python3 -m pip install --break-system-packages`

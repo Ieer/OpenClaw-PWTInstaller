@@ -6,7 +6,7 @@ user-invocable: true
 disable-model-invocation: false
 ---
 
-# OpenClaw Python Batch Install
+# Python Batch Install
 
 ## When to Use
 

@@ -248,6 +248,9 @@ def render_compose(manifest: dict) -> str:
               - ./env/mission-control.env.example
               - ./env/mission-control.env
               - ./env/mission-control-voice-bridge.env.example
+              - ./env/mission-control-voice-bridge.env
+            environment:
+              MC_API_URL: http://mission-control-api:9090
             volumes:
               - type: bind
                 source: ./tools/voice_ros_event_bridge.py

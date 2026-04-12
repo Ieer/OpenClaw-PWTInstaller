@@ -112,6 +112,10 @@ docker compose -f panopticon/docker-compose.panopticon.yml up -d
 docker compose -f panopticon/docker-compose.panopticon.yml --profile voice up -d mission-control-voice-bridge
 ```
 
+如果你准备联调真实语音设备，优先看 [../docs/voice-device-bringup-zh-cn.md](../docs/voice-device-bringup-zh-cn.md)。
+
+如果你想先做一轮更完整的语音评估，再看 [../docs/voice-device-bringup-zh-cn.md](../docs/voice-device-bringup-zh-cn.md) 里的分层评估脚本 `python panopticon/tools/assess_voice_service.py`。
+
 ### 8. 验收入口
 
 - Mission Control UI：<http://127.0.0.1:18920/>
@@ -191,16 +195,28 @@ bash panopticon/tools/setup_mission_control_autostart.sh --disable
 bash panopticon/tools/check_panopticon_services.sh
 ```
 
-说明：该巡检已集成 voice-bridge E2E（统一入口）。
+说明：该巡检已集成 voice assessment smoke（统一入口）；完整 command closure 请单独跑 `python panopticon/tools/assess_voice_service.py`。
 
-- 默认 `CHECK_VOICE_E2E=auto`：仅当 `mission-control-voice-bridge` 运行时才执行 E2E。
-- `CHECK_VOICE_E2E=1`：强制执行 voice E2E（容器未运行将直接失败）。
-- `CHECK_VOICE_E2E=0`：跳过 voice E2E，仅检查服务运行状态。
+- 默认 `CHECK_VOICE_E2E=auto`：仅当 `mission-control-voice-bridge` 运行时才执行 voice assessment smoke。
+- `CHECK_VOICE_E2E=1`：强制执行 voice assessment smoke（容器未运行将直接失败）。
+- `CHECK_VOICE_E2E=0`：跳过 voice assessment smoke，仅检查服务运行状态。
 
 示例：
 
 ```bash
 CHECK_VOICE_E2E=1 bash panopticon/tools/check_panopticon_services.sh
+```
+
+联调真实设备时，建议再跑一遍 live 检查：
+
+```bash
+bash panopticon/tools/check_voice_bridge_live.sh
+```
+
+如果你要的是“整体语音服务是否可用”，先跑：
+
+```bash
+python panopticon/tools/assess_voice_service.py
 ```
 
 一键巡检 8 个 Agent 端点（Gateway 按 HTTP、Bridge 按 TCP）：

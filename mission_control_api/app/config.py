@@ -47,6 +47,9 @@ class Settings(BaseModel):
     agent_controller_url: str = "http://mission-control-agent-controller:9091"
     agent_controller_auth_token: str | None = None
     agent_controller_timeout_seconds: float = 5.0
+    voice_commands_enabled: bool = True
+    voice_command_require_prefix: bool = True
+    voice_command_prefixes: list[str] = []
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -113,4 +116,11 @@ def load_settings() -> Settings:
         agent_controller_url=(os.getenv("MC_AGENT_CONTROLLER_URL") or "http://mission-control-agent-controller:9091").strip(),
         agent_controller_auth_token=(os.getenv("MC_AGENT_CONTROLLER_AUTH_TOKEN") or "").strip() or None,
         agent_controller_timeout_seconds=float((os.getenv("MC_AGENT_CONTROLLER_TIMEOUT_SECONDS") or "5.0").strip()),
+        voice_commands_enabled=_env_flag("MC_VOICE_COMMANDS_ENABLED", True),
+        voice_command_require_prefix=_env_flag("MC_VOICE_COMMAND_REQUIRE_PREFIX", True),
+        voice_command_prefixes=[
+            item.strip()
+            for item in (os.getenv("MC_VOICE_COMMAND_PREFIXES") or "指挥,mission control,control").split(",")
+            if item.strip()
+        ],
     )

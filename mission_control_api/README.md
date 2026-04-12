@@ -11,6 +11,7 @@ Mission Control API 是 Panopticon 主路线的后端中枢，负责把多 Agent
 
 - REST：健康检查、任务板、评论、活动流、skills mapping、usage 聚合。
 - Chat 代理：同源 HTTP / WebSocket 代理到各个 agent。
+- Voice command adapter：可选把 `voice.asr.final` 中的显式命令语法翻译成任务创建、评论、状态流转、handoff 与 agent 控制事件。
 - Knowledge API：source、chunk、OCR、validation、resolve、feedback、lifecycle。
 - 实时事件：通过 Redis Streams 向 Mission Control UI 提供事件流。
 - 数据存储：Postgres 为主，Redis 为实时流与缓存。
@@ -52,6 +53,7 @@ curl -fsS http://127.0.0.1:18910/health
 
 - 健康检查
 - board / feed / tasks / comments
+- voice-driven task / handoff / status / comment orchestration（通过 `/v1/events` 写入 `voice.asr.final`）
 - skills mapping
 - usage 聚合
 - agent catalog
@@ -97,5 +99,6 @@ alembic downgrade -1
 ## 延伸阅读
 
 - 主路线启动与运维：[../panopticon/README.md](../panopticon/README.md)
+- 真实语音设备联调：[../docs/voice-device-bringup-zh-cn.md](../docs/voice-device-bringup-zh-cn.md)
 - 工程落地手册：[../docs/mission-control-playbook-zh-cn.md](../docs/mission-control-playbook-zh-cn.md)
 - 知识系统手册：[../docs/knowledge-system-playbook-zh-cn.md](../docs/knowledge-system-playbook-zh-cn.md)

@@ -355,6 +355,27 @@
 }
 ```
 
+## 语音直控 Mission Control
+
+如果你已经启用了语音桥接，现在也可以直接用显式命令语法驱动 Mission Control。
+
+默认建议带命令前缀，避免把普通对话误判成控制指令。仓库默认前缀是：`指挥`、`mission control`、`control`。
+
+### 推荐口令
+
+- `指挥 创建任务 给 metrics：统计过去 7 天各 Agent 活跃度；标签：reporting,panopticon`
+- `指挥 评论任务 3fa2c1d0：请先给结论，再给依据`
+- `指挥 任务 3fa2c1d0 状态设为 REVIEW`
+- `指挥 转交任务 3fa2c1d0 给 writing；问题：整理成可发布周报；上下文：metrics 已完成基础数据；交付：一页摘要；附件：artifact://weekly-review`
+- `指挥 重启 agent nox`
+
+### 使用边界
+
+- 任务 ID 支持完整 UUID，也支持唯一前缀。
+- `handoff` 需要显式给出 `问题`、`上下文`、`交付` 和 `附件`，否则会被拒绝执行。
+- `agent control` 仍受高风险开关约束；如果没启用 `mission-control-agent-controller`，语音命令会进入拒绝事件，不会强行执行。
+- 执行结果会写回 feed，包含 `voice.command.executed` 或 `voice.command.rejected`，方便审计。
+
 ### 小脚本：一键创建任务
 
 如果你经常要手动发任务，可以直接把下面这段保存成 `create-task.sh`，或者原样复制到终端执行。它会先加载本地 `mission-control.env`，再带着 `MC_AUTH_TOKEN` 调用任务接口，避免手动漏掉 Bearer token。

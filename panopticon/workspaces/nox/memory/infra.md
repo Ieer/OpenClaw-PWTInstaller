@@ -1,5 +1,15 @@
 # infra.md (nox)
 
+## Python 环境
+
+- **Python**: 3.11 (`/usr/bin/python3`), Debian 系, 无 sudo
+- **pip**: 用户级安装 (`/home/node/.local/bin/pip3`), 需手动加 PATH
+- **离线包**: `/mnt/usb/package3.11/linux-package311/` (198 whl, arm64)
+- **一键恢复**: `BREAK_SYSTEM_PACKAGES=1 /mnt/usb/package3.11/autoinstall-linux.sh`
+- **pip 安装**: `python3 /home/node/get-pip.py --user --break-system-packages`
+- **bypy**: 需授权, token 写入 `/home/node/.bypy/bypy.json`
+- **已知不兼容**: python-pptx 0.6.21 + Python 3.11 = collections.abc 报错
+
 ## Integrations
 
 - 产品/工程数据源与任务协作系统（按实际接入维护）

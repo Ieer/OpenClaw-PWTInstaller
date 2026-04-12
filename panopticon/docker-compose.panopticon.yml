@@ -137,6 +137,9 @@ services:
       - ./env/mission-control.env.example
       - ./env/mission-control.env
       - ./env/mission-control-voice-bridge.env.example
+      - ./env/mission-control-voice-bridge.env
+    environment:
+      MC_API_URL: http://mission-control-api:9090
     volumes:
       - type: bind
         source: ./tools/voice_ros_event_bridge.py
@@ -154,7 +157,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.9"
+        OPENCLAW_VERSION: "2026.4.10"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -194,7 +197,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.9"
+        OPENCLAW_VERSION: "2026.4.10"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -234,7 +237,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.9"
+        OPENCLAW_VERSION: "2026.4.10"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -274,7 +277,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.9"
+        OPENCLAW_VERSION: "2026.4.10"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -314,7 +317,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.9"
+        OPENCLAW_VERSION: "2026.4.10"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -354,7 +357,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.9"
+        OPENCLAW_VERSION: "2026.4.10"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -394,7 +397,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.9"
+        OPENCLAW_VERSION: "2026.4.10"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -434,7 +437,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.9"
+        OPENCLAW_VERSION: "2026.4.10"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN

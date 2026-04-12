@@ -15,6 +15,7 @@
 | 需要一份 CLI 生命周期速查表 | [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md) |
 | 配飞书消息渠道 | [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md) |
 | 看 openclaw.json 实际写法 | [openclaw-json-guide-zh-cn.md](openclaw-json-guide-zh-cn.md) |
+| 准备联调真实语音设备 | [voice-device-bringup-zh-cn.md](voice-device-bringup-zh-cn.md) |
 | 看英文概览 | [mission-control-overview-en.md](mission-control-overview-en.md) |
 
 ## 推荐阅读顺序
@@ -26,6 +27,7 @@
 3. [../panopticon/README.md](../panopticon/README.md)
 4. [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md)
 5. [openclaw-json-guide-zh-cn.md](openclaw-json-guide-zh-cn.md)
+6. [voice-device-bringup-zh-cn.md](voice-device-bringup-zh-cn.md)
 
 ### 想长期运行多 Agent
 
@@ -51,6 +53,7 @@
 | [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md) | CLI 全流程速查表 | 需要命令总览、版本对齐与运维基线时 |
 | [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md) | 飞书接入指南 | 配置渠道时 |
 | [openclaw-json-guide-zh-cn.md](openclaw-json-guide-zh-cn.md) | 新手配置说明 | 需要手动理解配置项时 |
+| [voice-device-bringup-zh-cn.md](voice-device-bringup-zh-cn.md) | 真实语音设备联调指南 | 接真实设备、排查 ROS2 话题和 live 事件时 |
 | [mission-control-overview-en.md](mission-control-overview-en.md) | 英文总览 | 面向英文读者或补充背景时 |
 | [mission-control-personal-panopticon-zh-hant.md](mission-control-personal-panopticon-zh-hant.md) | 繁中完整记录 | 需要完整方法论与归档材料时 |
 

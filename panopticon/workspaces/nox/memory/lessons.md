@@ -21,6 +21,16 @@
 - 状态文件（heartbeat-state.json）有效追踪检查间隔
 - Weekly Review 机制化：每周总结 lessons 并更新长期索引
 
+### 容器环境恢复 (2026-04-11)
+- **问题**：容器重建后 pip、bypy、python-pptx 等包全部丢失
+- **修复路径**：
+  1. 安装 pip：`python3 -c "import urllib.request; urllib.request.urlretrieve('https://bootstrap.pypa.io/get-pip.py', '/home/node/get-pip.py')"` → `python3 /home/node/get-pip.py --user --break-system-packages`
+  2. 加 PATH：`export PATH="$HOME/.local/bin:$PATH"`
+  3. 从 U 盘批量装包：`BREAK_SYSTEM_PACKAGES=1 /mnt/usb/package3.11/autoinstall-linux.sh`
+- **bypy 授权**：容器重建后 token 丢失，需重新授权。快速方式：手动调百度 OAuth API 换 token 写入 `/home/node/.bypy/bypy.json`
+- **注意事项**：python-pptx 0.6.21 与 Python 3.11 不兼容（collections.abc 问题），需升级到 0.6.23+
+- **关键文件**：离线包在 `/mnt/usb/package3.11/linux-package311/`，198 个 whl
+
 ### Tooling & Skills (Week of 3/2-3/6)
 - Progressive Disclosure 架构显著节省上下文：McKinsey Consultant Skill 按 8 步工作流逐步加载，避免一次性加载所有参考文档
 - 跨对话续写需要状态标注：页面依赖关系 (page-dependencies.md) 是关键

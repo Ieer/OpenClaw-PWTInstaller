@@ -116,6 +116,7 @@ from .schemas import (
     TaskOut,
     WorkspaceSkillGroup,
 )
+from .voice_commands import VoiceCommand, parse_voice_command, summarize_voice_command
 
 
 ALLOWED_TASK_STATUSES = {"INBOX", "ASSIGNED", "IN PROGRESS", "REVIEW", "DONE"}
@@ -2764,6 +2765,393 @@ def create_app() -> FastAPI:
             "payload": row.payload,
             "created_at": row.created_at.isoformat(),
         }
+
+    def _voice_source_refs(source_event: dict) -> dict[str, str]:
+        payload = source_event.get("payload") if isinstance(source_event.get("payload"), dict) else {}
+        refs: dict[str, str] = {}
+        source_voice_event_id = str(source_event.get("id") or "").strip()
+        source_voice_agent = str(source_event.get("agent") or "").strip()
+        voice_turn_id = str(payload.get("turn_id") or "").strip()
+        voice_event_key = str(payload.get("event_key") or "").strip()
+        if source_voice_event_id:
+            refs["source_voice_event_id"] = source_voice_event_id
+        if source_voice_agent:
+            refs["source_voice_agent"] = source_voice_agent
+        if voice_turn_id:
+            refs["voice_turn_id"] = voice_turn_id
+        if voice_event_key:
+            refs["voice_event_key"] = voice_event_key
+        return refs
+
+    def _voice_command_audit_payload(
+        source_event: dict,
+        *,
+        raw_text: str,
+        normalized_text: str,
+        prefix_used: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, str]:
+        payload = {
+            **_voice_source_refs(source_event),
+            "raw_text": raw_text[:200],
+            "normalized_text": normalized_text[:200],
+        }
+        if prefix_used:
+            payload["prefix_used"] = prefix_used
+        if reason:
+            payload["reason"] = reason[:200]
+        return payload
+
+    async def _resolve_task_reference(session, task_ref: str) -> tuple[UUID | None, str | None]:
+        normalized = str(task_ref or "").strip()
+        if not normalized:
+            return None, "task reference is required"
+
+        try:
+            exact_uuid = UUID(normalized)
+        except ValueError:
+            exact_uuid = None
+
+        if exact_uuid is not None:
+            row = (await session.execute(sa.select(tasks.c.id).where(tasks.c.id == exact_uuid))).first()
+            if not row:
+                return None, f"task not found: {normalized}"
+            return row.id, None
+
+        if len(normalized) < 6:
+            return None, "task reference prefix must be at least 6 characters"
+
+        id_expr = sa.func.lower(sa.cast(tasks.c.id, sa.String))
+        rows = (
+            await session.execute(
+                sa.select(tasks.c.id)
+                .where(id_expr.like(f"{normalized.lower()}%"))
+                .order_by(tasks.c.created_at.desc())
+                .limit(2)
+            )
+        ).all()
+        if not rows:
+            return None, f"task not found: {normalized}"
+        if len(rows) > 1:
+            return None, f"task reference is ambiguous: {normalized}"
+        return rows[0].id, None
+
+    async def _prepare_event_payload(body: EventIn, session) -> tuple[dict, list[str], dict]:
+        validation_errors: list[str] = []
+        validation_details: dict = {}
+
+        if body.type == "task.handoff":
+            if not body.task_id:
+                validation_errors.append("task.handoff requires task_id")
+            known_agents = _known_agent_slugs(settings)
+            validation_errors.extend(_validate_handoff_payload(body.payload, known_agents))
+            validation_details["known_agents_count"] = len(known_agents)
+
+        event_payload = dict(body.payload)
+        if body.type == "task.status":
+            if not body.task_id:
+                validation_errors.append("task.status requires task_id")
+            next_status = str(body.payload.get("new_status") or "").strip().upper()
+            if not next_status:
+                validation_errors.append("payload.new_status is required")
+            elif next_status not in ALLOWED_TASK_STATUSES:
+                validation_errors.append(
+                    f"payload.new_status invalid: {next_status}; allowed={sorted(ALLOWED_TASK_STATUSES)}"
+                )
+
+            current_status = None
+            if body.task_id:
+                current_row = (
+                    await session.execute(
+                        sa.select(tasks.c.id, tasks.c.status).where(tasks.c.id == body.task_id)
+                    )
+                ).first()
+                if not current_row:
+                    validation_errors.append(f"task not found: {body.task_id}")
+                else:
+                    current_status = str(current_row.status)
+
+            if not validation_errors and current_status is not None:
+                allowed = TASK_STATUS_TRANSITIONS.get(current_status, set())
+                if next_status != current_status and next_status not in allowed:
+                    validation_errors.append(
+                        f"invalid status transition: {current_status} -> {next_status}; allowed={sorted(allowed)}"
+                    )
+
+            if not validation_errors and current_status is not None:
+                now = datetime.utcnow()
+                await session.execute(
+                    tasks.update()
+                    .where(tasks.c.id == body.task_id)
+                    .values(status=next_status, updated_at=now)
+                )
+                event_payload["previous_status"] = current_status
+                event_payload["new_status"] = next_status
+                event_payload["transition_applied"] = True
+                validation_details["transition"] = {
+                    "from": current_status,
+                    "to": next_status,
+                }
+
+        return event_payload, validation_errors, validation_details
+
+    async def _insert_task_row(
+        session,
+        *,
+        title: str,
+        status: str,
+        assignee: str | None,
+        tags: list[str],
+        event_agent: str | None = None,
+        event_payload: dict | None = None,
+    ) -> tuple[TaskOut, dict]:
+        if status not in ALLOWED_TASK_STATUSES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"invalid task status: {status}; allowed={sorted(ALLOWED_TASK_STATUSES)}",
+            )
+
+        task_id = uuid4()
+        now = datetime.utcnow()
+        stmt = (
+            tasks.insert()
+            .values(
+                id=task_id,
+                title=title,
+                status=status,
+                assignee=assignee,
+                tags=tags,
+                created_at=now,
+                updated_at=now,
+            )
+            .returning(
+                tasks.c.id,
+                tasks.c.title,
+                tasks.c.status,
+                tasks.c.assignee,
+                tasks.c.tags,
+                tasks.c.created_at,
+                tasks.c.updated_at,
+            )
+        )
+        row = (await session.execute(stmt)).one()
+        task_out = TaskOut(**row._asdict())
+        queued_event = await enqueue_local_event(
+            session,
+            event_type="task.created",
+            agent=event_agent,
+            task_id=task_out.id,
+            payload={
+                "title": task_out.title,
+                "status": task_out.status,
+                "assignee": task_out.assignee,
+                "tags": task_out.tags,
+                **(event_payload or {}),
+            },
+        )
+        return task_out, queued_event
+
+    async def _insert_comment_row(
+        session,
+        *,
+        task_id: UUID,
+        author: str,
+        body: str,
+        event_payload: dict | None = None,
+    ) -> tuple[CommentOut, dict]:
+        comment_id = uuid4()
+        stmt = (
+            comments.insert()
+            .values(id=comment_id, task_id=task_id, author=author, body=body)
+            .returning(
+                comments.c.id,
+                comments.c.task_id,
+                comments.c.author,
+                comments.c.body,
+                comments.c.created_at,
+            )
+        )
+        row = (await session.execute(stmt)).one()
+        comment_out = CommentOut(**row._asdict())
+        queued_event = await enqueue_local_event(
+            session,
+            event_type="comment.created",
+            agent=author,
+            task_id=task_id,
+            payload={"comment_id": str(comment_out.id), **(event_payload or {})},
+        )
+        return comment_out, queued_event
+
+    async def _execute_voice_command(session, source_event: dict) -> list[dict]:
+        if not settings.voice_commands_enabled:
+            return []
+
+        source_payload = source_event.get("payload") if isinstance(source_event.get("payload"), dict) else {}
+        raw_text = str(source_payload.get("text") or "").strip()
+        if not raw_text:
+            return []
+
+        parsed = parse_voice_command(
+            raw_text,
+            prefixes=settings.voice_command_prefixes,
+            require_prefix=settings.voice_command_require_prefix,
+        )
+        if parsed.outcome == "ignored":
+            return []
+
+        source_agent = str(source_event.get("agent") or "voice-engine").strip() or "voice-engine"
+
+        async def _reject(reason: str, *, task_id: UUID | None = None) -> list[dict]:
+            rejected = await enqueue_local_event(
+                session,
+                event_type="voice.command.rejected",
+                agent=source_agent,
+                task_id=task_id,
+                payload=_voice_command_audit_payload(
+                    source_event,
+                    raw_text=raw_text,
+                    normalized_text=parsed.normalized_text,
+                    prefix_used=parsed.prefix_used,
+                    reason=reason,
+                ),
+            )
+            return [rejected]
+
+        if parsed.outcome == "rejected" or parsed.command is None:
+            return await _reject(parsed.reason or "voice command parse failed")
+
+        command: VoiceCommand = parsed.command
+        trace_payload = _voice_source_refs(source_event)
+        queued_events: list[dict] = []
+        target_task_id: UUID | None = None
+
+        try:
+            if command.kind == "create_task":
+                task_out, task_event = await _insert_task_row(
+                    session,
+                    title=str(command.title or "").strip(),
+                    status=str(command.status or "INBOX").strip().upper() or "INBOX",
+                    assignee=(str(command.assignee or "").strip() or None),
+                    tags=list(command.tags),
+                    event_agent=source_agent,
+                    event_payload=trace_payload,
+                )
+                target_task_id = task_out.id
+                queued_events.append(task_event)
+            elif command.kind == "add_comment":
+                target_task_id, error = await _resolve_task_reference(session, str(command.task_ref or ""))
+                if error or target_task_id is None:
+                    return await _reject(error or "task reference resolution failed")
+                _comment_out, comment_event = await _insert_comment_row(
+                    session,
+                    task_id=target_task_id,
+                    author=source_agent,
+                    body=str(command.comment_body or "").strip(),
+                    event_payload=trace_payload,
+                )
+                queued_events.append(comment_event)
+            elif command.kind == "set_status":
+                target_task_id, error = await _resolve_task_reference(session, str(command.task_ref or ""))
+                if error or target_task_id is None:
+                    return await _reject(error or "task reference resolution failed")
+                status_body = EventIn(
+                    type="task.status",
+                    agent=source_agent,
+                    task_id=target_task_id,
+                    payload={"new_status": str(command.status or "").strip().upper(), **trace_payload},
+                )
+                event_payload, validation_errors, _validation_details = await _prepare_event_payload(status_body, session)
+                if validation_errors:
+                    return await _reject("; ".join(validation_errors), task_id=target_task_id)
+                queued_events.append(
+                    await enqueue_local_event(
+                        session,
+                        event_type="task.status",
+                        agent=source_agent,
+                        task_id=target_task_id,
+                        payload=event_payload,
+                    )
+                )
+            elif command.kind == "handoff_task":
+                target_task_id, error = await _resolve_task_reference(session, str(command.task_ref or ""))
+                if error or target_task_id is None:
+                    return await _reject(error or "task reference resolution failed")
+                handoff_body = EventIn(
+                    type="task.handoff",
+                    agent=source_agent,
+                    task_id=target_task_id,
+                    payload={
+                        "to": str(command.to_agent or "").strip(),
+                        "problem": str(command.problem or "").strip(),
+                        "context": str(command.context or "").strip(),
+                        "artifact_refs": list(command.artifact_refs),
+                        "expected_output": str(command.expected_output or "").strip(),
+                        "review_gate": bool(command.review_gate),
+                        **trace_payload,
+                    },
+                )
+                event_payload, validation_errors, _validation_details = await _prepare_event_payload(handoff_body, session)
+                if validation_errors:
+                    return await _reject("; ".join(validation_errors), task_id=target_task_id)
+                queued_events.append(
+                    await enqueue_local_event(
+                        session,
+                        event_type="task.handoff",
+                        agent=source_agent,
+                        task_id=target_task_id,
+                        payload=event_payload,
+                    )
+                )
+            elif command.kind == "control_agent":
+                control_result = await _forward_agent_control(
+                    settings,
+                    agent=str(command.control_agent or "").strip(),
+                    action=str(command.control_action or "").strip(),
+                )
+                queued_events.append(
+                    await enqueue_local_event(
+                        session,
+                        event_type="agent.control.executed",
+                        agent=source_agent,
+                        payload={
+                            **trace_payload,
+                            "requested_agent": str(command.control_agent or "").strip(),
+                            "requested_action": str(command.control_action or "").strip(),
+                            "ok": control_result.ok,
+                            "agent_slug": control_result.agent,
+                            "action": control_result.action,
+                            "container": control_result.container,
+                            "status": control_result.status,
+                            "detail": control_result.detail,
+                        },
+                    )
+                )
+            else:
+                return await _reject(f"unsupported voice command type: {command.kind}")
+        except HTTPException as exc:
+            return await _reject(str(exc.detail or exc.status_code), task_id=target_task_id)
+        except Exception as exc:
+            return await _reject(str(exc), task_id=target_task_id)
+
+        queued_events.append(
+            await enqueue_local_event(
+                session,
+                event_type="voice.command.executed",
+                agent=source_agent,
+                task_id=target_task_id,
+                payload={
+                    **_voice_command_audit_payload(
+                        source_event,
+                        raw_text=raw_text,
+                        normalized_text=parsed.normalized_text,
+                        prefix_used=parsed.prefix_used,
+                    ),
+                    "command_type": command.kind,
+                    "summary": summarize_voice_command(command),
+                },
+            )
+        )
+        return queued_events
 
     @app.get("/health", response_model=Health)
     async def healthcheck() -> Health:
@@ -6012,38 +6400,16 @@ def create_app() -> FastAPI:
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
         session=Depends(get_session),
     ) -> TaskOut:
-        if body.status not in ALLOWED_TASK_STATUSES:
-            raise HTTPException(
-                status_code=422,
-                detail=f"invalid task status: {body.status}; allowed={sorted(ALLOWED_TASK_STATUSES)}",
-            )
-
-        task_id = uuid4()
-        now = datetime.utcnow()
-        stmt = (
-            tasks.insert()
-            .values(
-                id=task_id,
-                title=body.title,
-                status=body.status,
-                assignee=body.assignee,
-                tags=body.tags,
-                created_at=now,
-                updated_at=now,
-            )
-            .returning(
-                tasks.c.id,
-                tasks.c.title,
-                tasks.c.status,
-                tasks.c.assignee,
-                tasks.c.tags,
-                tasks.c.created_at,
-                tasks.c.updated_at,
-            )
+        task_out, queued_event = await _insert_task_row(
+            session,
+            title=body.title,
+            status=body.status,
+            assignee=body.assignee,
+            tags=body.tags,
         )
-        row = (await session.execute(stmt)).one()
         await session.commit()
-        return TaskOut(**row._asdict())
+        await publish_event(redis, stream_key=settings.redis_stream_key, event=queued_event)
+        return task_out
 
     @app.get("/v1/boards/default", response_model=BoardOut)
     async def get_board(
@@ -6079,35 +6445,15 @@ def create_app() -> FastAPI:
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
         session=Depends(get_session),
     ) -> CommentOut:
-        comment_id = uuid4()
-        stmt = (
-            comments.insert()
-            .values(id=comment_id, task_id=task_id, author=body.author, body=body.body)
-            .returning(
-                comments.c.id,
-                comments.c.task_id,
-                comments.c.author,
-                comments.c.body,
-                comments.c.created_at,
-            )
+        comment_out, queued_event = await _insert_comment_row(
+            session,
+            task_id=task_id,
+            author=body.author,
+            body=body.body,
         )
-        row = (await session.execute(stmt)).one()
         await session.commit()
-
-        await publish_event(
-            redis,
-            stream_key=settings.redis_stream_key,
-            event={
-                "id": str(uuid4()),
-                "type": "comment.created",
-                "agent": body.author,
-                "task_id": str(task_id),
-                "payload": {"comment_id": str(row.id)},
-                "created_at": datetime.utcnow().isoformat() + "Z",
-            },
-        )
-
-        return CommentOut(**row._asdict())
+        await publish_event(redis, stream_key=settings.redis_stream_key, event=queued_event)
+        return comment_out
 
     @app.post("/v1/events", response_model=EventOut)
     async def ingest_event(
@@ -6115,61 +6461,7 @@ def create_app() -> FastAPI:
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
         session=Depends(get_session),
     ) -> EventOut:
-        validation_errors: list[str] = []
-        validation_details: dict = {}
-
-        if body.type == "task.handoff":
-            if not body.task_id:
-                validation_errors.append("task.handoff requires task_id")
-            known_agents = _known_agent_slugs(settings)
-            validation_errors.extend(_validate_handoff_payload(body.payload, known_agents))
-            validation_details["known_agents_count"] = len(known_agents)
-
-        event_payload = dict(body.payload)
-        if body.type == "task.status":
-            if not body.task_id:
-                validation_errors.append("task.status requires task_id")
-            next_status = str(body.payload.get("new_status") or "").strip().upper()
-            if not next_status:
-                validation_errors.append("payload.new_status is required")
-            elif next_status not in ALLOWED_TASK_STATUSES:
-                validation_errors.append(
-                    f"payload.new_status invalid: {next_status}; allowed={sorted(ALLOWED_TASK_STATUSES)}"
-                )
-
-            current_status = None
-            if body.task_id:
-                current_row = (
-                    await session.execute(
-                        sa.select(tasks.c.id, tasks.c.status).where(tasks.c.id == body.task_id)
-                    )
-                ).first()
-                if not current_row:
-                    validation_errors.append(f"task not found: {body.task_id}")
-                else:
-                    current_status = str(current_row.status)
-
-            if not validation_errors and current_status is not None:
-                allowed = TASK_STATUS_TRANSITIONS.get(current_status, set())
-                if next_status != current_status and next_status not in allowed:
-                    validation_errors.append(
-                        f"invalid status transition: {current_status} -> {next_status}; allowed={sorted(allowed)}"
-                    )
-
-            if not validation_errors and current_status is not None:
-                now = datetime.utcnow()
-                await session.execute(
-                    tasks.update()
-                    .where(tasks.c.id == body.task_id)
-                    .values(status=next_status, updated_at=now)
-                )
-                event_payload["previous_status"] = current_status
-                event_payload["new_status"] = next_status
-                event_payload["transition_applied"] = True
-                validation_details["transition"] = {
-                    "from": current_status,
-                    "to": next_status,
-                }
+        event_payload, validation_errors, validation_details = await _prepare_event_payload(body, session)
 
         if validation_errors:
             await publish_validation_result(
@@ -6194,20 +6486,22 @@ def create_app() -> FastAPI:
             )
         )
         row = (await session.execute(stmt)).one()
+        queued_events: list[dict] = []
+        source_event = {
+            "id": str(row.id),
+            "type": row.type,
+            "agent": row.agent,
+            "task_id": str(row.task_id) if row.task_id else None,
+            "payload": row.payload,
+            "created_at": row.created_at.isoformat(),
+        }
+        if row.type == "voice.asr.final":
+            queued_events = await _execute_voice_command(session, source_event)
         await session.commit()
 
-        await publish_event(
-            redis,
-            stream_key=settings.redis_stream_key,
-            event={
-                "id": str(row.id),
-                "type": row.type,
-                "agent": row.agent,
-                "task_id": str(row.task_id) if row.task_id else None,
-                "payload": row.payload,
-                "created_at": row.created_at.isoformat(),
-            },
-        )
+        await publish_event(redis, stream_key=settings.redis_stream_key, event=source_event)
+        for queued_event in queued_events:
+            await publish_event(redis, stream_key=settings.redis_stream_key, event=queued_event)
 
         await publish_validation_result(
             accepted=True,

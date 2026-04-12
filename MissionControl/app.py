@@ -800,6 +800,17 @@ def _convert_feed(feed: list[dict]) -> list[dict]:
         elif evt_type == "chat.proxy.error":
             error_type = str(payload.get("error_type") or "proxy_error")
             action = f"chat proxy error: {error_type}"
+        elif evt_type == "voice.command.executed":
+            summary = str(payload.get("summary") or "voice command executed").strip()
+            action = summary or "voice command executed"
+        elif evt_type == "voice.command.rejected":
+            reason = str(payload.get("reason") or "voice command rejected").strip()
+            action = f"voice command rejected: {reason}" if reason else "voice command rejected"
+        elif evt_type == "agent.control.executed":
+            requested_action = str(payload.get("requested_action") or payload.get("action") or "control").strip()
+            target_agent = str(payload.get("requested_agent") or payload.get("agent_slug") or "agent").strip()
+            status = str(payload.get("status") or "unknown").strip()
+            action = f"{requested_action} {target_agent} ({status})".strip()
         else:
             action = f"event: {evt_type}"
 
