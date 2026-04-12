@@ -1,8 +1,8 @@
 # OpenClaw CLI 全流程速查表（简中）
 
-> 版本基线：OpenClaw 2026.4.10
+> 版本基线：OpenClaw 2026.4.11
 >
-> 仓库对齐原则：本仓库统一以 [../openclaw-release.yaml](../openclaw-release.yaml) 中的 `openclaw_version: 2026.4.10` 作为文档基线；当 CLI 外部资料与当前仓库脚本、compose、README 不一致时，以当前仓库实现为准。
+> 仓库对齐原则：本仓库统一以 [../openclaw-release.yaml](../openclaw-release.yaml) 中的 `openclaw_version: 2026.4.11` 作为文档基线；当 CLI 外部资料与当前仓库脚本、compose、README 不一致时，以当前仓库实现为准。
 
 ---
 
@@ -17,7 +17,7 @@ OpenClaw CLI 是 8 个 agent 通过命令行沟通的桥梁。
 - 渠道绑定、配置修复、会话治理与故障排查
 - Panopticon 与 Mission Control 迭代时的人机协同操作基线
 
-这份 cheatsheet 按真实使用生命周期组织，目标不是覆盖所有子命令，而是给出一套在 OpenClaw 2026.4.10 上更稳定、便于系统迭代的命令视图。
+这份 cheatsheet 按真实使用生命周期组织，目标不是覆盖所有子命令，而是给出一套在 OpenClaw 2026.4.11 上更稳定、便于系统迭代的命令视图。
 
 ## 先记住三条原则
 
@@ -42,7 +42,7 @@ OpenClaw CLI 是 8 个 agent 通过命令行沟通的桥梁。
 
 ## 2. 配置与凭证管理
 
-OpenClaw 2026.4.10 延续双层配置思路：全局配置与工作区 / agent 配置并存，局部优先。
+OpenClaw 2026.4.11 延续双层配置思路：全局配置与工作区 / agent 配置并存，局部优先。
 
 | 命令 | 说明 | 示例 / 备注 |
 | --- | --- | --- |
@@ -252,7 +252,7 @@ bash panopticon/tools/check_panopticon_services.sh
 
 1. 第一优先级：当前仓库可运行脚本、compose、env 模板、[../openclaw-release.yaml](../openclaw-release.yaml)
 2. 第二优先级：当前仓库 README 与 docs 中已出现并被实际使用的命令
-3. 第三优先级：OpenClaw 2026.4.10 外部参考资料与 `openclaw --help`
+3. 第三优先级：OpenClaw 2026.4.11 外部参考资料与 `openclaw --help`
 
 如果三者冲突，按第一优先级回退。
 

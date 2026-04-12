@@ -583,7 +583,7 @@ docker build -t justlikemaki/openclaw-docker-cn-im:latest .
 - **模型配置**：使用指定的模型和 Provider
 - **通道配置**：根据提供的环境变量启用相应的 IM 平台
 - **Gateway 配置**：端口、绑定地址、认证令牌
-- **Compaction 配置**：默认写入 `agents.defaults.compaction.reserveTokensFloor=20000`，降低长对话被强制重置的概率
+- **Compaction 配置**：默认写入 `agents.defaults.compaction.reserveTokensFloor=32000`，降低长对话被强制重置的概率
 - **插件配置**：自动启用相应的通道插件
 
 </details>

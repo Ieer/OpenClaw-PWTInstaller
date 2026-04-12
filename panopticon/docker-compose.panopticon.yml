@@ -157,7 +157,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.10"
+        OPENCLAW_VERSION: "2026.4.11"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -197,7 +197,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.10"
+        OPENCLAW_VERSION: "2026.4.11"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -237,7 +237,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.10"
+        OPENCLAW_VERSION: "2026.4.11"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -277,7 +277,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.10"
+        OPENCLAW_VERSION: "2026.4.11"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -317,7 +317,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.10"
+        OPENCLAW_VERSION: "2026.4.11"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -357,7 +357,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.10"
+        OPENCLAW_VERSION: "2026.4.11"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -397,7 +397,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.10"
+        OPENCLAW_VERSION: "2026.4.11"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -437,7 +437,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.10"
+        OPENCLAW_VERSION: "2026.4.11"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
