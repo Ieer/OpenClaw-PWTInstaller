@@ -120,6 +120,7 @@ http://127.0.0.1:18920/chat/nox/
 
 - 单 Agent 安装或模型配置问题：回到 [../README.md](../README.md)
 - 8-Agent 启动、网关、502、1008：看 [../panopticon/README.md](../panopticon/README.md)
+- 需要从局域网另一台电脑访问 Mission Control / Web Chat，或遇到 `origin not allowed`：看 [mission-control-lan-access-zh-cn.md](mission-control-lan-access-zh-cn.md)
 - 飞书渠道配置：看 [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md)
 - `openclaw.json` 写法：看 [openclaw-json-guide-zh-cn.md](openclaw-json-guide-zh-cn.md)
 - 想系统性浏览所有文档：看 [README.md](README.md)
