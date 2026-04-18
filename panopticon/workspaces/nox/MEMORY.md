@@ -31,6 +31,10 @@
 - 先检索（`memorySearch` 或 `memory/` 关键词扫描）再写入
 - 每次只沉淀可复用结论，不复制原文
 
+## 长期必备技能
+
+- **inner-map-skill-router**：认知基础设施系统，含对话管理/沟通教练/卓越校准/自我管理四个子技能 + knowledge 知识库。2026-04-12 安装，已测试通过。路径：`sources/inner-map-skill-router/`
+
 ## 运营模式
 
 - **Daily Pulse**: 每天北京时间 0:00（UTC 16:00）自动运行，输出风险/阻塞/依赖/Review 需求

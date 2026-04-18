@@ -82,6 +82,7 @@ panopticon/shared-usb/
 panopticon/agent-homes/
 panopticon/workspaces/*/.git/
 panopticon/workspaces/*/.openclaw/
+panopticon/workspaces/*/ppt-venv/
 panopticon/workspaces/*/inbox/
 panopticon/workspaces/*/outbox/
 panopticon/workspaces/*/artifacts/
@@ -91,6 +92,8 @@ panopticon/workspaces/*/node_modules/
 panopticon/workspaces/*/thumbnails/
 panopticon/workspaces/*/components/
 panopticon/workspaces/*/*.pptx
+panopticon/workspaces/*/memory/.dreams/
+panopticon/workspaces/*/memory/*.md
 panopticon/workspaces/*/memory/heartbeat-state.json
 panopticon/workspaces/*/memory/20??-??-??.md
 panopticon/workspaces/*/memory/*-daily-pulse.md

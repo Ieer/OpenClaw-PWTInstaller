@@ -45,3 +45,19 @@
 - 阻塞项需要明确的恢复路径和依赖清单
 - 项目生命周期管理：Active → Completed/Blocked/Pending → 归档
 - 外部工具依赖检查应在项目启动前置，而非阻塞后才发现
+
+### 模型配置与图像识别 (2026-04-13)
+- **问题**：OpenClaw 图像识别失败，报 `Unknown model` 错误
+- **根因**：
+  1. 视觉模型 `glm-4v-flash` 在智谱 AI API 中不存在，正确名称为 `glm-4v`
+  2. 主对话模型 `glm-4.7`、`glm-5-turbo` 被错误标注为支持 image 输入，导致含图片消息直接走主模型失败
+  3. codex 提供商配置不完整（缺少 baseUrl/models），导致整体配置验证报错
+- **修复**：
+  1. `imageModel.primary`：`glm-4v-flash` → `glm-4v`
+  2. 主对话模型 `glm-4.7`、`glm-5-turbo`、`gpt-4o` 的 input 改为仅 `text`
+  3. 补全 codex 提供商的完整配置
+- **涉及配置文件**：`~/.openclaw/openclaw.json`（主配置）+ `~/.openclaw/agents/main/agent/models.json`（agent 级配置，实际以 openclaw.json 为准）
+- **关键教训**：
+  - 两个配置文件同时存在时，`openclaw.json` 是主配置，优先修改此文件
+  - 模型能力声明（input 字段）必须与 API 实际能力匹配，否则会导致含图片消息处理失败
+  - 修改模型配置后，图像工具使用新的 `imageModel` 配置，无需重启即可生效
