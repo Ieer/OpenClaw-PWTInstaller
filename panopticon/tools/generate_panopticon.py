@@ -220,7 +220,7 @@ def render_compose(manifest: dict) -> str:
 
           mc-heartbeat:
             container_name: mc-heartbeat
-            image: python:3.12-alpine
+            image: python:3.11-alpine
             env_file:
               - ./env/mission-control.env.example
               - ./env/mission-control.env
