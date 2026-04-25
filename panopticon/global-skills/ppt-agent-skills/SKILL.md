@@ -5,6 +5,30 @@ description: 专业 PPT 演示文稿全流程 AI 生成助手。模拟顶级 PPT
 
 # PPT Agent v4 — 主控制台合同
 
+## Use Cases
+
+- 制作新的多页演示文稿、路演 deck、汇报材料或培训课件。
+- 将现有文档、表格或数据整理成可展示的 PPT/HTML 演示稿。
+- 美化或重做已有幻灯片，同时保留原始信息结构。
+
+## Workflow
+
+- 按 Canonical Plan 严格执行 `P0 → P1 → (P2A|P2B) → P3 → P3.5 → P4 → P5`。
+- 通过 harness 生成所有阶段 prompt，再创建对应 subagent 执行。
+- 每个阶段都先校验前序 Gate，再推进到下一阶段。
+
+## Outputs
+
+- `interview-qa.txt`、`requirements-interview.txt`、`search.txt`、`search-brief.txt`、`source-brief.txt`、`outline.txt`、`style.json`。
+- `planning/planningN.json`、`slides/slide-N.html`、`png/slide-N.png`、`speech-script.json`、`speech-script.md`、`preview.html`。
+- `presentation-png.pptx`、`presentation-svg.pptx`、`delivery-manifest.json`。
+
+## Safety Rules
+
+- 不得跳过 Gate，不得跳过子代理，不得手写正式产物。
+- 不得在未到步骤前读取对应阶段文件。
+- 任何失败只能重试当前步骤或回退到明确的 `ROLLBACK→StepID`。
+
 ## 1. 主 Agent 角色
 
 **只做**：维护计划、调用 harness、管理 subagent 生命周期、校验 Gate、与用户交互。

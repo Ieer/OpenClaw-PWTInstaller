@@ -66,27 +66,24 @@ bash ./config-menu.sh
 
 ```bash
 python -m pip install -r panopticon/tools/requirements.txt
-
-for example in panopticon/env/*.env.example; do
-  target="${example%.example}"
-  if [ ! -f "$target" ]; then
-    cp "$example" "$target"
-  fi
-done
-
 bash panopticon/tools/rotate_gateway_tokens.sh
-python panopticon/tools/generate_panopticon.py --prune
-python panopticon/tools/validate_panopticon.py
-python panopticon/tools/validate_skills_template.py
-docker compose -f panopticon/docker-compose.panopticon.yml up -d
 ```
+
+说明：脚本会自动补齐缺失的本地 env 覆盖文件，并在完成 token 轮换、Compose 生成和校验后重启相关服务。
 
 在这条路上，你至少需要检查并填写：
 
 - `panopticon/env/mission-control.env`
+- `panopticon/env/mission-control-ui.env`
+- `panopticon/env/mission-control-gateway.env`
 - `panopticon/env/nox.env`
 - `panopticon/env/metrics.env`
 - `panopticon/env/email.env`
+- `panopticon/env/growth.env`
+- `panopticon/env/trades.env`
+- `panopticon/env/health.env`
+- `panopticon/env/writing.env`
+- `panopticon/env/personal.env`
 
 最少要保证模型、Base URL、API Key 和 Gateway Token 已经不是占位值。
 
@@ -103,9 +100,7 @@ openclaw dashboard --no-open
 ### Panopticon 验证
 
 ```bash
-docker compose -f panopticon/docker-compose.panopticon.yml ps
-curl -fsS http://127.0.0.1:18910/health
-curl -I http://127.0.0.1:18920/
+bash panopticon/tools/check_panopticon_services.sh
 ```
 
 推荐只从同源入口打开 Chat：

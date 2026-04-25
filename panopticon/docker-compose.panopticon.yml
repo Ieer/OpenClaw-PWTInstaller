@@ -11,6 +11,12 @@ services:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/mission-control/redis-data
         target: /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
     restart: unless-stopped
     networks:
       - panopticon
@@ -26,6 +32,12 @@ services:
       - type: bind
         source: ${PANOPTICON_DATA_DIR:-.}/mission-control/postgres-data
         target: /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U mission_control -d mission_control"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     restart: unless-stopped
     networks:
       - panopticon
@@ -64,8 +76,17 @@ services:
         source: ${PANOPTICON_KNOWLEDGE_RAW_SOURCES_PATH:-./mission-control/knowledge-sources}
         target: /data/knowledge-sources
     depends_on:
-      - mc-redis
-      - mc-postgres
+      mc-redis:
+        condition: service_healthy
+      mc-postgres:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9090/ready', timeout=3).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
     ports:
       - "18910:9090"
     restart: unless-stopped
@@ -84,7 +105,14 @@ services:
       - ./env/mission-control-ui.env.example
       - ./env/mission-control-ui.env
     depends_on:
-      - mission-control-api
+      mission-control-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9090/', timeout=3).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     restart: unless-stopped
     networks:
       - panopticon
@@ -100,7 +128,14 @@ services:
         target: /etc/nginx/templates/default.conf.template
         read_only: true
     depends_on:
-      - mission-control-ui
+      mission-control-ui:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     ports:
       - "18920:80"
     restart: unless-stopped
@@ -124,7 +159,8 @@ services:
         read_only: true
     command: ["python", "/app/heartbeat_emitter.py"]
     depends_on:
-      - mission-control-api
+      mission-control-api:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - panopticon
@@ -147,7 +183,8 @@ services:
         read_only: true
     command: ["python3", "/app/voice_ros_event_bridge.py"]
     depends_on:
-      - mission-control-api
+      mission-control-api:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - panopticon
@@ -157,7 +194,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.15"
+        OPENCLAW_VERSION: "2026.4.22"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -197,7 +234,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.15"
+        OPENCLAW_VERSION: "2026.4.22"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -237,7 +274,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.15"
+        OPENCLAW_VERSION: "2026.4.22"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -277,7 +314,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.15"
+        OPENCLAW_VERSION: "2026.4.22"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -317,7 +354,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.15"
+        OPENCLAW_VERSION: "2026.4.22"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -357,7 +394,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.15"
+        OPENCLAW_VERSION: "2026.4.22"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -397,7 +434,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.15"
+        OPENCLAW_VERSION: "2026.4.22"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -437,7 +474,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.15"
+        OPENCLAW_VERSION: "2026.4.22"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN

@@ -79,7 +79,12 @@ def render_compose(manifest: dict) -> str:
     controller_service_block = ""
     if controller_enabled:
         api_controller_env_block = f"MC_AGENT_CONTROLLER_URL: {controller_url}"
-        api_controller_dep_block = "- mission-control-agent-controller"
+        api_controller_dep_block = textwrap.dedent(
+            """\
+            mission-control-agent-controller:
+              condition: service_healthy
+            """
+        ).rstrip()
         controller_service_block = textwrap.indent(
             textwrap.dedent(
             """\
@@ -97,6 +102,12 @@ def render_compose(manifest: dict) -> str:
               volumes:
                 - /usr/bin/docker:/usr/bin/docker:ro
                 - /var/run/docker.sock:/var/run/docker.sock
+              healthcheck:
+                test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9091/health', timeout=3).status == 200 else 1)"]
+                interval: 15s
+                timeout: 5s
+                retries: 10
+                start_period: 10s
               restart: unless-stopped
               networks:
                 - panopticon
@@ -120,6 +131,12 @@ def render_compose(manifest: dict) -> str:
               - type: bind
                 source: ${{PANOPTICON_DATA_DIR:-.}}/mission-control/redis-data
                 target: /data
+            healthcheck:
+              test: [\"CMD\", \"redis-cli\", \"-h\", \"127.0.0.1\", \"-p\", \"6379\", \"ping\"]
+              interval: 10s
+              timeout: 5s
+              retries: 10
+              start_period: 5s
             restart: unless-stopped
             networks:
               - panopticon
@@ -135,6 +152,12 @@ def render_compose(manifest: dict) -> str:
               - type: bind
                 source: ${{PANOPTICON_DATA_DIR:-.}}/mission-control/postgres-data
                 target: /var/lib/postgresql/data
+            healthcheck:
+              test: [\"CMD-SHELL\", \"pg_isready -h 127.0.0.1 -p 5432 -U mission_control -d mission_control\"]
+              interval: 10s
+              timeout: 5s
+              retries: 12
+              start_period: 10s
             restart: unless-stopped
             networks:
               - panopticon
@@ -174,9 +197,17 @@ def render_compose(manifest: dict) -> str:
                 source: ${{PANOPTICON_KNOWLEDGE_RAW_SOURCES_PATH:-./mission-control/knowledge-sources}}
                 target: /data/knowledge-sources
             depends_on:
-              - mc-redis
-              - mc-postgres
+              mc-redis:
+                condition: service_healthy
+              mc-postgres:
+                condition: service_healthy
               __API_CONTROLLER_DEP_BLOCK__
+            healthcheck:
+              test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9090/ready', timeout=3).status == 200 else 1)"]
+              interval: 15s
+              timeout: 5s
+              retries: 10
+              start_period: 15s
             ports:
               - \"{api_port}:9090\"
             restart: unless-stopped
@@ -195,7 +226,14 @@ def render_compose(manifest: dict) -> str:
               - ./env/mission-control-ui.env.example
               - ./env/mission-control-ui.env
             depends_on:
-              - mission-control-api
+              mission-control-api:
+                condition: service_healthy
+            healthcheck:
+              test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9090/', timeout=3).status == 200 else 1)"]
+              interval: 15s
+              timeout: 5s
+              retries: 10
+              start_period: 20s
             restart: unless-stopped
             networks:
               - panopticon
@@ -211,7 +249,14 @@ def render_compose(manifest: dict) -> str:
                 target: /etc/nginx/templates/default.conf.template
                 read_only: true
             depends_on:
-              - mission-control-ui
+              mission-control-ui:
+                condition: service_healthy
+            healthcheck:
+              test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+              interval: 15s
+              timeout: 5s
+              retries: 10
+              start_period: 10s
             ports:
               - "{ui_port}:80"
             restart: unless-stopped
@@ -235,7 +280,8 @@ def render_compose(manifest: dict) -> str:
                 read_only: true
             command: ["python", "/app/heartbeat_emitter.py"]
             depends_on:
-              - mission-control-api
+              mission-control-api:
+                condition: service_healthy
             restart: unless-stopped
             networks:
               - panopticon
@@ -258,7 +304,8 @@ def render_compose(manifest: dict) -> str:
                 read_only: true
             command: ["python3", "/app/voice_ros_event_bridge.py"]
             depends_on:
-              - mission-control-api
+              mission-control-api:
+                condition: service_healthy
             restart: unless-stopped
             networks:
               - panopticon
@@ -275,9 +322,14 @@ def render_compose(manifest: dict) -> str:
       compose_header = compose_header.replace("      __API_CONTROLLER_ENV_BLOCK__\n", "")
 
     if api_controller_dep_block:
-      compose_header = compose_header.replace("      __API_CONTROLLER_DEP_BLOCK__\n", f"      {api_controller_dep_block}\n")
+      compose_header = compose_header.replace(
+        "              __API_CONTROLLER_DEP_BLOCK__\n",
+        textwrap.indent(f"{api_controller_dep_block}\n", "              "),
+      )
+      compose_header = compose_header.replace("__API_CONTROLLER_DEP_BLOCK__", "")
     else:
-      compose_header = compose_header.replace("      __API_CONTROLLER_DEP_BLOCK__\n", "")
+      compose_header = compose_header.replace("              __API_CONTROLLER_DEP_BLOCK__\n", "")
+      compose_header = compose_header.replace("__API_CONTROLLER_DEP_BLOCK__", "")
     if controller_service_block:
       compose_header = compose_header.replace(
         "  mission-control-ui:\n",
@@ -290,7 +342,7 @@ def render_compose(manifest: dict) -> str:
         slug = agent["slug"]
         gateway_host_port = agent["gateway_host_port"]
         bridge_host_port = agent["bridge_host_port"]
-        openclaw_version = str(runtime.get("cnim_openclaw_version", "2026.3.11"))
+        openclaw_version = str(runtime.get("cnim_openclaw_version", "2026.4.22"))
 
         service_block = textwrap.dedent(
             """\

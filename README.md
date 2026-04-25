@@ -22,6 +22,23 @@
 
 如果你第一次接触 OpenClaw，先用“单 Agent”；如果你的目标是 PWT、多 Agent 长时运行或 Mission Control，看“Panopticon 主路线”。
 
+## 个人 AI 基础设施全景
+
+可以把这套系统理解成 4 层，从“先跑起来”一路扩到“长期运行 + 可治理 + 可追溯”：
+
+| 层 | 解决什么问题 | 仓库位置 | 何时需要 |
+| --- | --- | --- | --- |
+| 接入与配置层 | 把模型、渠道、插件和本地配置接进来 | [install.sh](install.sh)、[config-menu.sh](config-menu.sh)、[docs/openclaw-json-guide-zh-cn.md](docs/openclaw-json-guide-zh-cn.md) | 第一次把 OpenClaw 跑起来时 |
+| Agent 运行层 | 让多个角色长期分工、隔离运行 | [panopticon/](panopticon/) | 需要 PWT、多 Agent 编排或长期运行时 |
+| 控制面 | 提供统一入口、状态观察、聊天代理、任务与事件流 | [MissionControl/](MissionControl/)、[mission_control_api/](mission_control_api/) | 需要统一观察、治理或二次开发时 |
+| 知识治理层 | 让资料导入、切片、OCR、policy、resolve 和审计形成闭环 | [mission_control_api/](mission_control_api/)、[docs/knowledge-system-playbook-zh-cn.md](docs/knowledge-system-playbook-zh-cn.md) | 需要把资料处理做成可追溯系统时 |
+
+最常见的组合只有三种：
+
+- 只想先用起来：先做接入与配置层，用单 Agent 路线。
+- 想长期跑 8 个角色：接入与配置层 + Agent 运行层 + 控制面。
+- 想把资料治理也接上：四层全部用上。
+
 ## 先选路径
 
 | 路线 | 适合谁 | 入口 | 状态 |
@@ -57,19 +74,14 @@ git clone https://github.com/Ieer/OpenClaw-PWTInstaller.git
 cd OpenClaw-PWTInstaller
 
 python -m pip install -r panopticon/tools/requirements.txt
-
-for example in panopticon/env/*.env.example; do
-  target="${example%.example}"
-  if [ ! -f "$target" ]; then
-    cp "$example" "$target"
-  fi
-done
-
+# 首次运行时，脚本会自动补齐缺失的本地 env 覆盖文件并轮换 token。
+# 它还会生成 Compose、做校验并重启相关服务。
+# 先编辑这些本地文件里的真实值：
+# - panopticon/env/mission-control.env
+# - panopticon/env/mission-control-ui.env
+# - panopticon/env/mission-control-gateway.env
+# - panopticon/env/nox.env, metrics.env, email.env, growth.env, trades.env, health.env, writing.env, personal.env
 bash panopticon/tools/rotate_gateway_tokens.sh
-python panopticon/tools/generate_panopticon.py --prune
-python panopticon/tools/validate_panopticon.py
-python panopticon/tools/validate_skills_template.py
-docker compose -f panopticon/docker-compose.panopticon.yml up -d
 ```
 
 启动后主要入口：
@@ -77,6 +89,7 @@ docker compose -f panopticon/docker-compose.panopticon.yml up -d
 - Mission Control UI：<http://127.0.0.1:18920/>
 - 同源 Chat：<http://127.0.0.1:18920/chat/nox/>
 - API 健康检查：<http://127.0.0.1:18910/health>
+- 完整巡检：<code>bash panopticon/tools/check_panopticon_services.sh</code>
 
 ## 系统要求
 
@@ -122,9 +135,11 @@ docker compose -f panopticon/docker-compose.panopticon.yml up -d
 | 你的目标 | 先读什么 |
 | --- | --- |
 | 第一次进入仓库，想 15 分钟跑通最小安装 | [docs/new-user-15-minute-install-checklist-zh-cn.md](docs/new-user-15-minute-install-checklist-zh-cn.md) |
+| 先理解这套“个人 AI 基础设施”是怎么分层的 | [README.md](README.md) 当前页 + [docs/README.md](docs/README.md) |
 | 快速安装单 Agent | [README.md](README.md) 当前页 + [docs/openclaw-json-guide-zh-cn.md](docs/openclaw-json-guide-zh-cn.md) |
 | 查 OpenClaw CLI 生命周期命令 | [docs/openclaw-cli-cheatsheet-zh-cn.md](docs/openclaw-cli-cheatsheet-zh-cn.md) |
 | 搭建 8-Agent 主路线 | [panopticon/README.md](panopticon/README.md) |
+| 升级或回滚 Panopticon OpenClaw 运行态 | [docs/openclaw-cli-cheatsheet-zh-cn.md](docs/openclaw-cli-cheatsheet-zh-cn.md) |
 | 理解 Mission Control 工程设计 | [docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md) |
 | 理解知识系统治理 | [docs/knowledge-system-playbook-zh-cn.md](docs/knowledge-system-playbook-zh-cn.md) |
 | 配飞书消息渠道 | [docs/feishu-setup-zh-cn.md](docs/feishu-setup-zh-cn.md) |
@@ -150,6 +165,21 @@ docker compose -f panopticon/docker-compose.panopticon.yml logs -f --tail=200
 bash panopticon/tools/check_panopticon_services.sh
 bash panopticon/tools/recover_mission_control_gateway.sh
 ```
+
+### Panopticon 升级与回滚
+
+主路线的运行态替换现在统一走 `tools` 里的发布脚本，不再建议手工拼接 `docker compose build` 和 `up --force-recreate`。
+
+```bash
+python tools/prepare_release_upgrade.py --level light --skip-smoke
+python tools/rollout_release_upgrade.py --mode fast-panopticon
+python tools/rollback_release_upgrade.py
+```
+
+- `fast-panopticon` 适合只刷新 OpenClaw agent 容器，默认走轻量 prepare 和 agent endpoint 校验。
+- `release` 模式适合完整发布链路，默认会带上 Mission Control，并走更重的 smoke 校验。
+- rollout 和 rollback 都带运行版本门禁；如果目标服务版本完全没变化，脚本会直接失败，而不是把 no-op 当成功。
+- 最近一次升级的 metadata 会写到 `.release-state/last-rollout.json`；更完整的参数与字段说明见 [docs/openclaw-cli-cheatsheet-zh-cn.md](docs/openclaw-cli-cheatsheet-zh-cn.md)。
 
 ## 安全边界
 

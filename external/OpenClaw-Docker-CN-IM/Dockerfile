@@ -3,7 +3,7 @@ FROM node:22-slim
 
 # When set to 1, fail the build if plugin installation fails.
 ARG STRICT_PLUGIN_INSTALL=0
-ARG OPENCLAW_VERSION=2026.4.15
+ARG OPENCLAW_VERSION=2026.4.22
 
 # 设置工作目录
 WORKDIR /app
@@ -36,6 +36,9 @@ RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.co
 
 # 安装 OpenClaw 和 OpenCode AI
 RUN npm install -g "openclaw@${OPENCLAW_VERSION}" opencode-ai@latest
+
+# Stock Feishu extension needs its own runtime dependencies alongside the bundled files.
+RUN npm install --prefix /usr/local/lib/node_modules/openclaw/dist/extensions/feishu --omit=dev
 
 # 安装 Playwright 和 Chromium
 RUN npm install -g playwright && npx playwright install chromium --with-deps

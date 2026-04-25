@@ -104,6 +104,7 @@ from .schemas import (
     KnowledgeValidationOut,
     HealthSignalOut,
     ObservabilitySummaryOut,
+    ReadinessSummaryOut,
     SkillItem,
     SkillInventoryItem,
     SkillsDriftItem,
@@ -2446,6 +2447,92 @@ async def _probe_http(url: str, *, timeout_seconds: float = 1.5) -> tuple[bool, 
         return False, None, f"{exc.__class__.__name__}: {exc}"
 
 
+async def _probe_compose_dependencies(
+    redis_client: Redis,
+    session,
+    settings: Settings,
+) -> tuple[int, int, list[HealthSignalOut]]:
+    redis_host, redis_port = _host_port_from_url(settings.redis_url, 6379)
+    db_host, db_port = _host_port_from_url(settings.database_url, 5432)
+
+    compose_ok = 0
+    compose_total = 0
+    signals: list[HealthSignalOut] = []
+
+    compose_total += 1
+    redis_started = time.perf_counter()
+    try:
+        redis_ok = bool(await redis_client.ping())
+        redis_latency = int((time.perf_counter() - redis_started) * 1000)
+        if redis_ok:
+            compose_ok += 1
+        signals.append(
+            HealthSignalOut(
+                name="redis.ping",
+                source="compose",
+                target=f"{redis_host or 'redis'}:{redis_port}",
+                ok=redis_ok,
+                latency_ms=redis_latency,
+                detail="PONG" if redis_ok else "No PONG",
+            )
+        )
+    except Exception as exc:
+        signals.append(
+            HealthSignalOut(
+                name="redis.ping",
+                source="compose",
+                target=f"{redis_host or 'redis'}:{redis_port}",
+                ok=False,
+                detail=f"{exc.__class__.__name__}: {exc}",
+            )
+        )
+
+    compose_total += 1
+    db_started = time.perf_counter()
+    try:
+        db_ok = bool((await session.execute(sa.select(sa.literal(1)))).scalar_one() == 1)
+        db_latency = int((time.perf_counter() - db_started) * 1000)
+        if db_ok:
+            compose_ok += 1
+        signals.append(
+            HealthSignalOut(
+                name="postgres.select_1",
+                source="compose",
+                target=f"{db_host or 'postgres'}:{db_port}",
+                ok=db_ok,
+                latency_ms=db_latency,
+                detail="SELECT 1",
+            )
+        )
+    except Exception as exc:
+        signals.append(
+            HealthSignalOut(
+                name="postgres.select_1",
+                source="compose",
+                target=f"{db_host or 'postgres'}:{db_port}",
+                ok=False,
+                detail=f"{exc.__class__.__name__}: {exc}",
+            )
+        )
+
+    return compose_ok, compose_total, signals
+
+
+async def _build_readiness_summary(
+    redis_client: Redis,
+    session,
+    settings: Settings,
+) -> ReadinessSummaryOut:
+    compose_ok, compose_total, signals = await _probe_compose_dependencies(redis_client, session, settings)
+    return ReadinessSummaryOut(
+        generated_at=datetime.now(timezone.utc),
+        ready=compose_total > 0 and compose_ok == compose_total,
+        dependency_ok=compose_ok,
+        dependency_total=compose_total,
+        signals=signals,
+    )
+
+
 def _line_usage_from_session_event(line_obj: dict) -> tuple[datetime | None, dict | None]:
     message = line_obj.get("message") if isinstance(line_obj.get("message"), dict) else {}
     payload = line_obj.get("payload") if isinstance(line_obj.get("payload"), dict) else {}
@@ -3157,6 +3244,13 @@ def create_app() -> FastAPI:
     async def healthcheck() -> Health:
         return Health(ok=True)
 
+    @app.get("/ready", response_model=ReadinessSummaryOut)
+    async def readinesscheck(response: Response, session=Depends(get_session)) -> ReadinessSummaryOut:
+        summary = await _build_readiness_summary(redis, session, settings)
+        if not summary.ready:
+            response.status_code = 503
+        return summary
+
     @app.get("/v1/observability/summary", response_model=ObservabilitySummaryOut)
     async def get_observability_summary(
         window_minutes: int = 5,
@@ -3256,69 +3350,7 @@ def create_app() -> FastAPI:
         session=Depends(get_session),
     ) -> ContainerHealthSummaryOut:
         now = datetime.now(timezone.utc)
-        signals: list[HealthSignalOut] = []
-
-        redis_host, redis_port = _host_port_from_url(settings.redis_url, 6379)
-        db_host, db_port = _host_port_from_url(settings.database_url, 5432)
-
-        compose_ok = 0
-        compose_total = 0
-
-        compose_total += 1
-        redis_started = time.perf_counter()
-        try:
-            redis_ok = bool(await redis.ping())
-            redis_latency = int((time.perf_counter() - redis_started) * 1000)
-            if redis_ok:
-                compose_ok += 1
-            signals.append(
-                HealthSignalOut(
-                    name="redis.ping",
-                    source="compose",
-                    target=f"{redis_host or 'redis'}:{redis_port}",
-                    ok=redis_ok,
-                    latency_ms=redis_latency,
-                    detail="PONG" if redis_ok else "No PONG",
-                )
-            )
-        except Exception as exc:
-            signals.append(
-                HealthSignalOut(
-                    name="redis.ping",
-                    source="compose",
-                    target=f"{redis_host or 'redis'}:{redis_port}",
-                    ok=False,
-                    detail=f"{exc.__class__.__name__}: {exc}",
-                )
-            )
-
-        compose_total += 1
-        db_started = time.perf_counter()
-        try:
-            db_ok = bool((await session.execute(sa.select(sa.literal(1)))).scalar_one() == 1)
-            db_latency = int((time.perf_counter() - db_started) * 1000)
-            if db_ok:
-                compose_ok += 1
-            signals.append(
-                HealthSignalOut(
-                    name="postgres.select_1",
-                    source="compose",
-                    target=f"{db_host or 'postgres'}:{db_port}",
-                    ok=db_ok,
-                    latency_ms=db_latency,
-                    detail="SELECT 1",
-                )
-            )
-        except Exception as exc:
-            signals.append(
-                HealthSignalOut(
-                    name="postgres.select_1",
-                    source="compose",
-                    target=f"{db_host or 'postgres'}:{db_port}",
-                    ok=False,
-                    detail=f"{exc.__class__.__name__}: {exc}",
-                )
-            )
+        compose_ok, compose_total, signals = await _probe_compose_dependencies(redis, session, settings)
 
         port_targets: list[tuple[str, str, int]] = [
             ("mission-control-api", "mission-control-api", 9090),

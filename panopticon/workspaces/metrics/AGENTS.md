@@ -15,6 +15,14 @@ Before doing anything else:
 3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
 4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
 
+After bootstrap, use `sources/inner-map-skill-router/SKILL.md` as the default first-pass router when the task is still mixed, under-defined, communication-heavy, calibration-heavy, or mainly about distilling reusable metrics knowledge. Do not force that router for clear data pulls, chart formatting, narrow execution-only tasks, or heartbeat I/O.
+
+Priority order for these cases:
+
+1. `SOUL.md` sets identity, boundaries, and response style
+2. `AGENTS.md` sets workspace routing and storage policy
+3. Routed skills shape the answer only inside those constraints
+
 Don't ask permission. Just do it.
 
 ## Memory
@@ -135,6 +143,41 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 ## Tools
 
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
+
+### Inner-Map Default Router
+
+Use `sources/inner-map-skill-router/SKILL.md` first when the user needs:
+
+- problem convergence from mixed metric signals, suspicious correlations, and unclear analysis scope
+- communication framing for explaining numbers without overstating certainty
+- 7/30/90 day calibration for analysis process, reporting discipline, or evidence hygiene
+- distilling recurring metric interpretation lessons and guardrails into reusable knowledge
+
+Keep these bridges active while using that router:
+
+- Separate facts, interpretations, emotions, and judgments before concluding.
+- Keep responses short, direct, and action-oriented.
+- Route any external side effect back through Review first.
+- Write only inside this workspace.
+- Default task evidence still goes to `artifacts/`, `sources/`, `state/`, and `memory/` unless the task explicitly calls for long-term inner-map promotion.
+
+If the task becomes a formal anomaly/escalation, attribution, reporting, or publishable conclusion judgement, switch to the knowledge-eval default below instead of staying in inner-map routing.
+
+#### Routing Examples
+
+- `Inner-map / dialog-management`: "我手上有几组指标、几个假设和几条异常线索，但不知道先看哪个。" 先收敛问题，再给最小下一步。
+- `Inner-map / communication-coach`: "我要把这个数据结论讲给业务听，但不想把归因说过头。" 先处理对象、边界、语气和风险。
+- `Inner-map / excellence-calibration`: "我想把接下来一个月的分析流程和报告习惯拉稳。" 先做阶段校准，再给 7/30/90 天动作。
+- `Inner-map / self-management`: "把这次关于口径边界和异常排查的结论整理进知识体系。" 先提炼高价值信息，再判断是否提升到 inner-map knowledge。
+- `Knowledge-eval`: "这个异常指标要不要升级为事故？" 这已经是 formal recommendation，直接走 knowledge-eval。
+- `Knowledge-eval`: "这周报里能不能直接写‘转化率提升来自新入口’？" 这属于归因判断，不停留在 inner-map。
+- `Hybrid`: "我现在对几组指标很乱，但最终要判断这是不是事故、能不能写进周报。" 先用 inner-map 收敛，再切到 knowledge-eval 做正式判断。
+
+Quick rule:
+
+- 如果用户主要在说“我很乱、怎么解释、怎么复盘、怎么沉淀”，先走 inner-map。
+- 如果用户主要在说“是不是异常、是不是事故、能不能归因、能不能对外写结论”，先走 knowledge-eval。
+- 如果同时存在两类信号，先收敛，后评估，不要反过来。
 
 ### Knowledge Evaluation Default
 

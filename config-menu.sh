@@ -51,7 +51,7 @@ BG_RED='\033[41m'
 
 # ================================ 配置变量 ================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_OPENCLAW_VERSION="2026.4.15"
+DEFAULT_OPENCLAW_VERSION="2026.4.22"
 RELEASE_MANIFEST_PATH="$SCRIPT_DIR/openclaw-release.yaml"
 CONFIG_DIR="$HOME/.openclaw"
 
@@ -1361,19 +1361,17 @@ config_deepseek() {
     echo -e "${CYAN}选择模型:${NC}"
     echo ""
     print_menu_item "1" "deepseek-chat (V3.2, 推荐)" "⭐"
-    print_menu_item "2" "deepseek-reasoner (R1, 推理)" "🧠"
-    print_menu_item "3" "deepseek-coder (代码)" "💻"
-    print_menu_item "4" "自定义模型名称" "✏️"
+        print_menu_item "2" "deepseek-coder (代码)" "💻"
+        print_menu_item "3" "自定义模型名称" "✏️"
     echo ""
     
-    read -p "$(echo -e "${YELLOW}请选择 [1-4] (默认: 1): ${NC}")" model_choice < "$TTY_INPUT"
+        read -p "$(echo -e "${YELLOW}请选择 [1-3] (默认: 1): ${NC}")" model_choice < "$TTY_INPUT"
     model_choice=${model_choice:-1}
     
     case $model_choice in
         1) model="deepseek-chat" ;;
-        2) model="deepseek-reasoner" ;;
-        3) model="deepseek-coder" ;;
-        4) read -p "$(echo -e "${YELLOW}输入模型名称: ${NC}")" model < "$TTY_INPUT" ;;
+            2) model="deepseek-coder" ;;
+            3) read -p "$(echo -e "${YELLOW}输入模型名称: ${NC}")" model < "$TTY_INPUT" ;;
         *) model="deepseek-chat" ;;
     esac
     
@@ -4898,12 +4896,15 @@ quick_test_feishu() {
     local app_secret=""
     
     # 尝试从 JSON 配置文件中读取
+    if [ -f "$OPENCLAW_JSON" ]; then
+        if command -v node &> /dev/null; then
             app_id=$(node -e "
 try {
     const config = JSON.parse(require('fs').readFileSync('$OPENCLAW_JSON', 'utf8'));
     console.log(config.channels?.feishu?.appId || '');
 } catch (e) { console.log(''); }
 " 2>/dev/null)
+            app_secret=$(node -e "
 try {
     const config = JSON.parse(require('fs').readFileSync('$OPENCLAW_JSON', 'utf8'));
     console.log(config.channels?.feishu?.appSecret || '');

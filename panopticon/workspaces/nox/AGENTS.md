@@ -15,6 +15,14 @@ Before doing anything else:
 3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
 4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
 
+After bootstrap, use `sources/inner-map-skill-router/SKILL.md` as the default first-pass router when the task is still mixed, under-defined, communication-heavy, calibration-heavy, or mainly about distilling knowledge. Do not force that router for clear fact lookup, code/config debugging with a concrete anchor, narrow execution-only tasks, or heartbeat I/O.
+
+Priority order for these cases:
+
+1. `SOUL.md` sets identity, boundaries, and response style
+2. `AGENTS.md` sets workspace routing and storage policy
+3. Routed skills shape the answer only inside those constraints
+
 Don't ask permission. Just do it.
 
 ## Memory
@@ -135,6 +143,41 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 ## Tools
 
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
+
+### Inner-Map Default Router
+
+Use `sources/inner-map-skill-router/SKILL.md` first when the user needs:
+
+- problem convergence from mixed or noisy input
+- communication framing, drafting, or stakeholder handling
+- 7/30/90 day calibration, review, or growth design
+- distilling a conversation into reusable knowledge
+
+Keep these bridges active while using that router:
+
+- Separate facts, interpretations, emotions, and judgments before concluding.
+- Keep responses short, direct, and action-oriented.
+- Route any external side effect back through Review first.
+- Write only inside this workspace.
+- Default task evidence still goes to `artifacts/`, `sources/`, `state/`, and `memory/` unless the task explicitly calls for long-term inner-map promotion.
+
+If the task becomes a formal product, ops, roadmap, release, or prioritization recommendation, switch to the knowledge-eval default below instead of staying in inner-map routing.
+
+#### Routing Examples
+
+- `Inner-map / dialog-management`: "我现在一堆事混在一起，不知道先做哪一个。" 先收敛问题、拆开事实和情绪，再给最小下一步。
+- `Inner-map / communication-coach`: "我要跟老板解释这次延期，帮我组织说法。" 先处理表达对象、结构、语气和风险，再生成说法。
+- `Inner-map / excellence-calibration`: "我想在未来 30 天把状态拉起来，给我一个调整路径。" 先做阶段校准，再给 7/30/90 天动作。
+- `Inner-map / self-management`: "把这次对话里值得长期保留的内容整理进知识体系。" 先提炼高价值信息，再判断是否提升到 inner-map knowledge。
+- `Knowledge-eval`: "这个 release 要不要继续推？风险、依赖和回滚代价分别是什么？" 这已经是 formal recommendation，直接走 knowledge-eval。
+- `Knowledge-eval`: "给我两个 roadmap 方案，并判断哪个该优先。" 这属于产品/运营建议，不停留在 inner-map。
+- `Hybrid`: "我脑子很乱，但最终要决定这个项目是继续还是停止。" 先用 inner-map 做问题收敛；一旦目标、选项、约束清楚，切到 knowledge-eval 做正式判断。
+
+Quick rule:
+
+- 如果用户主要在说“我很乱、怎么说、怎么梳理、怎么复盘、怎么沉淀”，先走 inner-map。
+- 如果用户主要在说“是否继续、哪个优先、影响评估、发布判断、产品/运营建议”，先走 knowledge-eval。
+- 如果同时存在两类信号，先收敛，后评估，不要反过来。
 
 ### Knowledge Evaluation Default
 

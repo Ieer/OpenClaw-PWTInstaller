@@ -8,11 +8,12 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 HOST="${HOST:-127.0.0.1}"
+HTTP_HOST="${HTTP_HOST:-localhost}"
 HTTP_TIMEOUT="${HTTP_TIMEOUT:-5}"
 TCP_TIMEOUT="${TCP_TIMEOUT:-3}"
 GATEWAY_HTTP_STRICT="${GATEWAY_HTTP_STRICT:-0}"
 
-AGENTS=(
+DEFAULT_AGENTS=(
   nox
   metrics
   email
@@ -23,8 +24,32 @@ AGENTS=(
   personal
 )
 
-GATEWAY_PORTS=(18801 18811 18821 18831 18841 18851 18861 18871)
-BRIDGE_PORTS=(18802 18812 18822 18832 18842 18852 18862 18872)
+declare -A GATEWAY_PORTS=(
+  [nox]=18801
+  [metrics]=18811
+  [email]=18821
+  [growth]=18831
+  [trades]=18841
+  [health]=18851
+  [writing]=18861
+  [personal]=18871
+)
+
+declare -A BRIDGE_PORTS=(
+  [nox]=18802
+  [metrics]=18812
+  [email]=18822
+  [growth]=18832
+  [trades]=18842
+  [health]=18852
+  [writing]=18862
+  [personal]=18872
+)
+
+AGENTS=("$@")
+if [[ "${#AGENTS[@]}" -eq 0 ]]; then
+  AGENTS=("${DEFAULT_AGENTS[@]}")
+fi
 
 TOTAL_CHECKS=0
 PASSED_CHECKS=0
@@ -42,10 +67,21 @@ print_fail() {
   echo -e "${RED}[FAIL]${NC} $1"
 }
 
+validate_agent() {
+  local agent="$1"
+
+  if [[ -n "${GATEWAY_PORTS[$agent]+x}" && -n "${BRIDGE_PORTS[$agent]+x}" ]]; then
+    return 0
+  fi
+
+  print_fail "未知 agent: ${agent}"
+  exit 1
+}
+
 check_gateway() {
   local agent="$1"
   local port="$2"
-  local url="http://${HOST}:${port}"
+  local url="http://${HTTP_HOST}:${port}"
 
   TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
 
@@ -93,18 +129,22 @@ check_bridge_tcp() {
 }
 
 echo -e "${CYAN}=== Panopticon Agent Endpoint 巡检 ===${NC}"
-echo "Host: ${HOST} | HTTP timeout: ${HTTP_TIMEOUT}s | TCP timeout: ${TCP_TIMEOUT}s"
+echo "TCP host: ${HOST} | HTTP host: ${HTTP_HOST} | HTTP timeout: ${HTTP_TIMEOUT}s | TCP timeout: ${TCP_TIMEOUT}s"
 echo
 
+for agent in "${AGENTS[@]}"; do
+  validate_agent "$agent"
+done
+
 echo -e "${CYAN}-- Gateway (TCP + optional HTTP probe) --${NC}"
-for i in "${!AGENTS[@]}"; do
-  check_gateway "${AGENTS[$i]}" "${GATEWAY_PORTS[$i]}"
+for agent in "${AGENTS[@]}"; do
+  check_gateway "$agent" "${GATEWAY_PORTS[$agent]}"
 done
 
 echo
 echo -e "${CYAN}-- Bridge (TCP) --${NC}"
-for i in "${!AGENTS[@]}"; do
-  check_bridge_tcp "${AGENTS[$i]}" "${BRIDGE_PORTS[$i]}"
+for agent in "${AGENTS[@]}"; do
+  check_bridge_tcp "$agent" "${BRIDGE_PORTS[$agent]}"
 done
 
 echo

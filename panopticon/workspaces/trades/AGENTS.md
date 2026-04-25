@@ -15,6 +15,14 @@ Before doing anything else:
 3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
 4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
 
+After bootstrap, use `sources/inner-map-skill-router/SKILL.md` as the default first-pass router when the task is still mixed, under-defined, emotionally loaded, communication-heavy, calibration-heavy, or mainly about distilling reusable research knowledge. Do not force that router for clear fact lookup, narrow execution-only tasks, pure market data extraction, or heartbeat I/O.
+
+Priority order for these cases:
+
+1. `SOUL.md` sets identity, boundaries, and response style
+2. `AGENTS.md` sets workspace routing and storage policy
+3. Routed skills shape the answer only inside those constraints
+
 Don't ask permission. Just do it.
 
 ## Memory
@@ -135,6 +143,41 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 ## Tools
 
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
+
+### Inner-Map Default Router
+
+Use `sources/inner-map-skill-router/SKILL.md` first when the user needs:
+
+- problem convergence from mixed market noise, conflicting signals, or unclear research focus
+- communication framing for expressing a thesis without overstating certainty
+- 7/30/90 day calibration for research discipline, watchlist hygiene, or risk process
+- distilling recurring setup lessons and invalidation logic into reusable knowledge
+
+Keep these bridges active while using that router:
+
+- Separate facts, interpretations, emotions, and judgments before concluding.
+- Keep responses short, direct, and action-oriented.
+- Route any real-money or account-impacting action back through Review first.
+- Write only inside this workspace.
+- Default task evidence still goes to `artifacts/`, `sources/`, `state/`, and `memory/` unless the task explicitly calls for long-term inner-map promotion.
+
+If the task becomes a formal thesis/watchlist/risk judgement with real-money implications, switch to the knowledge-eval default below instead of staying in inner-map routing.
+
+#### Routing Examples
+
+- `Inner-map / dialog-management`: "盘面信息太多，我现在分不清哪些是噪音、哪些值得盯。" 先收敛问题，再给最小下一步。
+- `Inner-map / communication-coach`: "我要把这次观点写给同事/群里，但怕表达过头。" 先处理对象、边界、语气和风险。
+- `Inner-map / excellence-calibration`: "我想把接下来一个月的研究节奏和风控纪律重新拉稳。" 先做阶段校准，再给 7/30/90 天动作。
+- `Inner-map / self-management`: "把这次 setup 的失效条件和教训整理进知识体系。" 先提炼高价值信息，再判断是否提升到 inner-map knowledge。
+- `Knowledge-eval`: "这个 setup 现在还要继续盯，还是先放弃？" 这已经是 formal recommendation，直接走 knowledge-eval。
+- `Knowledge-eval`: "这条市场观点够不够写进晨报主结论？" 这属于证据判断，不停留在 inner-map。
+- `Hybrid`: "我现在思路很乱，但最终要决定这个 setup 是继续盯还是放弃。" 先用 inner-map 收敛，再切到 knowledge-eval 做正式判断。
+
+Quick rule:
+
+- 如果用户主要在说“我很乱、怎么表达、怎么复盘、怎么沉淀”，先走 inner-map。
+- 如果用户主要在说“观点是否成立、setup 是否继续、证据够不够、风险是否可接受”，先走 knowledge-eval。
+- 如果同时存在两类信号，先收敛，后评估，不要反过来。
 
 ### Knowledge Evaluation Default
 

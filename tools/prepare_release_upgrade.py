@@ -22,6 +22,12 @@ def run_step(label: str, cmd: list[str]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare and verify an OpenClaw release upgrade")
+    parser.add_argument(
+        "--level",
+        choices=["full", "light"],
+        default="full",
+        help="Preparation depth: full keeps compile checks, light only syncs and validates generated artifacts",
+    )
     parser.add_argument("--skip-smoke", action="store_true", help="Skip /chat smoke verification")
     parser.add_argument("--smoke-base-url", default="http://localhost:18920", help="Mission Control gateway base URL")
     parser.add_argument("agents", nargs="*", help="Optional agent slug list for smoke test")
@@ -31,18 +37,19 @@ def main() -> int:
     run_step("Generate Panopticon artifacts", _python_cmd(ROOT / "panopticon" / "tools" / "generate_panopticon.py"))
     run_step("Validate Panopticon and release alignment", _python_cmd(ROOT / "panopticon" / "tools" / "validate_panopticon.py"))
 
-    py_compile_cmd = [
-        str(PYTHON if PYTHON.exists() else Path(sys.executable)),
-        "-m",
-        "py_compile",
-        "mission_control_api/app/config.py",
-        "mission_control_api/app/main.py",
-        "MissionControl/app.py",
-        "panopticon/tools/smoke_chat_proxy.py",
-    ]
-    run_step("Compile Python entrypoints", py_compile_cmd)
+    if args.level == "full":
+        py_compile_cmd = [
+            str(PYTHON if PYTHON.exists() else Path(sys.executable)),
+            "-m",
+            "py_compile",
+            "mission_control_api/app/config.py",
+            "mission_control_api/app/main.py",
+            "MissionControl/app.py",
+            "panopticon/tools/smoke_chat_proxy.py",
+        ]
+        run_step("Compile Python entrypoints", py_compile_cmd)
 
-    if not args.skip_smoke:
+    if args.level == "full" and not args.skip_smoke:
         smoke_cmd = _python_cmd(
             ROOT / "panopticon" / "tools" / "smoke_chat_proxy.py",
             "--base-url",

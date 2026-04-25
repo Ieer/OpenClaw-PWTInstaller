@@ -13,6 +13,35 @@ if [ -d /home/node/.openclaw/extensions/feishu ]; then
   rm -rf /home/node/.openclaw/extensions/feishu || true
 fi
 
+# Stock runtime bundles under plugin-runtime-deps import the bare "openclaw" package.
+# Bridge that import back to the global install so stock plugins can resolve it.
+ensure_openclaw_runtime_bridge() {
+  local global_openclaw=/usr/local/lib/node_modules/openclaw
+  local runtime_node_modules=/home/node/.openclaw/plugin-runtime-deps/node_modules
+  local runtime_openclaw="$runtime_node_modules/openclaw"
+
+  if [ ! -d "$global_openclaw" ]; then
+    echo "[warn] global openclaw package not found; skip runtime bridge"
+    return
+  fi
+
+  mkdir -p "$runtime_node_modules"
+
+  if [ -L "$runtime_openclaw" ]; then
+    local current_target
+    current_target="$(readlink -f "$runtime_openclaw" || true)"
+    if [ "$current_target" = "$global_openclaw" ]; then
+      return
+    fi
+    rm -f "$runtime_openclaw"
+  elif [ -e "$runtime_openclaw" ]; then
+    return
+  fi
+
+  ln -s "$global_openclaw" "$runtime_openclaw"
+  echo "[ok] bridged plugin-runtime-deps/openclaw to global package"
+}
+
 # 检查配置文件是否存在，如果不存在则生成
 if [ ! -f /home/node/.openclaw/openclaw.json ]; then
     echo "生成配置文件..."
@@ -492,6 +521,8 @@ fi
 
 # 确保所有文件和目录的权限正确
 chown -R node:node /home/node/.openclaw
+
+ensure_openclaw_runtime_bridge
 
 echo "=== 初始化完成 ==="
 echo "当前使用模型: default/$MODEL_ID"

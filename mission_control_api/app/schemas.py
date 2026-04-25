@@ -35,6 +35,14 @@ class HealthSignalOut(BaseModel):
     detail: str | None = None
 
 
+class ReadinessSummaryOut(BaseModel):
+    generated_at: datetime
+    ready: bool
+    dependency_ok: int
+    dependency_total: int
+    signals: list[HealthSignalOut]
+
+
 class ContainerHealthSummaryOut(BaseModel):
     generated_at: datetime
     compose_ok: int

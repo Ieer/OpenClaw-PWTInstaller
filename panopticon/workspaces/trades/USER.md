@@ -29,3 +29,7 @@
 - 任务产物优先写：`artifacts/<task_id>/artifact.md` + `artifacts/<task_id>/artifact.json`
 - 引用/资料写：`sources/<task_id>/...`
 - 阶段性同步用 4 行：已完成 / 进行中 / 阻塞 / 下一步
+- inner-map 可作为首轮分流器，用于问题收敛、观点表达、长期校准、知识提炼；但不覆盖本 workspace 的交付路径约定。
+- 默认不把同一任务同时写入 `artifacts/`/`sources/` 和 inner-map knowledge；只有明确需要长期研究知识沉淀时，才做提升归档。
+- 路由快规则：如果用户主要在说“我很乱、怎么表达、怎么复盘、怎么沉淀”，先走 inner-map；如果主要在说“观点是否成立、setup 是否继续、证据够不够、风险是否可接受”，先走 knowledge-eval。
+- thesis judgement、continue/stop/monitor、真实资金相关风险判断这类正式决策，仍优先走 knowledge-eval 流程。

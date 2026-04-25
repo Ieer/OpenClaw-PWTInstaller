@@ -15,6 +15,14 @@ Before doing anything else:
 3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
 4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
 
+After bootstrap, use `sources/inner-map-skill-router/SKILL.md` as the default first-pass router when the task is still mixed, under-defined, emotionally loaded, communication-heavy, calibration-heavy, or mainly about distilling reusable writing knowledge. Do not force that router for clear copy-editing, formatting-only work, narrow execution-only tasks, or heartbeat I/O.
+
+Priority order for these cases:
+
+1. `SOUL.md` sets identity, boundaries, and response style
+2. `AGENTS.md` sets workspace routing and storage policy
+3. Routed skills shape the answer only inside those constraints
+
 Don't ask permission. Just do it.
 
 ## Memory
@@ -135,6 +143,41 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 ## Tools
 
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
+
+### Inner-Map Default Router
+
+Use `sources/inner-map-skill-router/SKILL.md` first when the user needs:
+
+- problem convergence from mixed themes, sources, viewpoints, and writing goals
+- communication framing for tone, stance, reader expectation, or sensitive expression
+- 7/30/90 day calibration for writing process, source discipline, or output systems
+- distilling recurring writing heuristics, source standards, and revision lessons into reusable knowledge
+
+Keep these bridges active while using that router:
+
+- Separate facts, interpretations, emotions, and judgments before concluding.
+- Keep responses short, direct, and action-oriented.
+- Route any external side effect back through Review first.
+- Write only inside this workspace.
+- Default task evidence still goes to `artifacts/`, `sources/`, `state/`, and `memory/` unless the task explicitly calls for long-term inner-map promotion.
+
+If the task becomes a formal publishability, source sufficiency, viewpoint risk, or continue/rewrite judgement, switch to the knowledge-eval default below instead of staying in inner-map routing.
+
+#### Routing Examples
+
+- `Inner-map / dialog-management`: "主题、受众、观点和材料全混在一起，我不知道这篇文章该从哪下手。" 先收敛问题，再给最小下一步。
+- `Inner-map / communication-coach`: "我要把这段话写得更有力度，但又不能把立场说过头。" 先处理对象、边界、语气和风险。
+- `Inner-map / excellence-calibration`: "我想把接下来一个月的写作节奏和引用纪律拉稳。" 先做阶段校准，再给 7/30/90 天动作。
+- `Inner-map / self-management`: "把这次关于提纲结构和来源边界的结论整理进知识体系。" 先提炼高价值信息，再判断是否提升到 inner-map knowledge。
+- `Knowledge-eval`: "这篇稿子的资料够不够支撑发布？" 这已经是 formal recommendation，直接走 knowledge-eval。
+- `Knowledge-eval`: "这个观点现在能不能写得更强？" 这属于观点风险判断，不停留在 inner-map。
+- `Hybrid`: "我现在思路很乱，但最终要判断这篇稿是继续写、重构，还是暂时停下。" 先用 inner-map 收敛，再切到 knowledge-eval 做正式判断。
+
+Quick rule:
+
+- 如果用户主要在说“我很乱、怎么表达、怎么复盘、怎么沉淀”，先走 inner-map。
+- 如果用户主要在说“能不能发、资料够不够、观点风险大不大、继续写还是重写”，先走 knowledge-eval。
+- 如果同时存在两类信号，先收敛，后评估，不要反过来。
 
 ### Knowledge Evaluation Default
 

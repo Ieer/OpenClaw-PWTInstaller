@@ -7,6 +7,10 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PANOPTICON_HEALTH_SCRIPT="$REPO_ROOT/panopticon/tools/check_panopticon_services.sh"
+
 FAILED=0
 
 print_ok() {
@@ -42,45 +46,21 @@ check_unit() {
   fi
 }
 
-check_port() {
-  local port="$1"
-  local label="$2"
-
-  if ss -ltn "( sport = :$port )" 2>/dev/null | awk 'NR>1 {found=1} END {exit(found?0:1)}'; then
-    print_ok "$label 端口 $port 正在监听"
-  else
-    print_fail "$label 端口 $port 未监听"
-  fi
-}
-
-check_http() {
-  local url="$1"
-  local label="$2"
-
-  local code
-  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$url" || true)"
-  if [[ "$code" == "200" ]]; then
-    print_ok "$label 可访问 ($url)"
-  else
-    print_fail "$label 异常 ($url, HTTP ${code:-ERR})"
-  fi
-}
-
 echo -e "${CYAN}=== 系统服务状态检查 ===${NC}"
 check_unit "panopticon-mission-control.service"
 check_unit "openclaw-cnim.service"
 
 echo
-echo -e "${CYAN}=== 端口健康检查 ===${NC}"
-check_port "18910" "Mission Control API"
-check_port "18920" "Mission Control UI"
-check_port "27216" "OpenClaw Gateway"
-check_port "27217" "OpenClaw Bridge"
-
-echo
-echo -e "${CYAN}=== HTTP健康检查 ===${NC}"
-check_http "http://127.0.0.1:18910/health" "Mission Control API /health"
-check_http "http://localhost:18920" "Mission Control UI"
+echo -e "${CYAN}=== Panopticon layered health ===${NC}"
+if [[ -f "$PANOPTICON_HEALTH_SCRIPT" ]]; then
+  if bash "$PANOPTICON_HEALTH_SCRIPT"; then
+    :
+  else
+    FAILED=1
+  fi
+else
+  print_fail "未找到 Panopticon 健康检查脚本: $PANOPTICON_HEALTH_SCRIPT"
+fi
 
 echo
 if [[ "$FAILED" -eq 0 ]]; then

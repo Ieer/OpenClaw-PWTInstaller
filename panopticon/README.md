@@ -35,40 +35,22 @@
 python -m pip install -r panopticon/tools/requirements.txt
 ```
 
-### 2. 复制本地 env 覆盖文件
+### 2. 先确认要填哪些配置
 
-```bash
-for example in panopticon/env/*.env.example; do
-  target="${example%.example}"
-  if [ ! -f "$target" ]; then
-    cp "$example" "$target"
-  fi
-done
-```
+首次运行 bootstrap 脚本会自动从 `*.env.example` 复制缺失的本地覆盖文件，但不会替你填写真实值。请先确认这些本地文件里的关键项：
 
-说明：公开仓库提交的是 `*.env.example`，Compose 实际读取的是本地 `*.env`。
-
-### 3. 轮换 Gateway token
-
-当 `agent_runtime.gateway_auth_mode=token` 时，这是启动前必做项：
-
-```bash
-bash panopticon/tools/rotate_gateway_tokens.sh
-```
-
-公开仓库中的 manifest 和 `*.env.example` 会保留占位值；`rotate_gateway_tokens.sh` 会把真实 token 写入 gitignored 的本地 `panopticon/env/*.env`。
-
-### 4. 编辑必要配置
-
-最少需要改这些文件：
-
-- [agents.manifest.yaml](agents.manifest.yaml)
-- [env/mission-control.env.example](env/mission-control.env.example) 复制出的本地 `mission-control.env`
-- [env/mission-control-ui.env.example](env/mission-control-ui.env.example) 复制出的本地 `mission-control-ui.env`
-- [env/mission-control-gateway.env.example](env/mission-control-gateway.env.example) 复制出的本地 `mission-control-gateway.env`
-- [env/nox.env.example](env/nox.env.example) 复制出的本地 `nox.env`
-- [env/metrics.env.example](env/metrics.env.example) 复制出的本地 `metrics.env`
-- [env/email.env.example](env/email.env.example) 复制出的本地 `email.env`
+- [env/mission-control.env](env/mission-control.env)
+- [env/mission-control-ui.env](env/mission-control-ui.env)
+- [env/mission-control-gateway.env](env/mission-control-gateway.env)
+- [env/nox.env](env/nox.env)
+- [env/metrics.env](env/metrics.env)
+- [env/email.env](env/email.env)
+- [env/growth.env](env/growth.env)
+- [env/trades.env](env/trades.env)
+- [env/health.env](env/health.env)
+- [env/writing.env](env/writing.env)
+- [env/personal.env](env/personal.env)
+- [.env](.env)（可选，用于自定义 `PANOPTICON_DATA_DIR`）
 
 通常至少要填写：
 
@@ -81,30 +63,21 @@ bash panopticon/tools/rotate_gateway_tokens.sh
 - 远程容器控制：默认关闭；如需启用，先在本地把 `agents.manifest.yaml` 中的 `mission_control.agent_controller_enabled` 改为 `true`，再编辑本地 `mission-control.env`，来源见 [env/mission-control.env.example](env/mission-control.env.example)
 - 语音桥接：编辑本地 `mission-control-voice-bridge.env`，来源见 [env/mission-control-voice-bridge.env.example](env/mission-control-voice-bridge.env.example)
 
-### 5. 可选：指定数据目录
-
-推荐把运行态数据移出 Git 工作树，在 [../panopticon/.env.example](../panopticon/.env.example) 的本地副本里设置：
-
-- `PANOPTICON_DATA_DIR`
-- `PANOPTICON_USB_HOST_PATH`
-- `PANOPTICON_KNOWLEDGE_RAW_SOURCES_PATH`
-
-如果以上变量都不设置，最小启动会使用仓库内默认目录，例如 `./mission-control/knowledge-sources`。
-
-### 6. 生成并校验
+### 3. 一键 bootstrap / 轮换 token
 
 ```bash
-python panopticon/tools/generate_panopticon.py --prune
-python panopticon/tools/validate_panopticon.py
-python panopticon/tools/validate_skills_template.py
-docker compose -f panopticon/docker-compose.panopticon.yml config >/tmp/panopticon.compose.rendered.yml
+bash panopticon/tools/rotate_gateway_tokens.sh
 ```
 
-### 7. 启动
+说明：脚本会自动补齐缺失的 `panopticon/.env` 和 `panopticon/env/*.env` 本地覆盖，轮换 token，生成 Compose，校验 manifest / release / skills，并重启相关服务。
+
+### 4. 启动后先做什么
 
 ```bash
-docker compose -f panopticon/docker-compose.panopticon.yml up -d
+bash panopticon/tools/check_panopticon_services.sh
 ```
+
+如果你还想做系统级巡检，也可以跑 [../tools/check_services_health.sh](../tools/check_services_health.sh)。
 
 如需语音桥接：
 
@@ -116,7 +89,7 @@ docker compose -f panopticon/docker-compose.panopticon.yml --profile voice up -d
 
 如果你想先做一轮更完整的语音评估，再看 [../docs/voice-device-bringup-zh-cn.md](../docs/voice-device-bringup-zh-cn.md) 里的分层评估脚本 `python panopticon/tools/assess_voice_service.py`。
 
-### 8. 验收入口
+### 5. 验收入口
 
 - Mission Control UI：<http://127.0.0.1:18920/>
 - 同源 Chat：<http://127.0.0.1:18920/chat/nox/>
@@ -137,16 +110,62 @@ docker compose -f panopticon/docker-compose.panopticon.yml --profile voice up -d
 ## 启动后先做什么
 
 ```bash
-docker compose -f panopticon/docker-compose.panopticon.yml ps
-docker compose -f panopticon/docker-compose.panopticon.yml logs -f --tail=200
 bash panopticon/tools/check_panopticon_services.sh
 ```
+
+如果你还想做系统级巡检，再跑 [../tools/check_services_health.sh](../tools/check_services_health.sh)。
 
 如果 UI 或网关出现 502，优先执行：
 
 ```bash
 bash panopticon/tools/recover_mission_control_gateway.sh
 ```
+
+## 升级与回滚
+
+主路线的运行态替换现在统一走仓库根目录 `tools/` 里的发布脚本，不再建议手工拼接 `docker compose build` 和 `up --force-recreate`。
+
+常用快路径：
+
+```bash
+python tools/prepare_release_upgrade.py --level light --skip-smoke
+python tools/rollout_release_upgrade.py --mode fast-panopticon
+bash panopticon/tools/check_agent_endpoints.sh
+```
+
+需要回退时：
+
+```bash
+python tools/rollback_release_upgrade.py
+```
+
+- `fast-panopticon` 适合只刷新 OpenClaw agent 容器，默认走轻量 prepare 和 agent endpoint 校验。
+- `release` 模式适合完整发布链路，默认会带上 Mission Control，并走更重的 smoke 校验。
+- rollout 和 rollback 都带运行版本门禁；如果目标服务版本完全没变化，脚本会直接失败，而不是把 no-op 当成功。
+- 最近一次升级的 metadata 会写到 `.release-state/last-rollout.json`；更完整的参数、模式与字段说明见 [../docs/openclaw-cli-cheatsheet-zh-cn.md](../docs/openclaw-cli-cheatsheet-zh-cn.md)。
+
+### OpenClaw 2026.4.22 飞书升级修复
+
+如果升级到 `2026.4.22` 后，某个 agent 的飞书渠道开始持续重启，并在日志里看到下面任一报错：
+
+- `Cannot find package 'openclaw' imported from .../plugin-runtime-deps/.../dist/extensions/feishu/monitor-*.js`
+- `failed to load bundled channel setup feishu: Cannot find module '@larksuiteoapi/node-sdk'`
+
+优先判断为 stock:feishu 运行时依赖解析问题，而不是飞书凭证或事件订阅配置错误。
+
+当前仓库已经内置修复：
+
+- 启动时自动把 `plugin-runtime-deps/node_modules/openclaw` 桥接到全局 `openclaw` 包。
+- 构建镜像时为 stock Feishu 扩展补装它自己的生产依赖。
+
+修复生效方式不是只重启 gateway，而是重建目标 agent 容器。例如：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --build --no-deps openclaw-nox
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --build --no-deps openclaw-email openclaw-growth openclaw-health openclaw-metrics openclaw-personal openclaw-trades openclaw-writing
+```
+
+如果只想局部验证，也可以只重建一个或几个 `openclaw-*` 服务。更完整的排障说明见 [../docs/feishu-setup-zh-cn.md](../docs/feishu-setup-zh-cn.md)。
 
 ## 常见约束
 
@@ -160,6 +179,7 @@ bash panopticon/tools/recover_mission_control_gateway.sh
 如果你已经跑通最小启动，再根据目标深入：
 
 - 开机自启与巡检：查看下方“开机自启”章节。
+- 升级与回滚：查看上方“升级与回滚”，需要完整参数说明时再看 [../docs/openclaw-cli-cheatsheet-zh-cn.md](../docs/openclaw-cli-cheatsheet-zh-cn.md)。
 - UI / Gateway 故障：查看下方“运维重启顺序”和“Control UI 推荐入口与 1008 排障”。
 - Agent 增删：查看下方“增删 Agent 快速作业”。
 - Mission Control 的工程解释：看 [../docs/mission-control-playbook-zh-cn.md](../docs/mission-control-playbook-zh-cn.md)。

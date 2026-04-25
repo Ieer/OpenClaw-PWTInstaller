@@ -1,8 +1,8 @@
 # OpenClaw CLI 全流程速查表（简中）
 
-> 版本基线：OpenClaw 2026.4.15
+> 版本基线：OpenClaw 2026.4.22
 >
-> 仓库对齐原则：本仓库统一以 [../openclaw-release.yaml](../openclaw-release.yaml) 中的 `openclaw_version: 2026.4.15` 作为文档基线；当 CLI 外部资料与当前仓库脚本、compose、README 不一致时，以当前仓库实现为准。
+> 仓库对齐原则：本仓库统一以 [../openclaw-release.yaml](../openclaw-release.yaml) 中的 `openclaw_version: 2026.4.22` 作为文档基线；当 CLI 外部资料与当前仓库脚本、compose、README 不一致时，以当前仓库实现为准。
 
 ---
 
@@ -17,7 +17,7 @@ OpenClaw CLI 是 8 个 agent 通过命令行沟通的桥梁。
 - 渠道绑定、配置修复、会话治理与故障排查
 - Panopticon 与 Mission Control 迭代时的人机协同操作基线
 
-这份 cheatsheet 按真实使用生命周期组织，目标不是覆盖所有子命令，而是给出一套在 OpenClaw 2026.4.15 上更稳定、便于系统迭代的命令视图。
+这份 cheatsheet 按真实使用生命周期组织，目标不是覆盖所有子命令，而是给出一套在 OpenClaw 2026.4.22 上更稳定、便于系统迭代的命令视图。
 
 ## 先记住三条原则
 
@@ -42,7 +42,7 @@ OpenClaw CLI 是 8 个 agent 通过命令行沟通的桥梁。
 
 ## 2. 配置与凭证管理
 
-OpenClaw 2026.4.15 延续双层配置思路：全局配置与工作区 / agent 配置并存，局部优先。
+OpenClaw 2026.4.22 延续双层配置思路：全局配置与工作区 / agent 配置并存，局部优先。
 
 | 命令 | 说明 | 示例 / 备注 |
 | --- | --- | --- |
@@ -173,7 +173,105 @@ bash panopticon/tools/recover_mission_control_gateway.sh
 
 这几条不是 OpenClaw CLI 子命令，但在当前仓库里是主路线运维事实来源。
 
-## 8. 安全隔离、审批与备份
+## 8. 发布升级、快路径替换与回滚
+
+这一段同样不是 OpenClaw CLI 子命令，而是当前仓库里升级 Panopticon OpenClaw 运行态的正式入口。
+
+### Prepare
+
+| 命令 | 说明 | 示例 / 备注 |
+| --- | --- | --- |
+| `python tools/prepare_release_upgrade.py --level full` | 完整 prepare | 会执行 sync、generate、validate、Python 编译检查；默认仍可带 smoke |
+| `python tools/prepare_release_upgrade.py --level light --skip-smoke` | 轻量 prepare | 只做 sync、generate、validate，适合 fast-panopticon 快路径 |
+
+### Rollout
+
+| 命令 | 说明 | 示例 / 备注 |
+| --- | --- | --- |
+| `python tools/rollout_release_upgrade.py --mode release` | 发布级 rollout | 默认 `prepare=full`、`verify=smoke`，并包含 Mission Control 服务 |
+| `python tools/rollout_release_upgrade.py --mode fast-panopticon` | 快路径替换 8 个 OpenClaw agent | 默认 `prepare=light`、`verify=agent-endpoints`，默认不重建 Mission Control |
+| `python tools/rollout_release_upgrade.py --mode fast-panopticon email growth` | 只替换指定 agent | 适合局部验证共享镜像变更 |
+| `python tools/rollout_release_upgrade.py --mode fast-panopticon --include-mission-control` | 快路径但同时带上 Mission Control | 用于 agent 与 UI/API 需要一起切换的场景 |
+| `python tools/rollout_release_upgrade.py --verify panopticon` | 覆盖默认校验策略 | 也支持 `none`、`agent-endpoints`、`smoke` |
+
+当前默认语义：
+
+- `release` 模式保留原来的完整升级链路。
+- `fast-panopticon` 模式只聚焦 OpenClaw agent 镜像刷新与容器替换。
+- 共享镜像只需 build 一个代表性 `openclaw-*` 服务，但会按选中的 agent 列表 force-recreate 目标容器。
+
+### 2026.4.22 飞书已知升级修复
+
+如果你把 Panopticon agent 升到 OpenClaw `2026.4.22` 后，飞书渠道开始在日志里循环出现下面任一报错：
+
+- `Cannot find package 'openclaw' imported from .../plugin-runtime-deps/.../dist/extensions/feishu/monitor-*.js`
+- `failed to load bundled channel setup feishu: Cannot find module '@larksuiteoapi/node-sdk'`
+
+这通常不是飞书凭证问题，而是 stock:feishu 在当前运行布局下有两段依赖解析缺口：
+
+1. runtime monitor 需要从 `plugin-runtime-deps` 解析 `openclaw`
+2. global stock Feishu client 需要解析 `@larksuiteoapi/node-sdk`
+
+当前仓库的修复已经落在镜像和启动脚本里，所以运维动作应当是重建目标 agent 容器，而不是只改 `FEISHU_APP_ID` / `FEISHU_APP_SECRET`。
+
+常用修复命令：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --build --no-deps openclaw-nox
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --build --no-deps openclaw-email openclaw-growth openclaw-health openclaw-metrics openclaw-personal openclaw-trades openclaw-writing
+```
+
+局部验证时，也可以只替换单个服务：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --build --no-deps openclaw-email
+```
+
+建议至少做两步校验：
+
+```bash
+docker logs openclaw-nox --since 3m 2>&1 | grep -E 'feishu|Cannot find package|Cannot find module|channel exited'
+docker exec openclaw-nox sh -lc 'test -L /home/node/.openclaw/plugin-runtime-deps/node_modules/openclaw && echo bridge-ok'
+```
+
+如果日志不再出现上述缺包报错，再做一次真实飞书收发测试。更完整的飞书排障说明见 [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md)。
+
+### Rollback
+
+| 命令 | 说明 | 示例 / 备注 |
+| --- | --- | --- |
+| `python tools/rollback_release_upgrade.py` | 回滚上一次 rollout | 从 `.release-state/last-rollout.json` 读取 snapshot、mode、verify 等 metadata |
+| `python tools/rollback_release_upgrade.py --snapshot .release-state/release-<stamp>.yaml` | 指定快照回滚 | 适合需要显式回退到某次 release contract 时 |
+| `python tools/rollback_release_upgrade.py --smoke-base-url http://localhost:18920` | 覆盖回滚后 smoke 地址 | 适合网关地址被临时改动时 |
+
+### 版本门禁与 metadata
+
+rollout 和 rollback 现在都带运行版本硬门禁，不再只看 compose 重建是否成功：
+
+- 如果部分服务版本未变化，会告警并打印 before / after 对照表。
+- 如果所有目标服务版本都未变化，脚本直接失败，避免把 no-op 当成成功升级或成功回滚。
+- 对比结果除了文本表格，还会写入结构化 rows，方便后续脚本或前端消费。
+
+当前 `.release-state/last-rollout.json` 会记录的关键字段包括：
+
+- `mode`、`prepare_level`、`verify_strategy`
+- `build_targets`、`recreate_services`
+- `pre_runtime_versions`、`post_runtime_versions`
+- `runtime_version_changed_services`、`runtime_version_unchanged_services`
+- `runtime_version_gate_passed`
+- `runtime_version_comparison_table`
+- `runtime_version_comparison_rows`
+- `rollback_runtime_version_comparison_table`
+- `rollback_runtime_version_comparison_rows`
+
+如果你的目标是“先快速把 Panopticon 的 OpenClaw 容器切到新版本，再决定要不要做完整发布级校验”，优先顺序应当是：
+
+1. `python tools/prepare_release_upgrade.py --level light --skip-smoke`
+2. `python tools/rollout_release_upgrade.py --mode fast-panopticon`
+3. `bash panopticon/tools/check_agent_endpoints.sh`
+4. 必要时再执行 `python tools/rollback_release_upgrade.py`
+
+## 9. 安全隔离、审批与备份
 
 多 agent 长期运行时，不应把安全能力留到最后补。
 
@@ -185,7 +283,7 @@ bash panopticon/tools/recover_mission_control_gateway.sh
 | `openclaw backup create` | 创建运行态备份 | 建议在大版本升级前做 |
 | `openclaw backup verify` | 校验备份可恢复性 | 备份不是只看是否生成 |
 
-## 9. 全局参数与隔离环境
+## 10. 全局参数与隔离环境
 
 这些参数可以加在任何命令前后，用来做环境隔离、开发调试与日志控制。
 
@@ -200,7 +298,7 @@ bash panopticon/tools/recover_mission_control_gateway.sh
 
 如果你想在不污染主线记忆、配置和渠道状态的前提下测试新模型或新技能，优先使用 `--dev` 或独立 `--profile`，不要直接在主工作区硬改。
 
-## 10. 重置与卸载
+## 11. 重置与卸载
 
 当配置已严重漂移，最好的办法不是继续补丁，而是明确区分“软重置”和“硬重置”。
 
@@ -215,7 +313,7 @@ bash panopticon/tools/recover_mission_control_gateway.sh
 2. 导出当前关键配置
 3. 记录现有模型、渠道和插件状态
 
-## 11. 面向系统迭代的最小命令集
+## 12. 面向系统迭代的最小命令集
 
 如果你的目标不是“把 CLI 全学会”，而是支持本仓库持续迭代，先记住下面这组最小闭环：
 
@@ -244,19 +342,20 @@ openclaw dashboard --no-open
 docker compose -f panopticon/docker-compose.panopticon.yml ps
 docker compose -f panopticon/docker-compose.panopticon.yml logs -f --tail=200
 bash panopticon/tools/check_panopticon_services.sh
+python tools/rollout_release_upgrade.py --mode fast-panopticon
 ```
 
-## 12. 版本对齐与资料可信度说明
+## 13. 版本对齐与资料可信度说明
 
 为了避免“搜到一篇旧教程，结果命令和字段都变了”的问题，本仓库对 CLI 文档采用以下可信度分层：
 
 1. 第一优先级：当前仓库可运行脚本、compose、env 模板、[../openclaw-release.yaml](../openclaw-release.yaml)
 2. 第二优先级：当前仓库 README 与 docs 中已出现并被实际使用的命令
-3. 第三优先级：OpenClaw 2026.4.15 外部参考资料与 `openclaw --help`
+3. 第三优先级：OpenClaw 2026.4.22 外部参考资料与 `openclaw --help`
 
 如果三者冲突，按第一优先级回退。
 
-## 13. 一页 TL;DR
+## 14. 一页 TL;DR
 
 - 首次安装：`openclaw setup`、`openclaw configure`
 - 配置修复：`openclaw config validate`、`openclaw doctor --fix`
@@ -264,6 +363,7 @@ bash panopticon/tools/check_panopticon_services.sh
 - gateway 运维：`openclaw gateway start`、`openclaw gateway status`、`openclaw gateway restart`
 - 日志与健康：`openclaw logs --follow`、`openclaw health`
 - 控制台入口：`openclaw dashboard --no-open`
+- 升级与回滚：`python tools/rollout_release_upgrade.py --mode fast-panopticon`、`python tools/rollback_release_upgrade.py`
 - 多 agent 主路线：额外依赖 [../panopticon/README.md](../panopticon/README.md) 中的 compose 与巡检脚本
 
 如果你只保留一个判断标准，就记这一句：CLI 用来操作，仓库脚本用来编排，版本以 [../openclaw-release.yaml](../openclaw-release.yaml) 为准。

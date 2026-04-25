@@ -162,6 +162,38 @@ openclaw gateway status
 4. **应用是否发布**: 未发布的应用无法正常使用
 5. **机器人是否在群里**: 确保机器人已添加到群组
 
+### Q: 升级到 OpenClaw 2026.4.22 后，飞书渠道反复重启或完全不可用？
+
+先看日志里是否出现下面任一报错：
+
+- `Cannot find package 'openclaw' imported from .../plugin-runtime-deps/.../dist/extensions/feishu/monitor-*.js`
+- `failed to load bundled channel setup feishu: Cannot find module '@larksuiteoapi/node-sdk'`
+
+如果是，优先判断为 stock:feishu 的运行时依赖解析问题，而不是 `App ID`、`App Secret`、权限或事件订阅配置错了。
+
+在当前仓库里，这个问题已经通过两层修复处理：
+
+1. 启动时自动把 `plugin-runtime-deps/node_modules/openclaw` 桥接到全局 `openclaw`
+2. 构建镜像时为 `/usr/local/lib/node_modules/openclaw/dist/extensions/feishu` 补装生产依赖
+
+如果你的容器还是旧镜像，需要重建目标 agent 容器：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --build --no-deps openclaw-nox
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --build --no-deps openclaw-email openclaw-growth openclaw-health openclaw-metrics openclaw-personal openclaw-trades openclaw-writing
+```
+
+如果只想先修一个 agent，也可以只替换单个 `openclaw-*` 服务。
+
+重建后建议至少核对：
+
+```bash
+docker logs openclaw-nox --since 3m 2>&1 | grep -E 'feishu|Cannot find package|Cannot find module|channel exited'
+docker exec openclaw-nox sh -lc 'test -L /home/node/.openclaw/plugin-runtime-deps/node_modules/openclaw && echo bridge-ok'
+```
+
+如果日志里已经不再出现上述缺包错误，再回到飞书里做一次真实收发测试。
+
 ### Q: 群聊中如何触发机器人？
 
 默认情况下，群聊中需要 **@机器人** 才会触发回复，这样可以避免机器人响应所有消息。

@@ -877,7 +877,7 @@ Ollama API error 500: model requires more system memory
 
 统一入口如下：
 
-- 想看 OpenClaw 2026.4.15 的初始化、配置、模型、agent、gateway、运维与安全命令总览，直接看 [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md)
+- 想看 OpenClaw 2026.4.22 的初始化、配置、模型、agent、gateway、运维与安全命令总览，直接看 [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md)
 - 想看 8-Agent Panopticon 的 compose、巡检、恢复和主路线运维命令，直接看 [../panopticon/README.md](../panopticon/README.md)
 
 本文正文里仍然保留少量命令示例，但只限于解释 `openclaw.json` 字段时必需的上下文，例如：

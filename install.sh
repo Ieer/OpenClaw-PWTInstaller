@@ -39,7 +39,7 @@ GRAY='\033[0;90m'
 NC='\033[0m' # 无颜色
 
 # ================================ 配置变量 ================================
-OPENCLAW_VERSION_DEFAULT="2026.4.15"
+OPENCLAW_VERSION_DEFAULT="2026.4.22"
 OPENCLAW_VERSION="$OPENCLAW_VERSION_DEFAULT"
 CONFIG_DIR="$HOME/.openclaw"
 MIN_NODE_VERSION=22
@@ -991,14 +991,12 @@ setup_ai_provider() {
             echo ""
             echo "选择模型:"
             echo "  1) deepseek-chat (V3.2, 推荐)"
-            echo "  2) deepseek-reasoner (R1, 推理)"
-            echo "  3) deepseek-coder"
-            echo "  4) 自定义模型名称"
-            echo -en "${YELLOW}选择模型 [1-4] (默认: 1): ${NC}"; read model_choice < "$TTY_INPUT"
+                echo "  2) deepseek-coder"
+                echo "  3) 自定义模型名称"
+                echo -en "${YELLOW}选择模型 [1-3] (默认: 1): ${NC}"; read model_choice < "$TTY_INPUT"
             case $model_choice in
-                2) AI_MODEL="deepseek-reasoner" ;;
-                3) AI_MODEL="deepseek-coder" ;;
-                4) echo -en "${YELLOW}输入模型名称: ${NC}"; read AI_MODEL < "$TTY_INPUT" ;;
+                    2) AI_MODEL="deepseek-coder" ;;
+                    3) echo -en "${YELLOW}输入模型名称: ${NC}"; read AI_MODEL < "$TTY_INPUT" ;;
                 *) AI_MODEL="deepseek-chat" ;;
             esac
             ;;

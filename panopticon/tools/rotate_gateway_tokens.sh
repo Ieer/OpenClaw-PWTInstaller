@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Rotate OpenClaw gateway tokens for 8 agents and restart panopticon stack.
+# Bootstrap OpenClaw Panopticon local env, rotate gateway tokens, and restart the stack.
 #
+# - Creates missing local override env files from *.env.example
 # - Generates strong random tokens (not printed)
 # - Writes local override env files under panopticon/env/*.env (gitignored)
 # - Updates panopticon/agent-homes/<agent>/openclaw.json gateway.auth.token
+# - Regenerates the compose file and validates generated artifacts
 # - Force-recreates relevant containers so new env is loaded
 # - Runs endpoint checks
 
@@ -32,7 +34,19 @@ if ! command -v python >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[1/5] Generating tokens + writing local env overrides (gitignored)"
+echo "[1/7] Ensuring local env overrides exist"
+if [[ -f "panopticon/.env.example" && ! -f "panopticon/.env" ]]; then
+  cp "panopticon/.env.example" "panopticon/.env"
+fi
+
+for example in panopticon/env/*.env.example; do
+  target="${example%.example}"
+  if [[ ! -f "$target" ]]; then
+    cp "$example" "$target"
+  fi
+done
+
+echo "[2/7] Generating tokens + writing local env overrides (gitignored)"
 python - <<'PY'
 import json
 import secrets
@@ -47,28 +61,66 @@ env_dir.mkdir(parents=True, exist_ok=True)
 
 tokens = {slug: secrets.token_urlsafe(32) for slug in slugs}
 
-# per-agent override env files (token only)
+
+def read_lines(path: Path) -> list[str]:
+  if not path.exists():
+    return []
+  return path.read_text(encoding='utf-8').splitlines()
+
+
+def write_lines(path: Path, lines: list[str]) -> None:
+  content = '\n'.join(lines).rstrip('\n') + '\n'
+  path.write_text(content, encoding='utf-8')
+
+
+def upsert_env_value(path: Path, key: str, value: str) -> None:
+  lines = read_lines(path)
+  updated: list[str] = []
+  found = False
+  for raw_line in lines:
+    stripped = raw_line.strip()
+    if not stripped or stripped.startswith('#') or '=' not in raw_line:
+      updated.append(raw_line)
+      continue
+    current_key, _ = raw_line.split('=', 1)
+    if current_key.strip() == key:
+      updated.append(f'{key}={value}')
+      found = True
+    else:
+      updated.append(raw_line)
+  if not found:
+    if updated and updated[-1] != '':
+      updated.append('')
+    updated.append(f'{key}={value}')
+  write_lines(path, updated)
+
+
+def load_env_value(path: Path, key: str) -> str:
+  for raw_line in read_lines(path):
+    stripped = raw_line.strip()
+    if not stripped or stripped.startswith('#') or '=' not in raw_line:
+      continue
+    current_key, current_value = raw_line.split('=', 1)
+    if current_key.strip() == key:
+      return current_value.strip()
+  return ''
+
+# per-agent override env files (token updates only)
 for slug, token in tokens.items():
-    (env_dir / f'{slug}.env').write_text(f'OPENCLAW_GATEWAY_TOKEN={token}\n', encoding='utf-8')
+  upsert_env_value(env_dir / f'{slug}.env', 'OPENCLAW_GATEWAY_TOKEN', token)
 
 # mission-control-ui token map env (server-side injection path)
 map_value = ','.join([f"{slug}={tokens[slug]}" for slug in slugs])
-(env_dir / 'mission-control-ui.env').write_text(
-    '\n'.join([
-        '# Mission Control Dash UI (local overrides; do not commit)',
-    'MC_CHAT_HOST=127.0.0.1',
-    f'MC_CHAT_AGENT_TOKEN_MAP={map_value}',
-        ''
-    ]),
-    encoding='utf-8'
-)
+mission_control_env_path = env_dir / 'mission-control.env'
+mission_control_auth_token = load_env_value(mission_control_env_path, 'MC_AUTH_TOKEN')
+upsert_env_value(env_dir / 'mission-control-ui.env', 'MC_CHAT_HOST', '127.0.0.1')
+upsert_env_value(env_dir / 'mission-control-ui.env', 'MC_CHAT_AGENT_TOKEN_MAP', map_value)
+if mission_control_auth_token:
+  upsert_env_value(env_dir / 'mission-control-ui.env', 'MISSION_CONTROL_AUTH_TOKEN', mission_control_auth_token)
 
 # mission-control-gateway (nginx) per-agent auth env
-lines = ['# nginx chat gateway token env (local; do not commit)']
 for slug in slugs:
-    lines.append(f'TOKEN_{slug.upper()}={tokens[slug]}')
-lines.append('')
-(env_dir / 'mission-control-gateway.env').write_text('\n'.join(lines), encoding='utf-8')
+  upsert_env_value(env_dir / 'mission-control-gateway.env', f'TOKEN_{slug.upper()}', tokens[slug])
 
 # patch agent-homes openclaw.json token
 for slug, token in tokens.items():
@@ -84,16 +136,27 @@ for slug, token in tokens.items():
 print('ok')
 PY
 
-echo "[2/5] Validating panopticon manifest and generated artifacts"
+echo "[3/7] Regenerating compose artifacts"
+python panopticon/tools/generate_panopticon.py --prune
+
+echo "[4/7] Validating panopticon manifest, generated artifacts, and skills template"
 python panopticon/tools/validate_panopticon.py
+python panopticon/tools/validate_skills_template.py
 
-echo "[3/5] Force-recreating services to load new env"
+echo "[5/7] Force-recreating services to load new env"
+SERVICES=(mission-control-api mission-control-ui mission-control-gateway mc-heartbeat)
+for agent in "${AGENTS[@]}"; do
+  SERVICES+=("openclaw-$agent")
+done
+
+if docker compose -f "$COMPOSE_FILE" config --services 2>/dev/null | grep -qx "mission-control-agent-controller"; then
+  SERVICES+=(mission-control-agent-controller)
+fi
+
 # Recreate API/UI/gateway and agents so env_file changes are applied.
-docker compose -f "$COMPOSE_FILE" up -d --no-build --force-recreate \
-  mission-control-api mission-control-ui mission-control-gateway \
-  openclaw-nox openclaw-metrics openclaw-email openclaw-growth openclaw-trades openclaw-health openclaw-writing openclaw-personal
+docker compose -f "$COMPOSE_FILE" up -d --no-build --force-recreate "${SERVICES[@]}"
 
-echo "[4/5] Waiting for gateways to become reachable"
+echo "[6/7] Waiting for gateways to become reachable"
 # Gateways can take a bit to come up after token reload.
 for i in {1..30}; do
   if bash panopticon/tools/check_agent_endpoints.sh >/dev/null 2>&1; then
@@ -108,10 +171,10 @@ for i in {1..30}; do
   fi
 done
 
-echo "[5/5] Smoke checks"
+echo "[7/7] Smoke checks"
 # Check the unified entrypoint is alive.
 for i in {1..10}; do
-  code="$(curl -L -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18920 || true)"
+  code="$(curl -L -sS -o /dev/null -w '%{http_code}' http://localhost:18920 || true)"
   if [[ "$code" == "200" ]]; then
     echo "MC(18920)=200"
     break
@@ -121,7 +184,7 @@ for i in {1..10}; do
 done
 
 for i in {1..20}; do
-  code="$(curl -L -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18920/chat/nox/ || true)"
+  code="$(curl -L -sS -o /dev/null -w '%{http_code}' http://localhost:18920/chat/nox/ || true)"
   if [[ "$code" == "200" ]]; then
     echo "chat_proxy(nox)=200"
     break

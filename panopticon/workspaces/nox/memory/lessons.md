@@ -48,6 +48,18 @@
 
 ### 模型配置与图像识别 (2026-04-13)
 - **问题**：OpenClaw 图像识别失败，报 `Unknown model` 错误
+
+### 插件安装与依赖管理 (Week of 2026-04-18)
+- **Rokid 插件安装**：
+  - 容器网络问题导致 npm install 超时，改用符号链接复用主应用 node_modules
+  - 解决方案：`ln -s /usr/local/lib/node_modules/openclaw/node_modules/ws node_modules/ws`
+  - 关键点：插件依赖可通过符号链接复用主应用模块，避免重复安装
+- **配置验证**：插件配置需正确设置 linkCode 和 linkSecret，Gateway 重启后生效
+- **DeepSeek 模型集成**：
+  - 成功添加 DeepSeek provider 到 OpenClaw 配置
+  - 费用结构：输入（缓存命中）0.2元/百万tokens，输入（缓存未命中）2元/百万tokens，输出3元/百万tokens
+  - 模型回退链配置：default/glm-5-turbo → deepseek/deepseek-chat → default/glm-4.7
+  - 关键点：多模型回退链提高服务稳定性，成本透明化
 - **根因**：
   1. 视觉模型 `glm-4v-flash` 在智谱 AI API 中不存在，正确名称为 `glm-4v`
   2. 主对话模型 `glm-4.7`、`glm-5-turbo` 被错误标注为支持 image 输入，导致含图片消息直接走主模型失败
