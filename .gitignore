@@ -86,11 +86,15 @@ panopticon/workspaces/*/ppt-venv/
 panopticon/workspaces/*/inbox/
 panopticon/workspaces/*/outbox/
 panopticon/workspaces/*/artifacts/
+panopticon/workspaces/*/baidu-backup/
+panopticon/workspaces/*/ppt-output/
 panopticon/workspaces/*/state/
 panopticon/workspaces/*/sources/
 panopticon/workspaces/*/node_modules/
 panopticon/workspaces/*/thumbnails/
 panopticon/workspaces/*/components/
+panopticon/workspaces/*/DREAMS.md
+panopticon/workspaces/*/memory/dreaming/
 panopticon/workspaces/*/*.pptx
 panopticon/workspaces/*/memory/.dreams/
 panopticon/workspaces/*/memory/*.md
