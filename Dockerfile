@@ -7,7 +7,8 @@
 
 FROM node:22-alpine
 
-ARG OPENCLAW_VERSION=2026.4.22
+ARG OPENCLAW_VERSION=2026.4.26
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 
 LABEL maintainer="OpenClaw Community"
 LABEL description="OpenClaw - Your Personal AI Assistant"
@@ -28,6 +29,13 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # 创建工作目录
 WORKDIR /app
+
+# 默认使用国内 npm 镜像并放宽网络重试，避免弱网下 registry 连接重置导致构建失败。
+RUN npm config set registry "${NPM_REGISTRY}" \
+    && npm config set fetch-retries 8 \
+    && npm config set fetch-retry-mintimeout 20000 \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && npm config set fetch-timeout 600000
 
 # 安装 OpenClaw
 RUN npm install -g "openclaw@${OPENCLAW_VERSION}"

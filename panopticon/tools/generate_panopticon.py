@@ -252,7 +252,7 @@ def render_compose(manifest: dict) -> str:
               mission-control-ui:
                 condition: service_healthy
             healthcheck:
-              test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+              test: ["CMD-SHELL", "wget --header='Host: localhost' -q -O /dev/null http://127.0.0.1/ || exit 1"]
               interval: 15s
               timeout: 5s
               retries: 10
@@ -342,7 +342,7 @@ def render_compose(manifest: dict) -> str:
         slug = agent["slug"]
         gateway_host_port = agent["gateway_host_port"]
         bridge_host_port = agent["bridge_host_port"]
-        openclaw_version = str(runtime.get("cnim_openclaw_version", "2026.4.22"))
+        openclaw_version = str(runtime.get("cnim_openclaw_version", "2026.4.26"))
 
         service_block = textwrap.dedent(
             """\
@@ -409,7 +409,8 @@ def render_compose(manifest: dict) -> str:
         """
     )
 
-    return compose_header + "".join(services_text) + footer
+    compose_content = compose_header + "".join(services_text) + footer
+    return "\n".join(line.rstrip() for line in compose_content.rstrip().splitlines()) + "\n"
 
 
 def render_agent_env(template: str, agent: dict, runtime: dict) -> str:

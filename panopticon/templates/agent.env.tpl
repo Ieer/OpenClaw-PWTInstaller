@@ -36,6 +36,10 @@ OPENCLAW_BRIDGE_PORT={bridge_port}
 OPENCLAW_GATEWAY_AUTH_MODE={gateway_auth_mode}
 OPENCLAW_GATEWAY_PASSWORD=
 OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH={control_ui_disable_device_auth}
+# OpenClaw may stage bundled plugin runtime deps on first start after an upgrade.
+OPENCLAW_GATEWAY_READY_TIMEOUT=1800
+OPENCLAW_BRIDGE_READY_TIMEOUT=600
+OPENCLAW_BRIDGE_READY_REQUIRED=0
 
 # Mission Control integration (agent wrapper / skills should consume these)
 AGENT_SLUG={slug}

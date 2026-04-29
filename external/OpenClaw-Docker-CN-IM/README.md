@@ -609,7 +609,7 @@ docker build -t justlikemaki/openclaw-docker-cn-im:latest .
 容器使用以下命令启动 OpenClaw：
 
 ```bash
-openclaw gateway --verbose
+openclaw gateway run --verbose
 ```
 
 这将以详细日志模式启动 Gateway 服务。

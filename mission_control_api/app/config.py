@@ -50,6 +50,7 @@ class Settings(BaseModel):
     voice_commands_enabled: bool = True
     voice_command_require_prefix: bool = True
     voice_command_prefixes: list[str] = []
+    voice_tts_feedback_enabled: bool = True
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -123,4 +124,5 @@ def load_settings() -> Settings:
             for item in (os.getenv("MC_VOICE_COMMAND_PREFIXES") or "指挥,mission control,control").split(",")
             if item.strip()
         ],
+        voice_tts_feedback_enabled=_env_flag("MC_VOICE_TTS_FEEDBACK_ENABLED", True),
     )

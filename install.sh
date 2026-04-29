@@ -39,7 +39,7 @@ GRAY='\033[0;90m'
 NC='\033[0m' # 无颜色
 
 # ================================ 配置变量 ================================
-OPENCLAW_VERSION_DEFAULT="2026.4.22"
+OPENCLAW_VERSION_DEFAULT="2026.4.26"
 OPENCLAW_VERSION="$OPENCLAW_VERSION_DEFAULT"
 CONFIG_DIR="$HOME/.openclaw"
 MIN_NODE_VERSION=22
@@ -1484,16 +1484,16 @@ start_openclaw_service() {
     
     if command -v setsid &> /dev/null; then
         if [ -f "$env_file" ]; then
-            setsid bash -c "source $quoted_env_file && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
+            setsid bash -c "source $quoted_env_file && exec openclaw gateway run --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
         else
-            setsid openclaw gateway --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
+            setsid openclaw gateway run --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
         fi
     else
         # 备用方案：nohup + disown
         if [ -f "$env_file" ]; then
-            nohup bash -c "source $quoted_env_file && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
+            nohup bash -c "source $quoted_env_file && exec openclaw gateway run --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
         else
-            nohup openclaw gateway --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
+            nohup openclaw gateway run --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
         fi
         disown 2>/dev/null || true
     fi
@@ -1518,7 +1518,7 @@ start_openclaw_service() {
         log_error "Gateway 启动失败"
         echo ""
         echo -e "${YELLOW}请查看日志: tail -f /tmp/openclaw-gateway.log${NC}"
-        echo -e "${YELLOW}或手动启动: source ~/.openclaw/env && openclaw gateway${NC}"
+        echo -e "${YELLOW}或手动启动: source ~/.openclaw/env && openclaw gateway run${NC}"
     fi
 }
 
@@ -1623,7 +1623,7 @@ main() {
     else
         echo ""
         echo -e "${CYAN}稍后可以通过以下命令启动服务:${NC}"
-        echo "  source ~/.openclaw/env && openclaw gateway"
+        echo "  source ~/.openclaw/env && openclaw gateway run"
         echo ""
     fi
     

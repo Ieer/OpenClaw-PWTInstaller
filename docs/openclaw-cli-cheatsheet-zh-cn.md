@@ -1,8 +1,8 @@
 # OpenClaw CLI 全流程速查表（简中）
 
-> 版本基线：OpenClaw 2026.4.22
+> 版本基线：OpenClaw 2026.4.26
 >
-> 仓库对齐原则：本仓库统一以 [../openclaw-release.yaml](../openclaw-release.yaml) 中的 `openclaw_version: 2026.4.22` 作为文档基线；当 CLI 外部资料与当前仓库脚本、compose、README 不一致时，以当前仓库实现为准。
+> 仓库对齐原则：本仓库统一以 [../openclaw-release.yaml](../openclaw-release.yaml) 中的 `openclaw_version: 2026.4.26` 作为文档基线；当 CLI 外部资料与当前仓库脚本、compose、README 不一致时，以当前仓库实现为准。
 
 ---
 
@@ -17,7 +17,7 @@ OpenClaw CLI 是 8 个 agent 通过命令行沟通的桥梁。
 - 渠道绑定、配置修复、会话治理与故障排查
 - Panopticon 与 Mission Control 迭代时的人机协同操作基线
 
-这份 cheatsheet 按真实使用生命周期组织，目标不是覆盖所有子命令，而是给出一套在 OpenClaw 2026.4.22 上更稳定、便于系统迭代的命令视图。
+这份 cheatsheet 按真实使用生命周期组织，目标不是覆盖所有子命令，而是给出一套在 OpenClaw 2026.4.26 上更稳定、便于系统迭代的命令视图。
 
 ## 先记住三条原则
 
@@ -42,7 +42,7 @@ OpenClaw CLI 是 8 个 agent 通过命令行沟通的桥梁。
 
 ## 2. 配置与凭证管理
 
-OpenClaw 2026.4.22 延续双层配置思路：全局配置与工作区 / agent 配置并存，局部优先。
+OpenClaw 2026.4.26 延续双层配置思路：全局配置与工作区 / agent 配置并存，局部优先。
 
 | 命令 | 说明 | 示例 / 备注 |
 | --- | --- | --- |
@@ -151,8 +151,8 @@ Gateway 是 OpenClaw 的心脏。对本仓库而言，这一层直接影响单 A
 | `openclaw gateway start` | 启动 gateway | 本仓库 README 与飞书文档已使用 |
 | `openclaw gateway status` | 查看 gateway 状态 | 适合排查渠道是否在线 |
 | `openclaw gateway restart` | 重启 gateway | 本仓库配置指南已使用 |
-| `openclaw gateway --port 18789` | 直接以指定端口运行 gateway | 适合临时调试 |
-| `openclaw gateway --force` | 强制清理旧占用并启动 | 适合僵尸进程占口 |
+| `openclaw gateway run --port 18789` | 直接以指定端口前台运行 gateway | 适合临时调试或容器前台进程 |
+| `openclaw gateway run --force` | 强制清理旧占用并前台启动 | 适合僵尸进程占口 |
 | `openclaw logs --follow` | 跟踪运行日志 | 本仓库 README 与飞书文档已使用 |
 | `openclaw health` | 查看整体健康度 | 本仓库根 README 已使用 |
 | `openclaw status` | 查看系统状态 | 可用于补充渠道与运行态检查 |
@@ -200,9 +200,9 @@ bash panopticon/tools/recover_mission_control_gateway.sh
 - `fast-panopticon` 模式只聚焦 OpenClaw agent 镜像刷新与容器替换。
 - 共享镜像只需 build 一个代表性 `openclaw-*` 服务，但会按选中的 agent 列表 force-recreate 目标容器。
 
-### 2026.4.22 飞书已知升级修复
+### 2026.4.24 飞书已知升级修复
 
-如果你把 Panopticon agent 升到 OpenClaw `2026.4.22` 后，飞书渠道开始在日志里循环出现下面任一报错：
+如果你把 Panopticon agent 升到 OpenClaw `2026.4.24` 后，飞书渠道开始在日志里循环出现下面任一报错：
 
 - `Cannot find package 'openclaw' imported from .../plugin-runtime-deps/.../dist/extensions/feishu/monitor-*.js`
 - `failed to load bundled channel setup feishu: Cannot find module '@larksuiteoapi/node-sdk'`
@@ -351,7 +351,7 @@ python tools/rollout_release_upgrade.py --mode fast-panopticon
 
 1. 第一优先级：当前仓库可运行脚本、compose、env 模板、[../openclaw-release.yaml](../openclaw-release.yaml)
 2. 第二优先级：当前仓库 README 与 docs 中已出现并被实际使用的命令
-3. 第三优先级：OpenClaw 2026.4.22 外部参考资料与 `openclaw --help`
+3. 第三优先级：OpenClaw 2026.4.26 外部参考资料与 `openclaw --help`
 
 如果三者冲突，按第一优先级回退。
 

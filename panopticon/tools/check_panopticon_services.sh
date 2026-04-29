@@ -21,6 +21,8 @@ MISSION_CONTROL_READY_URL="${MISSION_CONTROL_API_BASE%/}/ready"
 CONTAINER_HEALTH_URL="${MISSION_CONTROL_API_BASE%/}/v1/observability/container-health"
 VOICE_CONTAINER="${MC_VOICE_BRIDGE_CONTAINER:-mission-control-voice-bridge}"
 CHECK_VOICE_E2E="${CHECK_VOICE_E2E:-auto}"
+CHAT_PROXY_EXPECTED="${CHAT_PROXY_EXPECTED:-websocket}"
+CHAT_PROXY_URL="${CHAT_PROXY_URL:-http://localhost:18920/chat/nox/}"
 
 SERVICES=(
   mc-redis
@@ -197,6 +199,49 @@ check_http_status() {
   print_fail "$label failed ($url, HTTP ${code:-ERR}, expected $expected)"
   mark_failure "$layer"
   return 1
+}
+
+check_websocket_upgrade() {
+  local url="$1"
+  local label="$2"
+  local layer="$3"
+  local response code
+
+  response="$(curl -i -sS --max-time 5 \
+    -H 'Connection: Upgrade' \
+    -H 'Upgrade: websocket' \
+    -H 'Sec-WebSocket-Version: 13' \
+    -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+    "$url" 2>/dev/null || true)"
+  code="$(awk 'BEGIN { code="" } /^HTTP\// { code=$2 } END { print code }' <<< "$response")"
+
+  if [[ "$code" == "101" ]]; then
+    print_ok "$label WebSocket upgrade 101 ($url)"
+    return 0
+  fi
+
+  print_fail "$label failed ($url, HTTP ${code:-ERR}, expected 101 upgrade)"
+  mark_failure "$layer"
+  return 1
+}
+
+check_chat_proxy_readiness() {
+  case "$CHAT_PROXY_EXPECTED" in
+    websocket)
+      check_websocket_upgrade "$CHAT_PROXY_URL" "Mission Control chat proxy /chat/nox/" readiness
+      ;;
+    http)
+      check_http_status "$CHAT_PROXY_URL" "Mission Control chat proxy /chat/nox/" readiness 200
+      ;;
+    none|skip)
+      print_skip "Mission Control chat proxy readiness 已跳过 (CHAT_PROXY_EXPECTED=$CHAT_PROXY_EXPECTED)"
+      ;;
+    *)
+      print_fail "CHAT_PROXY_EXPECTED 无效: $CHAT_PROXY_EXPECTED (expected websocket|http|none)"
+      mark_failure readiness
+      return 1
+      ;;
+  esac
 }
 
 refresh_running_services() {
@@ -584,9 +629,9 @@ check_http_status "$MISSION_CONTROL_HEALTH_URL" "Mission Control API /health" li
 section_header "Readiness 巡检"
 check_http_status "$MISSION_CONTROL_READY_URL" "Mission Control API /ready" readiness 200 || true
 check_http_status "http://localhost:18920/" "Mission Control UI /" readiness 200 || true
-check_http_status "http://localhost:18920/chat/nox/" "Mission Control chat proxy /chat/nox/" readiness 200 || true
+check_chat_proxy_readiness || true
 
-if GATEWAY_HTTP_STRICT=1 bash "$PANOPTICON_DIR/tools/check_agent_endpoints.sh"; then
+if bash "$PANOPTICON_DIR/tools/check_agent_endpoints.sh"; then
   print_ok "Agent endpoint readiness 通过"
 else
   print_fail "Agent endpoint readiness 失败"

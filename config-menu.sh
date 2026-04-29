@@ -51,7 +51,7 @@ BG_RED='\033[41m'
 
 # ================================ 配置变量 ================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_OPENCLAW_VERSION="2026.4.22"
+DEFAULT_OPENCLAW_VERSION="2026.4.26"
 RELEASE_MANIFEST_PATH="$SCRIPT_DIR/openclaw-release.yaml"
 CONFIG_DIR="$HOME/.openclaw"
 
@@ -3711,16 +3711,16 @@ manage_service() {
 
                 if command -v setsid &> /dev/null; then
                     if [ -f "$OPENCLAW_ENV" ]; then
-                        setsid bash -c "source $quoted_openclaw_env && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
+                        setsid bash -c "source $quoted_openclaw_env && exec openclaw gateway run --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
                     else
-                        setsid openclaw gateway --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
+                        setsid openclaw gateway run --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
                     fi
                 else
                     # 备用方案：nohup + disown
                     if [ -f "$OPENCLAW_ENV" ]; then
-                        nohup bash -c "source $quoted_openclaw_env && exec openclaw gateway --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
+                        nohup bash -c "source $quoted_openclaw_env && exec openclaw gateway run --port 26216" > /tmp/openclaw-gateway.log 2>&1 &
                     else
-                        nohup openclaw gateway --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
+                        nohup openclaw gateway run --port 26216 > /tmp/openclaw-gateway.log 2>&1 &
                     fi
                     disown 2>/dev/null || true
                 fi
@@ -3786,7 +3786,7 @@ manage_service() {
                     echo ""
                     echo -e "${CYAN}建议:${NC}"
                     echo -e "  1. 运行 ${WHITE}openclaw doctor --fix${NC} 修复配置"
-                    echo -e "  2. 运行 ${WHITE}openclaw gateway${NC} 手动启动查看详细错误"
+                    echo -e "  2. 运行 ${WHITE}openclaw gateway run${NC} 手动启动查看详细错误"
                 fi
             else
                 log_error "OpenClaw 未安装"

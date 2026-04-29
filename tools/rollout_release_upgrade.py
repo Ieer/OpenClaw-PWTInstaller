@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,7 @@ PREPARE_SCRIPT = ROOT / "tools" / "prepare_release_upgrade.py"
 SMOKE_SCRIPT = ROOT / "panopticon" / "tools" / "smoke_chat_proxy.py"
 AGENT_ENDPOINT_SCRIPT = ROOT / "panopticon" / "tools" / "check_agent_endpoints.sh"
 PANOPTICON_HEALTH_SCRIPT = ROOT / "panopticon" / "tools" / "check_panopticon_services.sh"
+OPENCLAW_VERSION_RE = re.compile(r"(?P<version>\d{4}\.\d+\.\d+)")
 
 
 def python_exe() -> str:
@@ -46,9 +48,53 @@ def load_manifest_agents() -> list[str]:
     return out
 
 
+def validate_selected_agents(selected_agents: list[str]) -> None:
+    enabled_agents = set(load_manifest_agents())
+    invalid_agents = [slug for slug in selected_agents if slug not in enabled_agents]
+    if invalid_agents:
+        raise ValueError(
+            "unknown or disabled agent slug(s): "
+            + ", ".join(invalid_agents)
+            + f"; enabled agents: {', '.join(sorted(enabled_agents))}"
+        )
+
+
+def load_release_contract(path: Path = RELEASE_PATH) -> dict[str, object]:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must be a mapping")
+    return data
+
+
+def extract_openclaw_version(value: object) -> str | None:
+    match = OPENCLAW_VERSION_RE.search(str(value or ""))
+    return match.group("version") if match else None
+
+
+def infer_pre_rollout_openclaw_version(pre_runtime_versions: dict[str, str]) -> str | None:
+    versions = {
+        version
+        for raw_version in pre_runtime_versions.values()
+        if (version := extract_openclaw_version(raw_version))
+    }
+    if len(versions) == 1:
+        return next(iter(versions))
+    if len(versions) > 1:
+        print(f"[WARN] Pre-rollout agents report mixed OpenClaw versions: {', '.join(sorted(versions))}")
+    return None
+
+
+def write_release_snapshot(path: Path, release: dict[str, object]) -> None:
+    path.write_text(yaml.safe_dump(release, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+
 def run_step(label: str, cmd: list[str]) -> None:
     print(f"==> {label}")
     subprocess.run(cmd, cwd=ROOT, check=True)
+
+
+def command_available(command: str) -> bool:
+    return shutil.which(command) is not None
 
 
 def rollout_service(slug: str) -> str:
@@ -87,6 +133,123 @@ def recreate_services(selected_agents: list[str], include_mission_control: bool)
     if include_mission_control:
         services = ["mission-control-api", "mission-control-ui", "mission-control-gateway", *services]
     return services
+
+
+def print_git_status_summary() -> None:
+    if not command_available("git"):
+        print("[WARN] git command is not available; skip working tree summary")
+        return
+
+    result = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        print("[WARN] Could not inspect git status; continuing")
+        return
+
+    changed = [line for line in result.stdout.splitlines() if line.strip()]
+    if not changed:
+        print("Preflight: git working tree clean")
+        return
+
+    print(f"[WARN] Preflight: git working tree has {len(changed)} changed path(s)")
+    for line in changed[:20]:
+        print(f"  {line}")
+    if len(changed) > 20:
+        print(f"  ... {len(changed) - 20} more")
+
+
+def run_preflight_checks(
+    selected_agents: list[str],
+    include_mission_control: bool,
+    build_target_services: list[str],
+    recreate_target_services: list[str],
+    *,
+    skip_build: bool,
+    min_free_gb: float,
+) -> None:
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if not RELEASE_PATH.exists():
+        errors.append(f"missing release contract: {RELEASE_PATH}")
+    if not MANIFEST_PATH.exists():
+        errors.append(f"missing agent manifest: {MANIFEST_PATH}")
+    if not COMPOSE_FILE.exists():
+        errors.append(f"missing compose file: {COMPOSE_FILE}")
+    if not command_available("docker"):
+        errors.append("docker command is not available")
+    else:
+        if subprocess.run(["docker", "info"], cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+            errors.append("docker daemon is not reachable")
+        if subprocess.run(["docker", "compose", "version"], cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+            errors.append("docker compose is not available")
+
+    validate_selected_agents(selected_agents)
+
+    env_dir = ROOT / "panopticon" / "env"
+    for slug in selected_agents:
+        local_env = env_dir / f"{slug}.env"
+        example_env = env_dir / f"{slug}.env.example"
+        if not example_env.exists():
+            errors.append(f"missing env example for agent {slug}: {example_env}")
+        if not local_env.exists():
+            warnings.append(f"local env override missing for agent {slug}: {local_env.relative_to(ROOT)}")
+
+    if include_mission_control:
+        for env_name in ["mission-control.env", "mission-control-ui.env", "mission-control-gateway.env"]:
+            env_path = env_dir / env_name
+            if not env_path.exists():
+                warnings.append(f"mission-control local env override missing: {env_path.relative_to(ROOT)}")
+
+    if not skip_build and build_target_services:
+        free_gb = shutil.disk_usage(ROOT).free / (1024 ** 3)
+        if free_gb < min_free_gb:
+            errors.append(f"free disk space is {free_gb:.1f} GiB, below required {min_free_gb:.1f} GiB")
+        else:
+            print(f"Preflight: free disk space {free_gb:.1f} GiB")
+
+    print_git_status_summary()
+
+    for warning in warnings:
+        print(f"[WARN] Preflight: {warning}")
+    if errors:
+        for error in errors:
+            print(f"[FAIL] Preflight: {error}")
+        raise SystemExit("preflight failed")
+
+    print("Preflight passed.")
+
+
+def print_dry_run_plan(
+    *,
+    mode: str,
+    prepare_level: str,
+    verify_strategy: str,
+    include_mission_control: bool,
+    selected_agents: list[str],
+    build_target_services: list[str],
+    recreate_target_services: list[str],
+    smoke_base_url: str,
+) -> None:
+    release = load_release_contract()
+    plan = {
+        "dry_run": True,
+        "mode": mode,
+        "target_openclaw_version": str(release.get("openclaw_version") or ""),
+        "prepare_level": prepare_level,
+        "verify_strategy": verify_strategy,
+        "include_mission_control": include_mission_control,
+        "selected_agents": selected_agents,
+        "build_targets": build_target_services,
+        "recreate_services": recreate_target_services,
+        "smoke_base_url": smoke_base_url,
+    }
+    print(json.dumps(plan, ensure_ascii=False, indent=2))
 
 
 def collect_image_digests(services: list[str]) -> dict[str, str]:
@@ -218,11 +381,35 @@ def snapshot_release(
 ) -> tuple[Path, dict[str, object]]:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    release_snapshot = STATE_DIR / f"release-{stamp}.yaml"
-    shutil.copy2(RELEASE_PATH, release_snapshot)
+    target_release_snapshot = STATE_DIR / f"release-{stamp}-target.yaml"
+    rollback_release_snapshot = STATE_DIR / f"release-{stamp}-rollback.yaml"
+    shutil.copy2(RELEASE_PATH, target_release_snapshot)
+
+    target_release = load_release_contract()
+    target_openclaw_version = str(target_release.get("openclaw_version") or "").strip()
+    rollback_openclaw_version = infer_pre_rollout_openclaw_version(pre_runtime_versions)
+    rollback_snapshot_verified = bool(rollback_openclaw_version)
+
+    rollback_release = dict(target_release)
+    if rollback_openclaw_version:
+        rollback_release["openclaw_version"] = rollback_openclaw_version
+        write_release_snapshot(rollback_release_snapshot, rollback_release)
+    else:
+        shutil.copy2(RELEASE_PATH, rollback_release_snapshot)
+        print(
+            "[WARN] Could not infer a unique pre-rollout OpenClaw version from running agents; "
+            "rollback snapshot falls back to the current release contract."
+        )
+
     metadata = {
         "created_at": stamp,
-        "release_snapshot": str(release_snapshot.relative_to(ROOT)),
+        "release_snapshot": str(rollback_release_snapshot.relative_to(ROOT)),
+        "target_release_snapshot": str(target_release_snapshot.relative_to(ROOT)),
+        "rollback_release_snapshot": str(rollback_release_snapshot.relative_to(ROOT)),
+        "target_openclaw_version": target_openclaw_version,
+        "pre_runtime_openclaw_version": rollback_openclaw_version,
+        "rollback_openclaw_version": rollback_openclaw_version,
+        "rollback_snapshot_verified": rollback_snapshot_verified,
         "mode": mode,
         "prepare_level": prepare_level,
         "verify_strategy": verify_strategy,
@@ -235,7 +422,7 @@ def snapshot_release(
         "pre_runtime_versions": pre_runtime_versions,
     }
     write_rollout_metadata(metadata)
-    return release_snapshot, metadata
+    return rollback_release_snapshot, metadata
 
 
 def run_verify_step(verify_strategy: str, selected_agents: list[str], smoke_base_url: str) -> None:
@@ -284,6 +471,14 @@ def main() -> int:
     )
     parser.add_argument("--skip-prepare", action="store_true", help="Skip prepare_release_upgrade checks before rollout")
     parser.add_argument("--skip-build", action="store_true", help="Skip docker compose build step")
+    parser.add_argument("--skip-preflight", action="store_true", help="Skip rollout preflight checks")
+    parser.add_argument("--dry-run", action="store_true", help="Print the rollout plan without writing state or changing containers")
+    parser.add_argument(
+        "--min-free-gb",
+        type=float,
+        default=1.0,
+        help="Minimum free disk space required when a build step is planned",
+    )
     mission_control_group = parser.add_mutually_exclusive_group()
     mission_control_group.add_argument(
         "--include-mission-control",
@@ -307,13 +502,37 @@ def main() -> int:
     include_mission_control = normalize_include_mission_control(args.mode, args.include_mission_control)
     build_target_services = build_targets(selected_agents, include_mission_control)
     recreate_target_services = recreate_services(selected_agents, include_mission_control)
-    pre_image_digests = collect_image_digests(recreate_target_services)
-    pre_runtime_versions = collect_runtime_versions(selected_agents)
 
     print(f"Mode: {args.mode}")
     print(f"Prepare level: {prepare_level}")
     print(f"Verify strategy: {verify_strategy}")
     print(f"Include mission-control: {include_mission_control}")
+
+    if not args.skip_preflight:
+        run_preflight_checks(
+            selected_agents,
+            include_mission_control,
+            build_target_services,
+            recreate_target_services,
+            skip_build=args.skip_build,
+            min_free_gb=args.min_free_gb,
+        )
+
+    if args.dry_run:
+        print_dry_run_plan(
+            mode=args.mode,
+            prepare_level=prepare_level,
+            verify_strategy=verify_strategy,
+            include_mission_control=include_mission_control,
+            selected_agents=selected_agents,
+            build_target_services=build_target_services,
+            recreate_target_services=recreate_target_services,
+            smoke_base_url=args.smoke_base_url,
+        )
+        return 0
+
+    pre_image_digests = collect_image_digests(recreate_target_services)
+    pre_runtime_versions = collect_runtime_versions(selected_agents)
 
     snapshot, metadata = snapshot_release(
         selected_agents,

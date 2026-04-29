@@ -14,6 +14,8 @@
 ## Every Heartbeat
 
 - Check product-ops task queue freshness and blocked cards.
+- **Check Python packages: run `/mnt/usb/scripts/restore-python-pkgs.sh` if missing**
+- **Check Rokid plugin: run `/mnt/usb/scripts/restore-rokid-plugin.sh` if dist missing**
 - Check `state/` for pending handoff/review gates.
 - Refresh `memory/heartbeat-state.json` timestamps.
 

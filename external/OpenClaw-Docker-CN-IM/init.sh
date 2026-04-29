@@ -7,6 +7,21 @@ echo "=== OpenClaw 初始化脚本 ==="
 # 创建必要的目录并确保权限正确
 mkdir -p /home/node/.openclaw/workspace
 
+# OpenClaw 2026.4.26 may install bundled plugin runtime dependencies after the
+# gateway has started. The image-level npm config is created during build as
+# root, so make the runtime node user's npm config explicit as well; otherwise
+# those startup installs fall back to registry.npmjs.org and can hang long enough
+# to make /chat/<agent>/ look like a blank page.
+OPENCLAW_NPM_REGISTRY="${OPENCLAW_NPM_REGISTRY:-${NPM_REGISTRY:-https://registry.npmmirror.com}}"
+cat > /home/node/.npmrc <<EOF
+registry=${OPENCLAW_NPM_REGISTRY}
+fetch-retries=8
+fetch-retry-mintimeout=20000
+fetch-retry-maxtimeout=120000
+fetch-timeout=600000
+EOF
+chown node:node /home/node/.npmrc
+
 # If a global/community Feishu extension was installed previously, remove it so we use
 # the stock Feishu plugin bundled with OpenClaw (avoids duplicate plugin id warnings).
 if [ -d /home/node/.openclaw/extensions/feishu ]; then
@@ -550,11 +565,79 @@ cleanup() {
 # 捕获终止信号
 trap cleanup SIGTERM SIGINT SIGQUIT
 
-# 在后台启动 OpenClaw Gateway 作为子进程
-gosu node env HOME=/home/node openclaw gateway --verbose &
+is_port_open() {
+  local host="$1"
+  local port="$2"
+
+  (echo >"/dev/tcp/$host/$port") >/dev/null 2>&1
+}
+
+print_startup_diagnostics() {
+  echo "=== OpenClaw Gateway 启动诊断 ==="
+  echo "Gateway PID: ${GATEWAY_PID:-unknown}"
+  echo "Gateway 端口: ${OPENCLAW_GATEWAY_PORT:-unset}"
+  echo "Bridge 端口: ${OPENCLAW_BRIDGE_PORT:-unset}"
+  openclaw --version 2>/dev/null || true
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnp || true
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -ltnp || true
+  else
+    echo "未找到 ss/netstat，跳过监听端口明细"
+  fi
+}
+
+wait_for_port() {
+  local host="$1"
+  local port="$2"
+  local label="$3"
+  local timeout_seconds="${4:-300}"
+  local waited=0
+
+  while [ "$waited" -lt "$timeout_seconds" ]; do
+    if ! kill -0 "$GATEWAY_PID" 2>/dev/null; then
+      echo "❌ $label 等待失败：Gateway 进程已退出"
+      return 2
+    fi
+    if is_port_open "$host" "$port"; then
+      echo "✅ $label 已监听 ($host:$port, ${waited}s)"
+      return 0
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+
+  echo "❌ $label 等待超时 ($host:$port, ${timeout_seconds}s)"
+  return 1
+}
+
+# 在后台启动 OpenClaw Gateway 作为子进程。
+# 当前 OpenClaw 将前台容器运行入口收敛到 `gateway run`；裸 `gateway`
+# 只处理服务管理命令，容器内会启动一个不监听端口的 systemd 管理流程。
+gosu node env HOME=/home/node openclaw gateway run --verbose &
 GATEWAY_PID=$!
 
 echo "=== OpenClaw Gateway 已启动 (PID: $GATEWAY_PID) ==="
+
+GATEWAY_READY_TIMEOUT="${OPENCLAW_GATEWAY_READY_TIMEOUT:-300}"
+BRIDGE_READY_TIMEOUT="${OPENCLAW_BRIDGE_READY_TIMEOUT:-300}"
+BRIDGE_READY_REQUIRED="${OPENCLAW_BRIDGE_READY_REQUIRED:-1}"
+
+if ! wait_for_port "127.0.0.1" "${OPENCLAW_GATEWAY_PORT:-26216}" "OpenClaw Gateway" "$GATEWAY_READY_TIMEOUT"; then
+  print_startup_diagnostics
+  kill -TERM "$GATEWAY_PID" 2>/dev/null || true
+  wait "$GATEWAY_PID" 2>/dev/null || true
+  exit 1
+fi
+
+if [ -n "${OPENCLAW_BRIDGE_PORT:-}" ] && [ "$BRIDGE_READY_REQUIRED" != "0" ]; then
+  if ! wait_for_port "127.0.0.1" "$OPENCLAW_BRIDGE_PORT" "OpenClaw Bridge" "$BRIDGE_READY_TIMEOUT"; then
+    print_startup_diagnostics
+    kill -TERM "$GATEWAY_PID" 2>/dev/null || true
+    wait "$GATEWAY_PID" 2>/dev/null || true
+    exit 1
+  fi
+fi
 
 # 主进程等待子进程
 wait "$GATEWAY_PID"

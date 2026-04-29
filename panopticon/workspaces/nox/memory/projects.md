@@ -2,7 +2,7 @@
 
 ## Active
 
-(无进行中项目)
+- rokid-plugin-autoheal-2026-04-25：Rokid 插件自愈机制（已完成脚本 + 心跳集成）
 
 ## Completed (2026-02)
 

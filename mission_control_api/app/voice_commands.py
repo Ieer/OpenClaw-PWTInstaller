@@ -18,16 +18,30 @@ VoiceCommandParseOutcome = Literal["ignored", "parsed", "rejected"]
 _TASK_REF_RE = r"[A-Za-z0-9][A-Za-z0-9-]{5,}"
 
 _COMMAND_HEAD_PREFIXES = (
+    "帮我创建任务",
+    "帮我新增任务",
+    "帮我添加任务",
+    "帮我新建任务",
+    "帮我建任务",
+    "帮我建个任务",
     "创建任务",
     "新增任务",
     "添加任务",
+    "新建任务",
+    "建任务",
+    "建个任务",
     "comment task",
     "评论任务",
     "留言任务",
+    "备注任务",
+    "补充任务",
     "给任务",
     "任务",
+    "把任务",
+    "将任务",
     "完成任务",
     "关闭任务",
+    "搞定任务",
     "转交任务",
     "移交任务",
     "handoff task",
@@ -52,11 +66,11 @@ _LABEL_ALIASES = {
 }
 
 _STATUS_ALIASES = {
-    "INBOX": {"INBOX", "inbox", "收件箱", "待收"},
-    "ASSIGNED": {"ASSIGNED", "assigned", "已分配", "分配", "指派"},
-    "IN PROGRESS": {"IN PROGRESS", "in progress", "进行中", "处理中", "执行中", "处理中"},
-    "REVIEW": {"REVIEW", "review", "待审核", "审阅", "复核", "审核中"},
-    "DONE": {"DONE", "done", "完成", "已完成", "结束", "关闭"},
+    "INBOX": {"INBOX", "inbox", "收件箱", "待收", "待处理"},
+    "ASSIGNED": {"ASSIGNED", "assigned", "已分配", "分配", "指派", "已指派"},
+    "IN PROGRESS": {"IN PROGRESS", "in progress", "进行中", "处理中", "执行中", "处理中", "推进中"},
+    "REVIEW": {"REVIEW", "review", "待审核", "审阅", "复核", "审核中", "审核", "待复核"},
+    "DONE": {"DONE", "done", "完成", "已完成", "结束", "关闭", "已关闭", "搞定", "办完"},
 }
 
 _BOOL_TRUE = {"1", "true", "yes", "on", "是", "要", "开启", "需要", "需要审核"}
@@ -142,7 +156,7 @@ def parse_voice_command(
             outcome="rejected",
             normalized_text=normalized,
             prefix_used=prefix_used,
-            reason="unsupported or malformed voice command",
+            reason=_guess_rejection_reason(command_text) or "unsupported or malformed voice command",
         )
 
     return VoiceCommandParseResult(outcome="ignored", normalized_text=normalized)
@@ -164,6 +178,38 @@ def summarize_voice_command(command: VoiceCommand) -> str:
     return command.kind
 
 
+def summarize_voice_feedback(
+    command: VoiceCommand | None,
+    *,
+    outcome: Literal["executed", "rejected"],
+    reason: str | None = None,
+) -> str:
+    if outcome == "rejected":
+        return _summarize_rejection_reason(reason)
+
+    if command is None:
+        return "语音命令已执行。"
+    if command.kind == "create_task":
+        title = str(command.title or "未命名任务").strip() or "未命名任务"
+        return f"已创建任务：{title}。"
+    if command.kind == "add_comment":
+        return "已给任务添加评论。"
+    if command.kind == "set_status":
+        status = _status_display_name(command.status)
+        return f"已更新任务状态为{status}。"
+    if command.kind == "handoff_task":
+        target = str(command.to_agent or "目标 Agent").strip() or "目标 Agent"
+        return f"已转交任务给{target}。"
+    if command.kind == "control_agent":
+        target = str(command.control_agent or "目标 Agent").strip() or "目标 Agent"
+        action = {"start": "启动", "stop": "停止", "restart": "重启"}.get(
+            str(command.control_action or "").strip(),
+            "控制",
+        )
+        return f"已提交{target}的{action}请求。"
+    return "语音命令已执行。"
+
+
 def _parse_create_task(text: str, prefix_used: str | None) -> VoiceCommand | None:
     sections = _split_sections(text)
     if not sections:
@@ -171,9 +217,9 @@ def _parse_create_task(text: str, prefix_used: str | None) -> VoiceCommand | Non
     header, labels = sections[0], _parse_labeled_sections(sections[1:])
 
     patterns = (
-        r"^(?:创建|新增|添加)(?:一个)?任务(?:\s*(?:给|指派给)\s*(?P<assignee>[A-Za-z0-9_-]+))?(?:(?:\s*[:：]\s*)|\s+)(?P<title>.+)$",
+        r"^(?:帮我)?(?:创建|新增|添加|新建|建立|建)(?:一个|个)?任务(?:\s*(?:给|指派给)\s*(?P<assignee>[A-Za-z0-9_-]+))?(?:(?:\s*[:：]\s*)|\s+)(?P<title>.+)$",
         r"^(?:create|add)\s+task(?:\s+(?:for|to)\s+(?P<assignee>[A-Za-z0-9_-]+))?(?:(?:\s*[:：]\s*)|\s+)(?P<title>.+)$",
-        r"^(?:创建|新增|添加)(?:一个)?任务$",
+        r"^(?:帮我)?(?:创建|新增|添加|新建|建立|建)(?:一个|个)?任务$",
         r"^(?:create|add)\s+task$",
     )
     assignee = _get_labeled_value(labels, "assignee")
@@ -206,8 +252,9 @@ def _parse_create_task(text: str, prefix_used: str | None) -> VoiceCommand | Non
 
 def _parse_comment(text: str, prefix_used: str | None) -> VoiceCommand | None:
     patterns = (
-        rf"^(?:评论|留言)(?:任务)?\s*(?P<task>{_TASK_REF_RE})(?:(?:\s*[:：]\s*)|\s+)(?P<body>.+)$",
-        rf"^(?:给任务)\s*(?P<task>{_TASK_REF_RE})\s*(?:评论|留言)(?:(?:\s*[:：]\s*)|\s+)(?P<body>.+)$",
+        rf"^(?:评论|留言|备注|补充|追加)(?:任务)?\s*(?P<task>{_TASK_REF_RE})(?:(?:\s*[:：]\s*)|\s+)(?P<body>.+)$",
+        rf"^(?:给任务)\s*(?P<task>{_TASK_REF_RE})\s*(?:补(?:一句|充)?|备注|追加(?:评论)?|评论|留言)(?:(?:\s*[:：]\s*)|\s+)(?P<body>.+)$",
+        rf"^任务\s*(?P<task>{_TASK_REF_RE})\s*(?:补(?:一句|充)?|备注|追加(?:评论)?|评论|留言)(?:(?:\s*[:：]\s*)|\s+)(?P<body>.+)$",
         rf"^(?:comment)\s+task\s*(?P<task>{_TASK_REF_RE})(?:(?:\s*[:：]\s*)|\s+)(?P<body>.+)$",
     )
     for pattern in patterns:
@@ -229,7 +276,8 @@ def _parse_comment(text: str, prefix_used: str | None) -> VoiceCommand | None:
 
 def _parse_status_change(text: str, prefix_used: str | None) -> VoiceCommand | None:
     shorthand_patterns = (
-        rf"^(?:完成|关闭)任务\s*(?P<task>{_TASK_REF_RE})$",
+        rf"^(?:完成|关闭|搞定)(?:任务)?\s*(?P<task>{_TASK_REF_RE})(?:了)?$",
+        rf"^任务\s*(?P<task>{_TASK_REF_RE})\s*(?:完成|已完成|关闭|已关闭|搞定)(?:了)?$",
         rf"^(?:finish|close)\s+task\s*(?P<task>{_TASK_REF_RE})$",
     )
     for pattern in shorthand_patterns:
@@ -244,7 +292,7 @@ def _parse_status_change(text: str, prefix_used: str | None) -> VoiceCommand | N
             )
 
     patterns = (
-        rf"^(?:把|将)?任务\s*(?P<task>{_TASK_REF_RE})\s*(?:状态)?(?:设为|改为|标记为|切换到)\s*(?P<status>.+)$",
+        rf"^(?:把|将)?任务\s*(?P<task>{_TASK_REF_RE})\s*(?:状态|进度)?(?:设为|改为|改成|标记为|切换到|推进到|推进至|推到|移动到|进入|转到)\s*(?P<status>.+)$",
         rf"^(?:set|move)\s+task\s*(?P<task>{_TASK_REF_RE})\s+(?:status\s+)?(?:to)\s*(?P<status>.+)$",
     )
     for pattern in patterns:
@@ -310,7 +358,7 @@ def _parse_handoff(text: str, prefix_used: str | None) -> VoiceCommand | None:
 
 def _parse_agent_control(text: str, prefix_used: str | None) -> VoiceCommand | None:
     patterns = (
-        r"^(?P<action>启动|停止|重启)\s*(?:agent|容器)?\s*(?P<agent>[A-Za-z0-9_-]+)$",
+        r"^(?:帮我)?(?P<action>启动|停止|重启)\s*(?:agent|容器)?\s*(?P<agent>[A-Za-z0-9_-]+)$",
         r"^(?P<action>start|stop|restart)\s+agent\s*(?P<agent>[A-Za-z0-9_-]+)$",
     )
     for pattern in patterns:
@@ -399,11 +447,81 @@ def _normalize_status(raw: str | None) -> str | None:
     value = _clean_value(raw)
     if not value:
         return None
+    value = re.sub(r"^(?:到|至|为)\s*", "", value)
+    value = re.sub(r"[了啦吧。.!！]+$", "", value).strip()
     lowered = value.casefold()
     for canonical, aliases in _STATUS_ALIASES.items():
         if lowered in {alias.casefold() for alias in aliases}:
             return canonical
     return None
+
+
+def _guess_rejection_reason(text: str) -> str | None:
+    compact = _compact_whitespace(text)
+    if not compact:
+        return None
+
+    if re.match(r"^(?:帮我)?(?:创建|新增|添加|新建|建立|建)(?:一个|个)?任务(?:\s|$)", compact, flags=re.IGNORECASE) or re.match(
+        r"^(?:create|add)\s+task(?:\b|$)", compact, flags=re.IGNORECASE
+    ):
+        return "create task command requires a title"
+
+    if re.match(rf"^(?:评论|留言|备注|补充|追加)(?:任务)?(?:\s*{_TASK_REF_RE})?$", compact, flags=re.IGNORECASE) or re.match(
+        rf"^(?:给任务|任务)\s*{_TASK_REF_RE}\s*(?:补(?:一句|充)?|备注|追加(?:评论)?|评论|留言)?$",
+        compact,
+        flags=re.IGNORECASE,
+    ):
+        return "comment command requires task reference and comment body"
+
+    if re.match(r"^(?:完成|关闭|搞定)(?:任务)?(?:\s|$)|^(?:把|将)?任务(?:\s|$)|^(?:finish|close|set|move)\s+task\b", compact, flags=re.IGNORECASE):
+        return "status command requires task reference and target status"
+
+    if re.match(r"^(?:转交|移交)(?:任务)?(?:\s|$)|^handoff\s+task\b", compact, flags=re.IGNORECASE):
+        return "handoff command requires task reference, target agent, problem, context, expected output, and artifact refs"
+
+    if re.match(r"^(?:帮我)?(?:启动|停止|重启)(?:\s|$)|^(?:start|stop|restart)(?:\s+agent)?\b", compact, flags=re.IGNORECASE):
+        return "agent control command requires action and agent name"
+
+    return None
+
+
+def _status_display_name(status: str | None) -> str:
+    value = _clean_value(status)
+    return {
+        "INBOX": "待处理",
+        "ASSIGNED": "已分配",
+        "IN PROGRESS": "进行中",
+        "REVIEW": "待审核",
+        "DONE": "已完成",
+    }.get(str(value or "").upper(), str(value or "目标状态"))
+
+
+def _summarize_rejection_reason(reason: str | None) -> str:
+    value = _compact_whitespace(reason)
+    if not value:
+        return "语音命令未执行，请检查命令格式。"
+    if value == "create task command requires a title":
+        return "语音命令未执行：创建任务需要任务标题。"
+    if value == "comment command requires task reference and comment body":
+        return "语音命令未执行：添加评论需要任务编号和评论内容。"
+    if value == "status command requires task reference and target status":
+        return "语音命令未执行：修改状态需要任务编号和目标状态。"
+    if value == "handoff command requires task reference, target agent, problem, context, expected output, and artifact refs":
+        return "语音命令未执行：转交任务需要任务编号、目标 Agent、问题、上下文、交付要求和附件引用。"
+    if value == "agent control command requires action and agent name":
+        return "语音命令未执行：Agent 控制需要动作和 Agent 名称。"
+    if value == "unsupported or malformed voice command":
+        return "语音命令未执行：暂不支持这条命令。"
+    lowered = value.casefold()
+    if "task not found" in lowered:
+        return "语音命令未执行：没有找到对应任务，请确认任务编号。"
+    if "task reference is ambiguous" in lowered:
+        return "语音命令未执行：任务编号不唯一，请说更完整的任务编号。"
+    if "invalid status transition" in lowered:
+        return "语音命令未执行：当前任务状态不允许这样流转。"
+    if "task reference prefix must be at least" in lowered:
+        return "语音命令未执行：任务编号太短，请说更完整的任务编号。"
+    return "语音命令未执行，请检查命令格式。"
 
 
 def _normalize_control_action(raw: str | None) -> str | None:

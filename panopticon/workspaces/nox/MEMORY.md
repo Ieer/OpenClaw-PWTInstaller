@@ -83,3 +83,8 @@
 
 <!-- openclaw-memory-promotion:memory:memory/2026-04-06.md:24:52 -->
 - - **结论**：未来做 PPT 类交付物，优先输出 HTML 格式；如需 PPTX，考虑用 wkhtmltopdf 或截图嵌入方式提升质量 ## 13:20 环境变更记录 - 容器内安装 pip + bypy（--break-system-packages） - 容器内安装 python-pptx + Pillow + lxml - bypy 授权完成，token 保存在 /home/node/.bypy/ - 容器路径映射：宿主机 /media/pi/4A21-0000/ → 容器 /mnt/usb/ ## 13:40 百度网盘大文件下载 - 从 /apps/bypy/pypackage/package311.zip 下载 892MB 到 U盘 - 下载耗时约 3 分 38 秒，平均 4 MB/s ## 18:10 离线 Python 包批量安装 - U盘 /mnt/usb/package3.11/ 下有 267 个 whl 离线包（ARM64 Python 3.11） - 目录内有自动安装脚本 setup.sh，直接运行完成安装 - 新增 200+ 包，主要能力： - **ML**: PyCaret 3.3, scikit-learn 1.4, LightGBM 4.6, numba - **数据**: pandas 2.1, numpy 1.26, scipy 1.11, matplotlib 3.6, plotly, seaborn - **Web/爬虫**: playwright 1.49, selenium, DrissionPage, Flask, Dash 2.17 - **文档**: python-docx, PyPDF4, reportlab, openpyxl, xlrd - **AI Agent**: agno 2.5 - **中文**: jieba, zhconv - **工具**: jupyter, ipython, pytest, black, paramiko, PyAutoGUI - ⚠️ 部分包被降级到离线版本（python-pptx 1.0.2→0.6.21, Pillow 12.2→10.1） - ⚠️ Playwright 浏览器二进制未安装（离线包中无对应 zip） [score=0.802 recalls=4 avg=0.731 source=memory/2026-04-06.md:24-52]
+
+## Promoted From Short-Term Memory (2026-04-26)
+
+<!-- openclaw-memory-promotion:memory:memory/2026-04-19.md:15:18 -->
+- "rokid-openclaw-bridge": { "enabled": true, "config": { "linkCode": "3104", [score=0.890 recalls=0 avg=0.620 source=memory/2026-04-19.md:15-18]

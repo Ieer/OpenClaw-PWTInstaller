@@ -144,9 +144,9 @@ python tools/rollback_release_upgrade.py
 - rollout 和 rollback 都带运行版本门禁；如果目标服务版本完全没变化，脚本会直接失败，而不是把 no-op 当成功。
 - 最近一次升级的 metadata 会写到 `.release-state/last-rollout.json`；更完整的参数、模式与字段说明见 [../docs/openclaw-cli-cheatsheet-zh-cn.md](../docs/openclaw-cli-cheatsheet-zh-cn.md)。
 
-### OpenClaw 2026.4.22 飞书升级修复
+### OpenClaw 2026.4.24 飞书升级修复
 
-如果升级到 `2026.4.22` 后，某个 agent 的飞书渠道开始持续重启，并在日志里看到下面任一报错：
+如果升级到 `2026.4.24` 后，某个 agent 的飞书渠道开始持续重启，并在日志里看到下面任一报错：
 
 - `Cannot find package 'openclaw' imported from .../plugin-runtime-deps/.../dist/extensions/feishu/monitor-*.js`
 - `failed to load bundled channel setup feishu: Cannot find module '@larksuiteoapi/node-sdk'`

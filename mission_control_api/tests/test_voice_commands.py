@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from mission_control_api.app.voice_commands import parse_voice_command
+from mission_control_api.app.voice_commands import parse_voice_command, summarize_voice_feedback
 
 
 class VoiceCommandParserTests(unittest.TestCase):
@@ -22,6 +22,18 @@ class VoiceCommandParserTests(unittest.TestCase):
         self.assertEqual(result.command.title, "统计过去 7 天各 Agent 活跃度")
         self.assertEqual(result.command.tags, ["reporting", "panopticon"])
 
+    def test_create_task_colloquial_command(self) -> None:
+        result = parse_voice_command(
+            "指挥 帮我建个任务给 health：检查今晚备份状态",
+            prefixes=self.prefixes,
+            require_prefix=True,
+        )
+        self.assertEqual(result.outcome, "parsed")
+        self.assertIsNotNone(result.command)
+        self.assertEqual(result.command.kind, "create_task")
+        self.assertEqual(result.command.assignee, "health")
+        self.assertEqual(result.command.title, "检查今晚备份状态")
+
     def test_comment_command(self) -> None:
         result = parse_voice_command(
             "指挥 评论任务 3fa2c1d0：请先给结论，再给依据",
@@ -32,6 +44,17 @@ class VoiceCommandParserTests(unittest.TestCase):
         self.assertEqual(result.command.kind, "add_comment")
         self.assertEqual(result.command.task_ref, "3fa2c1d0")
 
+    def test_comment_colloquial_command(self) -> None:
+        result = parse_voice_command(
+            "指挥 给任务 3fa2c1d0 补一句 请记录日志路径",
+            prefixes=self.prefixes,
+            require_prefix=True,
+        )
+        self.assertEqual(result.outcome, "parsed")
+        self.assertEqual(result.command.kind, "add_comment")
+        self.assertEqual(result.command.task_ref, "3fa2c1d0")
+        self.assertEqual(result.command.comment_body, "请记录日志路径")
+
     def test_status_command(self) -> None:
         result = parse_voice_command(
             "指挥 任务 3fa2c1d0 状态设为 REVIEW",
@@ -41,6 +64,26 @@ class VoiceCommandParserTests(unittest.TestCase):
         self.assertEqual(result.outcome, "parsed")
         self.assertEqual(result.command.kind, "set_status")
         self.assertEqual(result.command.status, "REVIEW")
+
+    def test_status_colloquial_command(self) -> None:
+        result = parse_voice_command(
+            "指挥 把任务 3fa2c1d0 推进到审核了",
+            prefixes=self.prefixes,
+            require_prefix=True,
+        )
+        self.assertEqual(result.outcome, "parsed")
+        self.assertEqual(result.command.kind, "set_status")
+        self.assertEqual(result.command.status, "REVIEW")
+
+    def test_done_colloquial_command(self) -> None:
+        result = parse_voice_command(
+            "指挥 任务 3fa2c1d0 搞定了",
+            prefixes=self.prefixes,
+            require_prefix=True,
+        )
+        self.assertEqual(result.outcome, "parsed")
+        self.assertEqual(result.command.kind, "set_status")
+        self.assertEqual(result.command.status, "DONE")
 
     def test_handoff_command(self) -> None:
         result = parse_voice_command(
@@ -72,6 +115,42 @@ class VoiceCommandParserTests(unittest.TestCase):
             require_prefix=True,
         )
         self.assertEqual(result.outcome, "rejected")
+
+    def test_rejects_create_task_without_title_with_specific_reason(self) -> None:
+        result = parse_voice_command(
+            "指挥 帮我建个任务",
+            prefixes=self.prefixes,
+            require_prefix=True,
+        )
+        self.assertEqual(result.outcome, "rejected")
+        self.assertEqual(result.reason, "create task command requires a title")
+
+    def test_rejects_status_command_with_specific_reason(self) -> None:
+        result = parse_voice_command(
+            "指挥 把任务 3fa2c1d0 推进到未知阶段",
+            prefixes=self.prefixes,
+            require_prefix=True,
+        )
+        self.assertEqual(result.outcome, "rejected")
+        self.assertEqual(result.reason, "status command requires task reference and target status")
+
+    def test_voice_feedback_for_executed_create_task(self) -> None:
+        result = parse_voice_command(
+            "指挥 帮我建个任务给 health：检查今晚备份状态",
+            prefixes=self.prefixes,
+            require_prefix=True,
+        )
+        self.assertEqual(result.outcome, "parsed")
+        self.assertEqual(
+            summarize_voice_feedback(result.command, outcome="executed"),
+            "已创建任务：检查今晚备份状态。",
+        )
+
+    def test_voice_feedback_for_rejected_task_reference(self) -> None:
+        self.assertEqual(
+            summarize_voice_feedback(None, outcome="rejected", reason="task reference is ambiguous: 3fa2c1d0"),
+            "语音命令未执行：任务编号不唯一，请说更完整的任务编号。",
+        )
 
     def test_ignores_non_prefixed_text_when_prefix_required(self) -> None:
         result = parse_voice_command(

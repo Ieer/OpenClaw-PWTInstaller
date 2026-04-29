@@ -3,7 +3,8 @@ FROM node:22-slim
 
 # When set to 1, fail the build if plugin installation fails.
 ARG STRICT_PLUGIN_INSTALL=0
-ARG OPENCLAW_VERSION=2026.4.22
+ARG OPENCLAW_VERSION=2026.4.26
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 
 # 设置工作目录
 WORKDIR /app
@@ -30,6 +31,13 @@ RUN apt-get update \
 # 更新 npm 到稳定版本（避免 npm@latest 在部分环境出现依赖解析异常）
 RUN npm install -g npm@10
 
+# 默认使用国内 npm 镜像并放宽网络重试，避免树莓派弱网下 registry 连接重置导致构建失败。
+RUN npm config set registry "${NPM_REGISTRY}" \
+  && npm config set fetch-retries 8 \
+  && npm config set fetch-retry-mintimeout 20000 \
+  && npm config set fetch-retry-maxtimeout 120000 \
+  && npm config set fetch-timeout 600000
+
 # Ensure npm transitive git dependencies can be fetched without SSH keys
 RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" \
   && git config --global url."https://github.com/".insteadOf "git@github.com:"
@@ -52,13 +60,15 @@ RUN npm install -g @steipete/bird
 # 创建配置目录并设置权限（确保 node 用户的 npm cache 不会被 root 污染）
 ENV HOME=/home/node \
   TERM=xterm-256color \
-  NPM_CONFIG_CACHE=/home/node/.npm
+  NPM_CONFIG_CACHE=/home/node/.npm \
+  OPENCLAW_NPM_REGISTRY=${NPM_REGISTRY}
 
 RUN mkdir -p \
     /home/node/.npm \
     /home/node/.openclaw/workspace \
     /home/node/.openclaw/extensions \
     /home/node/.openclaw/qqbot \
+  && printf 'registry=%s\nfetch-retries=8\nfetch-retry-mintimeout=20000\nfetch-retry-maxtimeout=120000\nfetch-timeout=600000\n' "${NPM_REGISTRY}" > /home/node/.npmrc \
   && chown -R node:node /home/node
 
 # 切换到 node 用户安装插件

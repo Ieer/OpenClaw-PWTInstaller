@@ -10,7 +10,7 @@
 
 1. 真实设备或外部语音栈发布 ROS2 话题。
 2. `mission-control-voice-bridge` 订阅这些话题，转成 `voice.*` 事件。
-3. Mission Control API 接收事件，写入 feed，并按需触发语音直控。
+3. Mission Control API 接收事件，写入 feed，并按需触发语音直控；执行或拒绝后可写入 `voice.tts.requested`，作为设备侧播报反馈请求。
 4. Mission Control UI 展示 overlay、feed 和任务/状态变化。
 
 一句话记忆：**设备发 ROS2，桥接器发事件，Mission Control 做治理。**
@@ -107,6 +107,9 @@ cp panopticon/env/mission-control.env.example panopticon/env/mission-control.env
 
 - `MC_VOICE_COMMAND_PREFIXES=指挥,mission control,control`
 默认值够用。
+
+- `MC_VOICE_TTS_FEEDBACK_ENABLED=1`
+开启语音直控后的播报反馈事件。它只表示 Mission Control 已生成 `voice.tts.requested` 播报请求；真实发声仍取决于设备侧或后续下行桥接是否消费这个事件。
 
 说明：当前仓库已经在 voice bridge 容器里显式注入 `MC_API_URL=http://mission-control-api:9090`，所以标准 compose 启动时不需要你再手工补这一项。
 
@@ -218,10 +221,12 @@ bash panopticon/tools/check_voice_bridge_live.sh
 
 - `voice.command.executed`
 - 相应的 `task.created` / `comment.created` / `task.status` / `task.handoff`
+- 如果开启播报反馈，还会看到 `voice.tts.requested`
 
 如果命令被拒绝，会看到：
 
 - `voice.command.rejected`
+- 如果开启播报反馈，还会看到带简短失败原因的 `voice.tts.requested`
 
 ## 看到什么算联调成功
 
@@ -231,6 +236,7 @@ bash panopticon/tools/check_voice_bridge_live.sh
 2. 说一句普通话后，feed 里出现 `voice.asr.final`。
 3. 如果设备侧已经打通播报，feed 里出现 `voice.tts.start`。
 4. 如果开启语音直控，说一条带前缀命令后，Mission Control 任务板或 feed 发生对应变化。
+5. 如果开启播报反馈，feed 里出现 `voice.tts.requested`，其中 `payload.text` 是可播报的执行或拒绝摘要。
 
 ## 典型排障顺序
 

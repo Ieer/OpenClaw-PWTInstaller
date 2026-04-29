@@ -131,7 +131,7 @@ services:
       mission-control-ui:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      test: ["CMD-SHELL", "wget --header='Host: localhost' -q -O /dev/null http://127.0.0.1/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -194,7 +194,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.22"
+        OPENCLAW_VERSION: "2026.4.26"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -234,7 +234,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.22"
+        OPENCLAW_VERSION: "2026.4.26"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -274,7 +274,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.22"
+        OPENCLAW_VERSION: "2026.4.26"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -314,7 +314,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.22"
+        OPENCLAW_VERSION: "2026.4.26"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -354,7 +354,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.22"
+        OPENCLAW_VERSION: "2026.4.26"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -394,7 +394,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.22"
+        OPENCLAW_VERSION: "2026.4.26"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -434,7 +434,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.22"
+        OPENCLAW_VERSION: "2026.4.26"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -474,7 +474,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.4.22"
+        OPENCLAW_VERSION: "2026.4.26"
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN

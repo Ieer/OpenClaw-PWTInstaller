@@ -117,7 +117,7 @@ from .schemas import (
     TaskOut,
     WorkspaceSkillGroup,
 )
-from .voice_commands import VoiceCommand, parse_voice_command, summarize_voice_command
+from .voice_commands import VoiceCommand, parse_voice_command, summarize_voice_command, summarize_voice_feedback
 
 
 ALLOWED_TASK_STATUSES = {"INBOX", "ASSIGNED", "IN PROGRESS", "REVIEW", "DONE"}
@@ -2889,6 +2889,46 @@ def create_app() -> FastAPI:
             payload["reason"] = reason[:200]
         return payload
 
+    async def _enqueue_voice_tts_feedback(
+        session,
+        *,
+        source_event: dict,
+        source_agent: str,
+        raw_text: str,
+        normalized_text: str,
+        outcome: str,
+        command: VoiceCommand | None = None,
+        prefix_used: str | None = None,
+        reason: str | None = None,
+        task_id: UUID | None = None,
+    ) -> dict | None:
+        if not settings.voice_tts_feedback_enabled:
+            return None
+
+        text = summarize_voice_feedback(
+            command,
+            outcome="executed" if outcome == "executed" else "rejected",
+            reason=reason,
+        )
+        return await enqueue_local_event(
+            session,
+            event_type="voice.tts.requested",
+            agent=source_agent,
+            task_id=task_id,
+            payload={
+                **_voice_command_audit_payload(
+                    source_event,
+                    raw_text=raw_text,
+                    normalized_text=normalized_text,
+                    prefix_used=prefix_used,
+                    reason=reason,
+                ),
+                "text": text[:240],
+                "outcome": outcome,
+                "command_type": command.kind if command is not None else None,
+            },
+        )
+
     async def _resolve_task_reference(session, task_ref: str) -> tuple[UUID | None, str | None]:
         normalized = str(task_ref or "").strip()
         if not normalized:
@@ -3102,7 +3142,22 @@ def create_app() -> FastAPI:
                     reason=reason,
                 ),
             )
-            return [rejected]
+            queued = [rejected]
+            tts_feedback = await _enqueue_voice_tts_feedback(
+                session,
+                source_event=source_event,
+                source_agent=source_agent,
+                raw_text=raw_text,
+                normalized_text=parsed.normalized_text,
+                outcome="rejected",
+                command=parsed.command,
+                prefix_used=parsed.prefix_used,
+                reason=reason,
+                task_id=task_id,
+            )
+            if tts_feedback is not None:
+                queued.append(tts_feedback)
+            return queued
 
         if parsed.outcome == "rejected" or parsed.command is None:
             return await _reject(parsed.reason or "voice command parse failed")
@@ -3238,6 +3293,19 @@ def create_app() -> FastAPI:
                 },
             )
         )
+        tts_feedback = await _enqueue_voice_tts_feedback(
+            session,
+            source_event=source_event,
+            source_agent=source_agent,
+            raw_text=raw_text,
+            normalized_text=parsed.normalized_text,
+            outcome="executed",
+            command=command,
+            prefix_used=parsed.prefix_used,
+            task_id=target_task_id,
+        )
+        if tts_feedback is not None:
+            queued_events.append(tts_feedback)
         return queued_events
 
     @app.get("/health", response_model=Health)
