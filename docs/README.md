@@ -28,6 +28,7 @@
 | 第一次安装 OpenClaw | [../README.md](../README.md) |
 | 搭建 8-Agent 主路线 | [../panopticon/README.md](../panopticon/README.md) |
 | 准备升级或回滚 Panopticon OpenClaw 运行态 | [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md) |
+| 需要日常不停机备份、定期全量备份或 U 盘迁移 | [openclaw-backup-retention-zh-cn.md](openclaw-backup-retention-zh-cn.md) |
 | 需要从局域网电脑访问 Mission Control / Web Chat | [mission-control-lan-access-zh-cn.md](mission-control-lan-access-zh-cn.md) |
 | 理解 Mission Control 的落地方式 | [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md) |
 | 理解知识系统导入与治理 | [knowledge-system-playbook-zh-cn.md](knowledge-system-playbook-zh-cn.md) |
@@ -74,6 +75,7 @@
 | [inner-map-session-acceptance-zh-cn.md](inner-map-session-acceptance-zh-cn.md) | Inner-Map 使用说明与验收入口 | 想先理解 Inner-Map，再进入正式验收时 |
 | [task-orchestration-templates-zh-cn.md](task-orchestration-templates-zh-cn.md) | 任务编排模板与具体示例 | 想提升任务写法、分工和交接体验时 |
 | [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md) | CLI 全流程速查表 | 需要命令总览、版本对齐、升级回滚与运维基线时 |
+| [openclaw-backup-retention-zh-cn.md](openclaw-backup-retention-zh-cn.md) | 备份、迁移与保留策略 | 需要 U 盘迁移、日常增量、全量冷备或升级前后基线时 |
 | [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md) | 飞书接入指南 | 配置渠道时 |
 | [openclaw-json-guide-zh-cn.md](openclaw-json-guide-zh-cn.md) | 新手配置说明 | 需要手动理解配置项时 |
 | [voice-device-bringup-zh-cn.md](voice-device-bringup-zh-cn.md) | 真实语音设备联调指南 | 接真实设备、排查 ROS2 话题和 live 事件时 |

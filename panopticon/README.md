@@ -121,6 +121,39 @@ bash panopticon/tools/check_panopticon_services.sh
 bash panopticon/tools/recover_mission_control_gateway.sh
 ```
 
+## 备份、迁移与保留
+
+Panopticon 主路线的数据不等于单一 `~/.openclaw` 目录；迁移级备份需要同时覆盖 agent homes、workspaces、Mission Control PostgreSQL、env 覆盖文件、知识源和运行指纹。策略说明见 [../docs/openclaw-backup-retention-zh-cn.md](../docs/openclaw-backup-retention-zh-cn.md)。
+
+先查看当前备份边界：
+
+```bash
+python panopticon/tools/backup_panopticon.py plan
+```
+
+日常不停机增量备份推荐走 restic + PostgreSQL 逻辑 dump：
+
+```bash
+export RESTIC_PASSWORD='replace-with-a-strong-password'
+python panopticon/tools/backup_panopticon.py \
+	--backup-root /media/pi/YOUR_USB/openclaw-backups \
+	daily-incremental \
+	--init-restic \
+	--restic-check
+```
+
+迁移级或升级前全量冷备需要低峰期短暂停服务：
+
+```bash
+python panopticon/tools/backup_panopticon.py \
+	--backup-root /media/pi/YOUR_USB/openclaw-backups \
+	weekly-full \
+	--yes \
+	--restart-after
+```
+
+每次 OpenClaw 大版本升级、Mission Control schema 变更或容器挂载重构前，都应先生成并校验一份 full baseline。
+
 ## 升级与回滚
 
 主路线的运行态替换现在统一走仓库根目录 `tools/` 里的发布脚本，不再建议手工拼接 `docker compose build` 和 `up --force-recreate`。

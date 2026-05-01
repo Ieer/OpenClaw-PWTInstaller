@@ -140,6 +140,7 @@ bash panopticon/tools/rotate_gateway_tokens.sh
 | 查 OpenClaw CLI 生命周期命令 | [docs/openclaw-cli-cheatsheet-zh-cn.md](docs/openclaw-cli-cheatsheet-zh-cn.md) |
 | 搭建 8-Agent 主路线 | [panopticon/README.md](panopticon/README.md) |
 | 升级或回滚 Panopticon OpenClaw 运行态 | [docs/openclaw-cli-cheatsheet-zh-cn.md](docs/openclaw-cli-cheatsheet-zh-cn.md) |
+| 做日常不停机备份、全量冷备或 U 盘迁移 | [docs/openclaw-backup-retention-zh-cn.md](docs/openclaw-backup-retention-zh-cn.md) |
 | 理解 Mission Control 工程设计 | [docs/mission-control-playbook-zh-cn.md](docs/mission-control-playbook-zh-cn.md) |
 | 理解知识系统治理 | [docs/knowledge-system-playbook-zh-cn.md](docs/knowledge-system-playbook-zh-cn.md) |
 | 配飞书消息渠道 | [docs/feishu-setup-zh-cn.md](docs/feishu-setup-zh-cn.md) |
@@ -164,6 +165,7 @@ docker compose -f panopticon/docker-compose.panopticon.yml ps
 docker compose -f panopticon/docker-compose.panopticon.yml logs -f --tail=200
 bash panopticon/tools/check_panopticon_services.sh
 bash panopticon/tools/recover_mission_control_gateway.sh
+python panopticon/tools/backup_panopticon.py plan
 ```
 
 ### Panopticon 升级与回滚
