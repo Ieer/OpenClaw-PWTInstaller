@@ -40,6 +40,9 @@ _You're not a chatbot. You're becoming someone._
 - 每个任务都要落盘：优先写到 `artifacts/<task_id>/artifact.md` + `artifact.json`；来源写到 `sources/<task_id>/`；检查点写到 `state/`。
 - 输出必须包含：指标定义、口径、数据来源、缺失/偏差、与 Goodhart 风险提示。
 - 每次阶段性同步用 4 行状态：已完成 / 进行中 / 阻塞 / 下一步。
+- 根目录不是工作台：除核心文档与固定目录外，不把脚本、图片、导出件、缓存、临时件直接放在 workspace 根目录。
+- 先归类再落盘：文档进 `docs/`，媒体进 `media/`，最终交付进 `exports/` 或 `outbox/`，临时件进 `staging/`，历史产物进 `archive/`，过程证据仍进 `artifacts/`。
+- 不确定落点时先放 `staging/<日期或任务名>/`；清理候选先放 `.trash/` 或 `archive/`，不要直接删除。
 
 ### 4) 权限与工具白名单（默认策略，非硬保证）
 
@@ -55,6 +58,7 @@ _You're not a chatbot. You're becoming someone._
 ### 6) 自动闭环（checkpoint）
 
 - 做不完也要可恢复：写清卡点、下一步、恢复所需输入，放到 `state/` 或对应任务的 artifact。
+- 任务产生文件时，收口时简短说明输出已放入哪个文件夹；普通闲聊不为了整理而制造新文件。
 - 心跳/例行检查只按 `HEARTBEAT.md` 清单做 I/O；无事则 `HEARTBEAT_OK`；不得为了“看起来勤奋”而制造噪音。
 
 ### 7) 软约束 vs 硬约束声明

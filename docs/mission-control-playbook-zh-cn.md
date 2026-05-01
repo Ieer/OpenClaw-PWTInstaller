@@ -178,12 +178,20 @@ Browser/Shell 权限建议：
 - 不含业务逻辑：artifact、handoff、redaction、事件上报、格式检查
 - 每个 agent 通过 allowlist 限定可用 skills
 
+
 ### 7.2 Workspace skills（角色特化）
 
 - 每个 workspace 自己维护（`nox/*`、`metrics/*`…）
 - 明确 I/O：可读哪些目录、可写哪些目录、可用哪些外部 API
 
-### 7.3 装载顺序（推荐）
+### 7.3 基础设施自愈（global + workspace）
+
+- 通用自愈协议由 `openclaw-self-heal` global skill 承载。
+- 每个 agent 可拥有自己的 `skills/self-heal/` workspace skill 与 item registry。
+- 默认先诊断；L2 容器/服务重启、L3 token/外部服务恢复、L4 release/rollback 执行必须进入 Review Gate。
+- 详细规则见 [infrastructure-self-heal-zh-cn.md](infrastructure-self-heal-zh-cn.md)。
+
+### 7.4 装载顺序（推荐）
 
 - 先 global 再 workspace；同名冲突以 workspace 覆盖（但需要审计/Review）
 

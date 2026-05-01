@@ -18,6 +18,7 @@
 | 接入与配置层 | [../README.md](../README.md) + [openclaw-json-guide-zh-cn.md](openclaw-json-guide-zh-cn.md) | 怎么先把模型、渠道和 `openclaw.json` 跑通 |
 | Agent 运行层 | [../panopticon/README.md](../panopticon/README.md) | 8-Agent 主路线怎么启动、校验和运维 |
 | 控制面 | [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md) | Mission Control UI、API、网关和部署边界怎么协作 |
+| 基础设施自愈层 | [infrastructure-self-heal-zh-cn.md](infrastructure-self-heal-zh-cn.md) | 自愈 skill、item registry、风险门禁与多 agent 推广方式 |
 | 知识治理层 | [knowledge-system-playbook-zh-cn.md](knowledge-system-playbook-zh-cn.md) + [agent-evaluation-contract-zh-cn.md](agent-evaluation-contract-zh-cn.md) | 资料怎么进入知识系统，以及 8-Agent 怎么统一走评估链路 |
 
 ## 先按角色选入口
@@ -28,6 +29,7 @@
 | 第一次安装 OpenClaw | [../README.md](../README.md) |
 | 搭建 8-Agent 主路线 | [../panopticon/README.md](../panopticon/README.md) |
 | 准备升级或回滚 Panopticon OpenClaw 运行态 | [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md) |
+| 需要基础设施自愈、健康诊断或新增 self-heal item | [infrastructure-self-heal-zh-cn.md](infrastructure-self-heal-zh-cn.md) |
 | 需要日常不停机备份、定期全量备份或 U 盘迁移 | [openclaw-backup-retention-zh-cn.md](openclaw-backup-retention-zh-cn.md) |
 | 需要从局域网电脑访问 Mission Control / Web Chat | [mission-control-lan-access-zh-cn.md](mission-control-lan-access-zh-cn.md) |
 | 理解 Mission Control 的落地方式 | [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md) |
@@ -76,6 +78,7 @@
 | [task-orchestration-templates-zh-cn.md](task-orchestration-templates-zh-cn.md) | 任务编排模板与具体示例 | 想提升任务写法、分工和交接体验时 |
 | [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md) | CLI 全流程速查表 | 需要命令总览、版本对齐、升级回滚与运维基线时 |
 | [openclaw-backup-retention-zh-cn.md](openclaw-backup-retention-zh-cn.md) | 备份、迁移与保留策略 | 需要 U 盘迁移、日常增量、全量冷备或升级前后基线时 |
+| [infrastructure-self-heal-zh-cn.md](infrastructure-self-heal-zh-cn.md) | 基础设施自愈指南 | 需要诊断/修复 agent、接入自愈 item、推广到其他 agent 时 |
 | [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md) | 飞书接入指南 | 配置渠道时 |
 | [openclaw-json-guide-zh-cn.md](openclaw-json-guide-zh-cn.md) | 新手配置说明 | 需要手动理解配置项时 |
 | [voice-device-bringup-zh-cn.md](voice-device-bringup-zh-cn.md) | 真实语音设备联调指南 | 接真实设备、排查 ROS2 话题和 live 事件时 |

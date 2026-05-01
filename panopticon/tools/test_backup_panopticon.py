@@ -50,6 +50,7 @@ class BackupPanopticonTests(unittest.TestCase):
         self.assertTrue(backup.is_excluded(root / "agent-homes" / "nox" / "browser" / "SingletonLock", root))
         self.assertTrue(backup.is_excluded(root / "agent-homes" / "nox" / "browser" / "Default" / "Cache" / "x", root))
         self.assertTrue(backup.is_excluded(root / "workspaces" / "nox" / "node_modules" / "x.js", root))
+        self.assertTrue(backup.is_excluded(root / "workspaces" / "metrics" / "runtime-assets" / "venv" / "bin" / "python", root))
         self.assertFalse(backup.is_excluded(root / "workspaces" / "nox" / "MEMORY.md", root))
 
     def test_manifest_inventory_does_not_expose_env_values(self) -> None:

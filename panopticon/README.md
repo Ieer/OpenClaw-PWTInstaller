@@ -200,6 +200,32 @@ docker compose -f panopticon/docker-compose.panopticon.yml up -d --build --no-de
 
 如果只想局部验证，也可以只重建一个或几个 `openclaw-*` 服务。更完整的排障说明见 [../docs/feishu-setup-zh-cn.md](../docs/feishu-setup-zh-cn.md)。
 
+### OpenClaw 2026.4.29 飞书 open 策略修复
+
+`2026.4.29` 起，飞书 `dmPolicy="open"` 需要显式声明 `allowFrom=["*"]`。否则日志里可能出现：
+
+```text
+blocked unauthorized sender ... (dmPolicy=open)
+```
+
+当前仓库的 agent 镜像启动脚本会在合并配置时自动补齐该字段；如果是升级前遗留配置，建议重建并重启目标 agent 容器。
+
+单 agent 示例：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml build openclaw-nox
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --no-deps --force-recreate openclaw-nox
+```
+
+8-Agent 全量刷新后，建议至少执行：
+
+```bash
+bash panopticon/tools/check_agent_endpoints.sh
+bash panopticon/tools/check_panopticon_services.sh
+```
+
+飞书发送链路可用性的最终判定，是使用当前 `channels.feishu.appId/appSecret` 获取 `tenant_access_token` 成功，并调用飞书 `im/v1/messages` 返回 `code=0`。
+
 ## 常见约束
 
 - 统一从 `18920` 的同源入口访问 chat，不要直接打开 `188xx` 端口。
@@ -277,6 +303,14 @@ python panopticon/tools/assess_voice_service.py
 ```bash
 bash panopticon/tools/check_agent_endpoints.sh
 ```
+
+一键巡检 8 个 Agent 的 Python 运行态（`python3`、`pip`、`PyYAML`）：
+
+```bash
+bash panopticon/tools/check_agent_python_runtime.sh
+```
+
+当前 `openclaw-docker-cn-im:local` 基线已在镜像内预装 `python3-pip`、`python3-venv`、`python3-yaml`。这对 self-heal、YAML registry、脚本化治理和 agent 内部 Python 辅助工具是必需项。若该脚本失败，应优先重建共享 agent 镜像并 force-recreate 目标 `openclaw-*` 容器。
 
 ## 运维重启顺序（避免 502）
 

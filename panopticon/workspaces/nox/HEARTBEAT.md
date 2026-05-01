@@ -14,8 +14,10 @@
 ## Every Heartbeat
 
 - Check product-ops task queue freshness and blocked cards.
-- **Check Python packages: run `/mnt/usb/scripts/restore-python-pkgs.sh` if missing**
-- **Check Rokid plugin: run `/mnt/usb/scripts/restore-rokid-plugin.sh` if dist missing**
+- **基础设施自愈：** 使用 `skills/self-heal/` 的 registry-driven runner；默认只诊断，不自动执行 L2/L3/L4 修复。
+  - 快速诊断：`python3 skills/self-heal/scripts/self_heal_runner.py diagnose --max-level L1 --exit-zero`
+  - 首批 registry items 覆盖：Python 包、Rokid 插件、ByPy token、wjx-cli、state queue、workspace contract、Mission Control/API endpoint、release dry-run/rollback readiness。
+  - L2 容器/服务重启、L3 token/外部服务恢复、L4 release/rollback 执行必须走 Review Gate。
 - Check `state/` for pending handoff/review gates.
 - Refresh `memory/heartbeat-state.json` timestamps.
 

@@ -1,8 +1,11 @@
 # projects.md (nox)
 
-## Active
+## Active — 心跳驱动自愈
 
-- rokid-plugin-autoheal-2026-04-25：Rokid 插件自愈机制（已完成脚本 + 心跳集成）
+- **rokid-plugin-autoheal-2026-04-25**：Rokid 插件自愈（心跳检测 → 编译恢复，2026-04-29 确认保留）
+- **bypy-token-autoheal-2026-04-29**：百度网盘 bypy token 过期自动续期（心跳检测 → API 刷新，2026-04-29 建立）
+- **python-pkgs-autoheal**：Python 离线包恢复（心跳检测 → 从 U 盘重装，与上述两项共同构成基础设施自愈层）
+- **wjx-cli-autoheal-2026-04-29**：问卷星 CLI 自愈（心跳检测 → 从 USB 恢复包 + API Key，2026-04-29 建立）
 
 ## Completed (2026-02)
 

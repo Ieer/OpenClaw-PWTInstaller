@@ -3,7 +3,7 @@ FROM node:22-slim
 
 # When set to 1, fail the build if plugin installation fails.
 ARG STRICT_PLUGIN_INSTALL=0
-ARG OPENCLAW_VERSION=2026.4.26
+ARG OPENCLAW_VERSION=2026.4.29
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 
 # 设置工作目录
@@ -23,6 +23,9 @@ RUN apt-get update \
     gosu \
     jq \
     python3 \
+    python3-pip \
+    python3-venv \
+    python3-yaml \
     socat \
     tini \
     websockify \
@@ -61,6 +64,9 @@ RUN npm install -g @steipete/bird
 ENV HOME=/home/node \
   TERM=xterm-256color \
   NPM_CONFIG_CACHE=/home/node/.npm \
+  PIP_DISABLE_PIP_VERSION_CHECK=1 \
+  PIP_NO_CACHE_DIR=1 \
+  PYTHONUNBUFFERED=1 \
   OPENCLAW_NPM_REGISTRY=${NPM_REGISTRY}
 
 RUN mkdir -p \
@@ -123,7 +129,10 @@ RUN chmod +x /usr/local/bin/init.sh
 # 设置基础环境变量
 ENV HOME=/home/node \
   TERM=xterm-256color \
-  NPM_CONFIG_CACHE=/home/node/.npm
+  NPM_CONFIG_CACHE=/home/node/.npm \
+  PIP_DISABLE_PIP_VERSION_CHECK=1 \
+  PIP_NO_CACHE_DIR=1 \
+  PYTHONUNBUFFERED=1
 
 # 暴露端口
 EXPOSE 27216 27217

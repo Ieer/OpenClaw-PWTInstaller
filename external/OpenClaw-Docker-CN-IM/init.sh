@@ -7,7 +7,7 @@ echo "=== OpenClaw 初始化脚本 ==="
 # 创建必要的目录并确保权限正确
 mkdir -p /home/node/.openclaw/workspace
 
-# OpenClaw 2026.4.26 may install bundled plugin runtime dependencies after the
+# Recent OpenClaw releases may install bundled plugin runtime dependencies after the
 # gateway has started. The image-level npm config is created during build as
 # root, so make the runtime node user's npm config explicit as well; otherwise
 # those startup installs fall back to registry.npmjs.org and can hang long enough
@@ -55,6 +55,39 @@ ensure_openclaw_runtime_bridge() {
 
   ln -s "$global_openclaw" "$runtime_openclaw"
   echo "[ok] bridged plugin-runtime-deps/openclaw to global package"
+}
+
+fix_openclaw_permissions() {
+  local root=/home/node/.openclaw
+
+  # Full recursive chown on Panopticon bind mounts is very expensive once
+  # sessions/, workspaces/, reports, or media artifacts grow. Keep startup fast
+  # by fixing only root/config files and writable directory ownership. Operators
+  # can still opt in to the old deep repair with OPENCLAW_FIX_PERMISSIONS_DEEP=1.
+  if [ "${OPENCLAW_FIX_PERMISSIONS_DEEP:-0}" = "1" ]; then
+    echo "ℹ️ 执行深度权限修复: $root"
+    chown -R node:node "$root"
+    return
+  fi
+
+  chown node:node /home/node "$root" 2>/dev/null || true
+
+  find "$root" -maxdepth 1 -type f -exec chown node:node {} + 2>/dev/null || true
+  find "$root" -maxdepth 3 -type d -exec chown node:node {} + 2>/dev/null || true
+
+  for dir in \
+    "$root/agents" \
+    "$root/canvas" \
+    "$root/data" \
+    "$root/extensions" \
+    "$root/logs" \
+    "$root/plugin-runtime-deps" \
+    "$root/workspace"; do
+    if [ -d "$dir" ]; then
+      find "$dir" -maxdepth 2 -type d -exec chown node:node {} + 2>/dev/null || true
+      find "$dir" -maxdepth 1 -type f -exec chown node:node {} + 2>/dev/null || true
+    fi
+  done
 }
 
 # 检查配置文件是否存在，如果不存在则生成
@@ -475,12 +508,28 @@ if messages is not None:
 channels = data.setdefault('channels', {})
 feishu_existing = channels.get('feishu') if isinstance(channels.get('feishu'), dict) else {}
 
+def normalize_allow_list(value):
+  if isinstance(value, list):
+    return [str(item).strip() for item in value if str(item).strip()]
+  if value is None:
+    return []
+  item = str(value).strip()
+  return [item] if item else []
+
+def ensure_feishu_open_policy_allowlist(config):
+  if config.get('dmPolicy') == 'open':
+    allow_from = normalize_allow_list(config.get('allowFrom'))
+    if not any(entry == '*' for entry in allow_from):
+      allow_from.append('*')
+    config['allowFrom'] = allow_from
+  return config
+
 # Remove legacy schema keys that are rejected in newer OpenClaw versions.
 if isinstance(feishu_existing, dict):
   feishu_existing.pop('accounts', None)
 
 if feishu_app_id and feishu_app_secret:
-  channels['feishu'] = {
+  feishu_config = {
     'enabled': True,
     'connectionMode': feishu_existing.get('connectionMode', 'websocket'),
     'dmPolicy': feishu_existing.get('dmPolicy', 'pairing'),
@@ -489,6 +538,20 @@ if feishu_app_id and feishu_app_secret:
     'appId': feishu_app_id,
     'appSecret': feishu_app_secret,
   }
+  for key in (
+    'allowFrom',
+    'groupAllowFrom',
+    'domain',
+    'webhookPath',
+    'reactionNotifications',
+    'typingIndicator',
+    'resolveSenderNames',
+    'encryptKey',
+    'verificationToken',
+  ):
+    if key in feishu_existing:
+      feishu_config[key] = feishu_existing[key]
+  channels['feishu'] = ensure_feishu_open_policy_allowlist(feishu_config)
 
   plugins = data.setdefault('plugins', {})
   entries = plugins.setdefault('entries', {})
@@ -499,7 +562,7 @@ if feishu_app_id and feishu_app_secret:
   installs.pop('feishu', None)
 elif isinstance(feishu_existing, dict):
   # Keep existing feishu config but with legacy keys removed.
-  channels['feishu'] = feishu_existing
+  channels['feishu'] = ensure_feishu_open_policy_allowlist(feishu_existing)
 
 # Cleanup stale plugin path configs so OpenClaw can start even if old linked plugins were removed.
 plugins = data.setdefault('plugins', {})
@@ -534,8 +597,8 @@ PY
     fi
 fi
 
-# 确保所有文件和目录的权限正确
-chown -R node:node /home/node/.openclaw
+# 确保关键文件和目录权限正确；默认避免深度遍历大型会话/工作区目录。
+fix_openclaw_permissions
 
 ensure_openclaw_runtime_bridge
 

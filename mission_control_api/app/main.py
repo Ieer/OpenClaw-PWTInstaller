@@ -1664,6 +1664,53 @@ def _sanitize_connect_auth(
     return json.dumps(req, ensure_ascii=False)
 
 
+def _rewrite_control_ui_ws_request(message: str, settings: Settings) -> str:
+    """Trim expensive Control UI requests before proxying them to OpenClaw.
+
+    OpenClaw 2026.4.x Control UI requests `chat.history` with a high limit and
+    `sessions.list(includeUnknown=true)` on initial page load. On Panopticon
+    agents with many archived/trajectory session files this blocks the gateway
+    event loop for multiple seconds. Keep the UI responsive by capping the
+    initial history payload and preventing unknown-file scans unless explicitly
+    re-enabled by env.
+    """
+    try:
+        req = json.loads(message)
+    except Exception:
+        return message
+
+    if not isinstance(req, dict) or req.get("type") != "req":
+        return message
+
+    method = req.get("method")
+    params = req.get("params")
+    if not isinstance(params, dict):
+        params = {}
+
+    changed = False
+    if method == "chat.history" and settings.chat_history_limit > 0:
+        requested_limit = params.get("limit")
+        try:
+            requested_limit_int = int(requested_limit) if requested_limit is not None else settings.chat_history_limit
+        except (TypeError, ValueError):
+            requested_limit_int = settings.chat_history_limit
+        capped_limit = max(1, min(requested_limit_int, settings.chat_history_limit))
+        if params.get("limit") != capped_limit:
+            params["limit"] = capped_limit
+            changed = True
+
+    if method == "sessions.list" and not settings.chat_sessions_include_unknown:
+        if params.get("includeUnknown") is not False:
+            params["includeUnknown"] = False
+            changed = True
+
+    if not changed:
+        return message
+
+    req["params"] = params
+    return json.dumps(req, ensure_ascii=False)
+
+
 def _rewrite_avatar_meta(content: bytes, agent: str, query: str) -> bytes:
     try:
         payload = json.loads(content.decode("utf-8", errors="replace"))
@@ -6905,6 +6952,7 @@ def create_app() -> FastAPI:
                                     strip_stale_device_fields=settings.chat_strip_stale_device_fields,
                                     force_token_in_connect=settings.chat_force_token_in_connect,
                                 )
+                            msg = _rewrite_control_ui_ws_request(msg, settings)
                             await upstream_ws.send(msg)
                     except WebSocketDisconnect:
                         pass

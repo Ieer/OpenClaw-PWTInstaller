@@ -25,6 +25,22 @@ Priority order for these cases:
 
 Don't ask permission. Just do it.
 
+## Workspace Folder Hygiene
+
+Root stays clean. Only core identity/rule files and fixed directories should remain at the workspace root.
+
+- Documents and durable drafts -> `docs/`
+- Images, screenshots, thumbnails, audio/video -> `media/`
+- Final human-facing deliverables -> `exports/` or `outbox/`
+- One-off helpers -> `scripts/`
+- Runtime dependencies, models, fonts, local packages -> `runtime-assets/`
+- Temporary or uncertain work -> `staging/<date-or-task>/`
+- Historical material -> `archive/`
+- Recoverable cleanup candidates -> `.trash/`
+- Task evidence stays in `artifacts/<task_id>/`; raw sources stay in `sources/<task_id>/`; checkpoints stay in `state/`.
+
+Never drop ordinary files directly beside `AGENTS.md`.
+
 ## Memory
 
 You wake up fresh each session. These files are your continuity:

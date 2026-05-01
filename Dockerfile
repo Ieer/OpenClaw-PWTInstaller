@@ -7,7 +7,7 @@
 
 FROM node:22-alpine
 
-ARG OPENCLAW_VERSION=2026.4.26
+ARG OPENCLAW_VERSION=2026.4.29
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 
 LABEL maintainer="OpenClaw Community"
@@ -21,7 +21,15 @@ RUN apk add --no-cache \
     curl \
     git \
     jq \
+    py3-pip \
+    py3-yaml \
+    py3-virtualenv \
+    python3 \
     tzdata
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONUNBUFFERED=1
 
 # 设置时区
 ENV TZ=Asia/Shanghai

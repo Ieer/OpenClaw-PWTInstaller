@@ -22,6 +22,33 @@
 - Fallback to keyword scan over `memory/`.
 - Keep evidence paths in outputs.
 
+## Workspace Folder Hygiene
+
+Root stays clean. Create ordinary files inside a classified folder, not beside `AGENTS.md`.
+
+Allowed root files:
+
+- `AGENTS.md`, `SOUL.md`, `USER.md`, `IDENTITY.md`, `HEARTBEAT.md`, `TOOLS.md`, `MEMORY.md`, `README.md`, `RUNTIME_POLICY.md`
+
+Allowed root directories:
+
+- Contract: `inbox/`, `outbox/`, `artifacts/`, `state/`, `sources/`, `memory/`, `skills/`
+- Classification: `docs/`, `media/`, `exports/`, `scripts/`, `runtime-assets/`, `staging/`, `archive/`, `.trash/`
+- System: `.openclaw/`, `.claude/`, `.release-state/`
+
+Default destinations:
+
+- `docs/` — durable drafts, SOPs, Mermaid sources, long-form markdown.
+- `media/` — images, screenshots, thumbnails, rendered diagrams, audio/video intermediates.
+- `exports/` — final PDFs, PPTX, HTML, ZIPs, and human-facing deliverables.
+- `scripts/` — one-off helpers and generators; promote reusable tools to `skills/` later.
+- `runtime-assets/` — fonts, OCR data, templates, offline packages, required local runtime assets.
+- `staging/` — temporary or uncertain work in progress.
+- `archive/` — completed historical work and old versions that still matter.
+- `.trash/` — recoverable cleanup candidates; never use destructive deletion first.
+
+If unsure, write to `staging/<date-or-task>/` and mention the location in the task closeout.
+
 ## Skill Extension Rule
 
 - Trigger

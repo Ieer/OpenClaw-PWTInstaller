@@ -589,19 +589,15 @@ provider/model
 "channels": {
   "feishu": {
     "enabled": true,
-    "dmPolicy": "open",
-    "groupPolicy": "open",
-    "accounts": {
-      "main": {
-        "appId": "你的 AppID",
-        "appSecret": "你的 AppSecret",
-        "botName": "OpenClaw Bot"
-      }
-    },
     "connectionMode": "websocket",
+    "dmPolicy": "open",
+    "allowFrom": ["*"],
+    "groupPolicy": "open",
     "domain": "feishu",
+    "webhookPath": "/feishu/events",
     "requireMention": true,
-    "groupSessionScope": "group"
+    "appId": "你的 AppID",
+    "appSecret": "你的 AppSecret"
   }
 }
 ```
@@ -609,14 +605,15 @@ provider/model
 ### 新手要理解的字段
 
 - `enabled`：是否启用该渠道
-- `accounts.main`：该渠道的主账号配置
 - `appId` / `appSecret`：渠道凭据
 - `requireMention`：群聊里是否必须 @ 机器人
 - `dmPolicy` / `groupPolicy`：私聊/群聊允许策略
+- `allowFrom`：私聊允许来源；在 OpenClaw `2026.4.29` 中，如果 `dmPolicy` 是 `open`，必须包含 `"*"`
 
 注意：
 
 - 这类密钥不要发群、不要传 Git、不要截图明文展示
+- 旧配置里可能还会看到 `channels.feishu.accounts`。当前 Panopticon 主路线会在启动时移除这个旧字段并合并到顶层 `channels.feishu.appId` / `channels.feishu.appSecret`。
 
 ---
 
@@ -877,7 +874,7 @@ Ollama API error 500: model requires more system memory
 
 统一入口如下：
 
-- 想看 OpenClaw 2026.4.26 的初始化、配置、模型、agent、gateway、运维与安全命令总览，直接看 [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md)
+- 想看 OpenClaw 2026.4.29 的初始化、配置、模型、agent、gateway、运维与安全命令总览，直接看 [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md)
 - 想看 8-Agent Panopticon 的 compose、巡检、恢复和主路线运维命令，直接看 [../panopticon/README.md](../panopticon/README.md)
 
 本文正文里仍然保留少量命令示例，但只限于解释 `openclaw.json` 字段时必需的上下文，例如：
@@ -896,7 +893,7 @@ Ollama API error 500: model requires more system memory
 2. `agents.defaults.model.primary`
 3. `agents.defaults.models["provider/model"].params`
 4. `agents.defaults.workspace`
-5. `channels.feishu.accounts.main`
+5. `channels.feishu.appId` / `channels.feishu.appSecret` / `channels.feishu.allowFrom`
 
 其他部分能不动就先不动。
 

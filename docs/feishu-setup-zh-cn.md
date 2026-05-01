@@ -194,6 +194,51 @@ docker exec openclaw-nox sh -lc 'test -L /home/node/.openclaw/plugin-runtime-dep
 
 如果日志里已经不再出现上述缺包错误，再回到飞书里做一次真实收发测试。
 
+### Q: 升级到 OpenClaw 2026.4.29 后，飞书能收到消息但不回复 / 不能发送？
+
+先看 agent 日志里是否出现类似信息：
+
+- `blocked unauthorized sender ... (dmPolicy=open)`
+- `channels.feishu.dmPolicy="open" requires channels.feishu.allowFrom to include "*"`
+
+OpenClaw `2026.4.29` 对飞书私聊开放策略收紧了校验：如果配置了：
+
+```json
+"dmPolicy": "open"
+```
+
+就必须同时显式配置：
+
+```json
+"allowFrom": ["*"]
+```
+
+否则即使 `dmPolicy` 看起来是 `open`，消息也可能被当作未授权发送者拦截。
+
+本仓库当前镜像启动脚本已经做了兼容修复：启动 / 合并飞书配置时，如果发现 `channels.feishu.dmPolicy="open"`，会自动补齐 `channels.feishu.allowFrom=["*"]`。如果你的 agent 是旧容器或旧配置，建议重建并重启目标 agent：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml build openclaw-nox
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --no-deps --force-recreate openclaw-nox
+```
+
+如需一次性刷新 8 个 Panopticon agent：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --no-deps --force-recreate \
+	openclaw-nox openclaw-metrics openclaw-email openclaw-growth \
+	openclaw-trades openclaw-health openclaw-writing openclaw-personal
+```
+
+修复后建议检查：
+
+```bash
+docker logs openclaw-nox --since 5m 2>&1 | grep -E 'feishu|blocked unauthorized|bot open_id|WebSocket client started|AxiosError|timeout'
+bash panopticon/tools/check_panopticon_services.sh
+```
+
+如果日志中能看到 `bot open_id resolved` 或 `WebSocket client started`，且不再出现 `blocked unauthorized sender`，再做真实飞书收发测试。
+
 ### Q: 群聊中如何触发机器人？
 
 默认情况下，群聊中需要 **@机器人** 才会触发回复，这样可以避免机器人响应所有消息。

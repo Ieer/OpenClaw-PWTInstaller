@@ -27,6 +27,14 @@
   artifacts/
   state/
   sources/
+  docs/
+  media/
+  exports/
+  scripts/
+  runtime-assets/
+  staging/
+  archive/
+  .trash/
   memory/
     projects.md
     infra.md
@@ -40,8 +48,11 @@
 说明：
 
 - `inbox/outbox/artifacts/state/sources` 是运行契约目录，不可省略。
+- `docs/media/exports/scripts/runtime-assets/staging/archive/.trash` 是根目录清爽化目录，用于避免普通文件散落在 workspace 根目录。
 - `memory/` 为结构化记忆层，避免单文件记忆膨胀。
 - `skills/` 用于放置 workspace 级 `*/SKILL.md` 规范与实现。
+
+根目录只作为入口层，不作为工作台。普通文件默认进入分类目录；不确定落点时先进入 `staging/<日期或任务名>/`。
 
 ---
 
@@ -86,7 +97,15 @@
 
 原则：默认最小可用模型，因上下文复杂度或质量门槛再升级。
 
-### F. 心跳原则（强约束）
+### F. 根目录清爽化
+
+- 根目录只保留七件套文档、必要入口文件、固定契约目录与分类目录。
+- 新建文件前先判断类别：文档、媒体、交付、脚本、运行资源、临时、归档、任务证据、来源或状态。
+- 禁止把图片、PPT、HTML、临时脚本、缓存、半成品直接写到根目录。
+- 给人看的最终件放 `exports/` 或 `outbox/`；过程证据放 `artifacts/`；来源放 `sources/`；临时件放 `staging/`。
+- 清理候选先进入 `.trash/` 或 `archive/`，不要直接删除。
+
+### G. 心跳原则（强约束）
 
 - 心跳仅做 I/O 检查与状态刷新
 - 禁止重推理、重生成、外部副作用

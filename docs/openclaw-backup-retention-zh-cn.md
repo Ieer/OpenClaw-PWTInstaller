@@ -82,7 +82,7 @@ python panopticon/tools/backup_panopticon.py \
 - `reports/`
 - `PANOPTICON_KNOWLEDGE_RAW_SOURCES_PATH` 指向的知识源目录（存在时）
 
-默认排除：浏览器锁文件、socket、pid/lock、缓存、临时目录、`node_modules/`、`extensions/`。
+workspace 根目录清爽化后的分类目录（`docs/`、`media/`、`exports/`、`scripts/`、`runtime-assets/`、`staging/`、`archive/`、`.trash/`）会随 `workspaces/` 纳入备份边界。默认排除：浏览器锁文件、socket、pid/lock、缓存、临时目录、`node_modules/`、`venv/`、`.venv/`、`extensions/`。
 
 ## 周期全量冷备
 

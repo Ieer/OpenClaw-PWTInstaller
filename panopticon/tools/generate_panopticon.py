@@ -342,7 +342,7 @@ def render_compose(manifest: dict) -> str:
         slug = agent["slug"]
         gateway_host_port = agent["gateway_host_port"]
         bridge_host_port = agent["bridge_host_port"]
-        openclaw_version = str(runtime.get("cnim_openclaw_version", "2026.4.26"))
+        openclaw_version = str(runtime.get("cnim_openclaw_version", "2026.4.29"))
 
         service_block = textwrap.dedent(
             """\

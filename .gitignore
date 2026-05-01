@@ -94,6 +94,15 @@ panopticon/workspaces/*/node_modules/
 panopticon/workspaces/*/thumbnails/
 panopticon/workspaces/*/components/
 panopticon/workspaces/*/DREAMS.md
+panopticon/workspaces/*/**/DREAMS.md
+panopticon/workspaces/*/.trash/
+panopticon/workspaces/*/staging/
+panopticon/workspaces/*/archive/baidu-backup/
+panopticon/workspaces/*/exports/ppt-output/
+panopticon/workspaces/*/exports/*.pptx
+panopticon/workspaces/*/media/thumbnails/
+panopticon/workspaces/*/runtime-assets/*venv/
+panopticon/workspaces/*/runtime-assets/*.traineddata
 panopticon/workspaces/*/memory/dreaming/
 panopticon/workspaces/*/*.pptx
 panopticon/workspaces/*/memory/.dreams/

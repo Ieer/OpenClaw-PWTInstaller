@@ -44,6 +44,8 @@ class Settings(BaseModel):
     chat_force_token_in_connect: bool = True
     chat_rewrite_control_ui_config: bool = True
     chat_rewrite_avatar_payloads: bool = True
+    chat_history_limit: int = 80
+    chat_sessions_include_unknown: bool = False
     agent_controller_url: str = "http://mission-control-agent-controller:9091"
     agent_controller_auth_token: str | None = None
     agent_controller_timeout_seconds: float = 5.0
@@ -114,6 +116,8 @@ def load_settings() -> Settings:
         chat_force_token_in_connect=_env_flag("MC_CHAT_COMPAT_FORCE_TOKEN_IN_CONNECT", True),
         chat_rewrite_control_ui_config=_env_flag("MC_CHAT_COMPAT_REWRITE_CONTROL_UI_CONFIG", True),
         chat_rewrite_avatar_payloads=_env_flag("MC_CHAT_COMPAT_REWRITE_AVATAR_PAYLOADS", True),
+        chat_history_limit=int((os.getenv("MC_CHAT_COMPAT_HISTORY_LIMIT") or "80").strip()),
+        chat_sessions_include_unknown=_env_flag("MC_CHAT_COMPAT_SESSIONS_INCLUDE_UNKNOWN", False),
         agent_controller_url=(os.getenv("MC_AGENT_CONTROLLER_URL") or "http://mission-control-agent-controller:9091").strip(),
         agent_controller_auth_token=(os.getenv("MC_AGENT_CONTROLLER_AUTH_TOKEN") or "").strip() or None,
         agent_controller_timeout_seconds=float((os.getenv("MC_AGENT_CONTROLLER_TIMEOUT_SECONDS") or "5.0").strip()),

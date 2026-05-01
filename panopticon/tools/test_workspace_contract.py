@@ -16,7 +16,9 @@ try:
 except Exception:  # pragma: no cover
     yaml = None
 
-REQUIRED_DIRS = ["inbox", "outbox", "artifacts", "state", "sources"]
+CONTRACT_DIRS = ["inbox", "outbox", "artifacts", "state", "sources"]
+CLASSIFICATION_DIRS = ["docs", "media", "exports", "scripts", "runtime-assets", "staging", "archive", ".trash"]
+REQUIRED_DIRS = CONTRACT_DIRS + CLASSIFICATION_DIRS
 DEFAULT_AGENTS = ["email", "growth", "health", "metrics", "nox", "personal", "trades", "writing"]
 
 

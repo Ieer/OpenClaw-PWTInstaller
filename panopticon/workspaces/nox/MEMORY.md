@@ -88,3 +88,15 @@
 
 <!-- openclaw-memory-promotion:memory:memory/2026-04-19.md:15:18 -->
 - "rokid-openclaw-bridge": { "enabled": true, "config": { "linkCode": "3104", [score=0.890 recalls=0 avg=0.620 source=memory/2026-04-19.md:15-18]
+
+## Promoted From Short-Term Memory (2026-04-30)
+
+<!-- openclaw-memory-promotion:memory:memory/2026-04-23.md:6:6 -->
+- 用户询问"统计当前PPT技能有哪些"，需要了解当前可用的PPT相关技能。 [score=0.884 recalls=0 avg=0.620 source=memory/2026-04-23.md:6-6]
+<!-- openclaw-memory-promotion:memory:memory/2026-04-23.md:45:45 -->
+- 用户提供数位工具Q1 KPI月报数据，要求制作一页PPT，包含三个部分： [score=0.884 recalls=0 avg=0.620 source=memory/2026-04-23.md:45-45]
+
+## Promoted From Short-Term Memory (2026-05-01)
+
+<!-- openclaw-memory-promotion:memory:memory/2026-04-24.md:15:18 -->
+- | 时间 | Provider | Model | Input | Output | CacheRead | CacheWrite | Total | Cost(¥) | |------|----------|-------|-------|--------|-----------|------------|-------|---------| | 08:57:57 | default | glm-5-turbo | 44,205 | 29 | 11,547 | 0 | 55,781 | ¥1.70 | [score=0.890 recalls=0 avg=0.620 source=memory/2026-04-24.md:15-17]

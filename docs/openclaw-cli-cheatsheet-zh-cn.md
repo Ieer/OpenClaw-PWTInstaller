@@ -1,8 +1,8 @@
 # OpenClaw CLI 全流程速查表（简中）
 
-> 版本基线：OpenClaw 2026.4.26
+> 版本基线：OpenClaw 2026.4.29
 >
-> 仓库对齐原则：本仓库统一以 [../openclaw-release.yaml](../openclaw-release.yaml) 中的 `openclaw_version: 2026.4.26` 作为文档基线；当 CLI 外部资料与当前仓库脚本、compose、README 不一致时，以当前仓库实现为准。
+> 仓库对齐原则：本仓库统一以 [../openclaw-release.yaml](../openclaw-release.yaml) 中的 `openclaw_version: 2026.4.29` 作为文档基线；当 CLI 外部资料与当前仓库脚本、compose、README 不一致时，以当前仓库实现为准。
 
 ---
 
@@ -17,7 +17,7 @@ OpenClaw CLI 是 8 个 agent 通过命令行沟通的桥梁。
 - 渠道绑定、配置修复、会话治理与故障排查
 - Panopticon 与 Mission Control 迭代时的人机协同操作基线
 
-这份 cheatsheet 按真实使用生命周期组织，目标不是覆盖所有子命令，而是给出一套在 OpenClaw 2026.4.26 上更稳定、便于系统迭代的命令视图。
+这份 cheatsheet 按真实使用生命周期组织，目标不是覆盖所有子命令，而是给出一套在 OpenClaw 2026.4.29 上更稳定、便于系统迭代的命令视图。
 
 ## 先记住三条原则
 
@@ -42,7 +42,7 @@ OpenClaw CLI 是 8 个 agent 通过命令行沟通的桥梁。
 
 ## 2. 配置与凭证管理
 
-OpenClaw 2026.4.26 延续双层配置思路：全局配置与工作区 / agent 配置并存，局部优先。
+OpenClaw 2026.4.29 延续双层配置思路：全局配置与工作区 / agent 配置并存，局部优先。
 
 | 命令 | 说明 | 示例 / 备注 |
 | --- | --- | --- |
@@ -168,10 +168,32 @@ Gateway 是 OpenClaw 的心脏。对本仓库而言，这一层直接影响单 A
 docker compose -f panopticon/docker-compose.panopticon.yml ps
 docker compose -f panopticon/docker-compose.panopticon.yml logs -f --tail=200
 bash panopticon/tools/check_panopticon_services.sh
+bash panopticon/tools/check_agent_python_runtime.sh
 bash panopticon/tools/recover_mission_control_gateway.sh
 ```
 
 这几条不是 OpenClaw CLI 子命令，但在当前仓库里是主路线运维事实来源。
+
+`check_agent_python_runtime.sh` 会检查 8 个 `openclaw-*` 容器内的 `python3`、`pip` 和 `PyYAML`。当前 agent 镜像基线要求三者全部可用，否则 self-heal runner、YAML registry 和部分脚本型能力会退化。
+
+### 基础设施自愈入口
+
+当前仓库还提供 registry-driven 自愈 skill，用于把健康检查、低风险修复、Review Gate 和审计统一起来。
+
+常用诊断命令：
+
+```bash
+python3 panopticon/workspaces/nox/skills/self-heal/scripts/self_heal_runner.py list-items
+python3 panopticon/workspaces/nox/skills/self-heal/scripts/self_heal_runner.py diagnose --max-level L1 --exit-zero
+```
+
+为其他 agent 生成自愈骨架时，先 dry-run：
+
+```bash
+python3 panopticon/global-skills/openclaw-self-heal/scripts/scaffold_agent_self_heal.py --agent metrics --dry-run
+```
+
+完整规则见 [infrastructure-self-heal-zh-cn.md](infrastructure-self-heal-zh-cn.md)。
 
 ## 8. 发布升级、快路径替换与回滚
 
@@ -235,6 +257,48 @@ docker exec openclaw-nox sh -lc 'test -L /home/node/.openclaw/plugin-runtime-dep
 ```
 
 如果日志不再出现上述缺包报错，再做一次真实飞书收发测试。更完整的飞书排障说明见 [feishu-setup-zh-cn.md](feishu-setup-zh-cn.md)。
+
+### 2026.4.29 飞书 open 策略兼容修复
+
+如果升级到 OpenClaw `2026.4.29` 后，飞书私聊消息能进入日志，但 agent 不处理 / 不回复，并看到：
+
+```text
+blocked unauthorized sender ... (dmPolicy=open)
+```
+
+通常是因为新版要求 `channels.feishu.dmPolicy="open"` 时必须显式设置：
+
+```json
+"allowFrom": ["*"]
+```
+
+当前仓库的 `external/OpenClaw-Docker-CN-IM/init.sh` 已在配置合并阶段自动补齐这个字段。运维动作建议是刷新镜像 / 重建目标 agent，而不是只重启进程：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml build openclaw-nox
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --no-deps --force-recreate openclaw-nox
+```
+
+如需一次性验证所有 agent 的配置和运行状态：
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+bad = []
+for path in sorted(Path('panopticon/agent-homes').glob('*/openclaw.json')):
+    cfg = json.load(open(path)).get('channels', {}).get('feishu') or {}
+    ok = cfg.get('dmPolicy') != 'open' or '*' in (cfg.get('allowFrom') or [])
+    print(path.parent.name, 'ok=' + str(ok), 'dmPolicy=' + repr(cfg.get('dmPolicy')), 'allowFrom=' + repr(cfg.get('allowFrom')))
+    if not ok:
+        bad.append(path.parent.name)
+raise SystemExit(1 if bad else 0)
+PY
+
+bash panopticon/tools/check_panopticon_services.sh
+```
+
+飞书真实发送验证仍以 `tenant_access_token` 和 `im/v1/messages` 返回 `code=0` 为准。
 
 ### Rollback
 
@@ -351,7 +415,7 @@ python tools/rollout_release_upgrade.py --mode fast-panopticon
 
 1. 第一优先级：当前仓库可运行脚本、compose、env 模板、[../openclaw-release.yaml](../openclaw-release.yaml)
 2. 第二优先级：当前仓库 README 与 docs 中已出现并被实际使用的命令
-3. 第三优先级：OpenClaw 2026.4.26 外部参考资料与 `openclaw --help`
+3. 第三优先级：OpenClaw 2026.4.29 外部参考资料与 `openclaw --help`
 
 如果三者冲突，按第一优先级回退。
 

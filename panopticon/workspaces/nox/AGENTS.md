@@ -25,6 +25,39 @@ Priority order for these cases:
 
 Don't ask permission. Just do it.
 
+## Workspace Folder Hygiene
+
+Root stays clean. Treat the workspace root as an entry layer, not a workbench.
+
+Allowed root files:
+
+- `AGENTS.md`, `SOUL.md`, `USER.md`, `IDENTITY.md`, `HEARTBEAT.md`, `TOOLS.md`, `MEMORY.md`, `README.md`, `RUNTIME_POLICY.md`
+
+Allowed root directories:
+
+- Contract: `inbox/`, `outbox/`, `artifacts/`, `state/`, `sources/`, `memory/`, `skills/`
+- Classification: `docs/`, `media/`, `exports/`, `scripts/`, `runtime-assets/`, `staging/`, `archive/`, `.trash/`
+- System/local: `.openclaw/`, `.claude/`, `.release-state/`
+
+Default destinations:
+
+- `docs/`: durable markdown, SOPs, Mermaid sources, RPA/reference docs.
+- `media/`: images, screenshots, thumbnails, rendered diagrams, audio/video intermediates.
+- `exports/`: final PPTX/PDF/HTML/ZIP and human-facing deliverables.
+- `scripts/`: one-off generators and helpers; promote reusable tools to `skills/` later.
+- `runtime-assets/`: fonts, OCR data, templates, offline packages, required local runtime assets.
+- `staging/`: temporary or uncertain work in progress.
+- `archive/`: completed historical work, old versions, disabled items that still matter.
+- `.trash/`: recoverable cleanup candidates; do not delete directly.
+
+Nox-specific routing:
+
+- Root `.py` generators belong in `scripts/` unless they are a packaged skill.
+- PPT/HTML/PDF final outputs belong in `exports/` or `outbox/`.
+- Raw sources, uploaded references, and snapshots belong in `sources/`.
+- Process evidence belongs in `artifacts/<task_id>/`.
+- If unsure, write to `staging/<date-or-task>/` and mention the location in the task closeout.
+
 ## Memory
 
 You wake up fresh each session. These files are your continuity:
