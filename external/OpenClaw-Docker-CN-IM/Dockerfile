@@ -3,7 +3,8 @@ FROM node:22-slim
 
 # When set to 1, fail the build if plugin installation fails.
 ARG STRICT_PLUGIN_INSTALL=0
-ARG OPENCLAW_VERSION=2026.4.29
+ARG OPENCLAW_VERSION=2026.5.2
+ARG FEISHU_PLUGIN_NPM_SPEC=@m1heng-clawd/feishu@0.1.18
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 
 # 设置工作目录
@@ -49,7 +50,12 @@ RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.co
 RUN npm install -g "openclaw@${OPENCLAW_VERSION}" opencode-ai@latest
 
 # Stock Feishu extension needs its own runtime dependencies alongside the bundled files.
-RUN npm install --prefix /usr/local/lib/node_modules/openclaw/dist/extensions/feishu --omit=dev
+# OpenClaw 2026.5.x may omit the stock Feishu bundle, so keep this optional.
+RUN if [ -f /usr/local/lib/node_modules/openclaw/dist/extensions/feishu/package.json ]; then \
+    npm install --prefix /usr/local/lib/node_modules/openclaw/dist/extensions/feishu --omit=dev; \
+  else \
+    echo "[warn] stock feishu extension package.json not found; skip runtime dependency install"; \
+  fi
 
 # 安装 Playwright 和 Chromium
 RUN npm install -g playwright && npx playwright install chromium --with-deps
@@ -67,7 +73,8 @@ ENV HOME=/home/node \
   PIP_DISABLE_PIP_VERSION_CHECK=1 \
   PIP_NO_CACHE_DIR=1 \
   PYTHONUNBUFFERED=1 \
-  OPENCLAW_NPM_REGISTRY=${NPM_REGISTRY}
+  OPENCLAW_NPM_REGISTRY=${NPM_REGISTRY} \
+  OPENCLAW_FEISHU_PLUGIN_NPM_SPEC=${FEISHU_PLUGIN_NPM_SPEC}
 
 RUN mkdir -p \
     /home/node/.npm \
@@ -83,11 +90,15 @@ USER node
 # Reduce flaky GitHub HTTP2 clone errors
 RUN git config --global http.version HTTP/1.1
 
-# 飞书优先使用 OpenClaw 自带 stock:feishu（路径可能随版本变化，不存在时仅告警）
-RUN if [ -d /usr/local/lib/node_modules/openclaw/extensions/feishu ]; then \
+# 飞书优先使用 OpenClaw 自带 stock:feishu；2026.5.x 缺少 stock bundle 时预装社区 fallback。
+RUN set -e; \
+  if [ -d /usr/local/lib/node_modules/openclaw/dist/extensions/feishu ] \
+    || [ -d /usr/local/lib/node_modules/openclaw/extensions/feishu ]; then \
     echo "[ok] stock feishu extension detected"; \
   else \
-    echo "[warn] stock feishu extension path not found; continue"; \
+    echo "[info] stock feishu extension not found; install community fallback ${FEISHU_PLUGIN_NPM_SPEC}"; \
+    (timeout 600 openclaw plugins install "${FEISHU_PLUGIN_NPM_SPEC}") \
+    || { if [ "$STRICT_PLUGIN_INSTALL" = "1" ]; then exit 1; else echo "[warn] feishu fallback plugin install skipped"; fi; }; \
   fi
 
 # 安装钉钉插件（从 GitHub clone 后本地安装；失败应让构建失败）
@@ -119,6 +130,18 @@ RUN if [ "$STRICT_PLUGIN_INSTALL" = "1" ]; then test -d /home/node/.openclaw/ext
 # 切换回 root 用户继续后续操作
 USER root
 
+# 缓存社区 Feishu fallback；运行时 agent home 由 bind mount 覆盖，init.sh 会按需恢复此缓存。
+RUN mkdir -p /opt/openclaw-plugin-cache \
+  && if [ -d /home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu ]; then \
+    mkdir -p /opt/openclaw-plugin-cache/npm; \
+    cp -a /home/node/.openclaw/npm/. /opt/openclaw-plugin-cache/npm/; \
+  fi \
+  && if [ -f /home/node/.openclaw/plugins/installs.json ]; then \
+    mkdir -p /opt/openclaw-plugin-cache/plugins; \
+    cp -a /home/node/.openclaw/plugins/. /opt/openclaw-plugin-cache/plugins/; \
+  fi \
+  && chown -R node:node /opt/openclaw-plugin-cache
+
 # 确保 extensions 目录权限正确（排除 node_modules 以加快构建速度）
 RUN find /home/node/.openclaw/extensions -type d -name node_modules -prune -o -exec chown node:node {} +
 
@@ -130,6 +153,7 @@ RUN chmod +x /usr/local/bin/init.sh
 ENV HOME=/home/node \
   TERM=xterm-256color \
   NPM_CONFIG_CACHE=/home/node/.npm \
+  OPENCLAW_FEISHU_PLUGIN_NPM_SPEC=${FEISHU_PLUGIN_NPM_SPEC} \
   PIP_DISABLE_PIP_VERSION_CHECK=1 \
   PIP_NO_CACHE_DIR=1 \
   PYTHONUNBUFFERED=1

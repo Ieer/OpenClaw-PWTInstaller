@@ -194,6 +194,36 @@ docker exec openclaw-nox sh -lc 'test -L /home/node/.openclaw/plugin-runtime-dep
 
 如果日志里已经不再出现上述缺包错误，再回到飞书里做一次真实收发测试。
 
+### Q: 升级到 OpenClaw 2026.5.2 后，日志显示 `plugin not found: feishu` 或 Feishu 插件加载失败？
+
+`2026.5.2` 的 npm 包不再携带旧的 stock Feishu bundle，所以仅保留 `plugins.allow=["feishu"]` 或 `channels.feishu` 配置时，gateway 会提示：
+
+- `plugins.allow: plugin not found: feishu`
+- `http server listening (2 plugins: browser, memory-core; ...)`
+
+如果手动安装了最新社区包 `@m1heng-clawd/feishu@0.1.19`，还可能因为它导入了 `2026.5.2` 已移除的私有 SDK 子路径而失败：
+
+- `Cannot find module '/usr/local/lib/node_modules/openclaw/dist/plugin-sdk/root-alias.cjs/feishu'`
+- `failed to load plugin ... @m1heng-clawd/feishu/index.ts`
+
+当前仓库的 CN-IM 镜像已内置兼容修复：当 stock Feishu 不存在时，启动脚本会自动恢复或安装 `@m1heng-clawd/feishu@0.1.18` 作为 fallback，并确保 `plugins.entries.feishu.enabled=true` 与 `plugins.allow` 包含 `feishu`。
+
+修复生效方式是重建并重启目标 agent 容器：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml build openclaw-nox
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --no-deps --force-recreate openclaw-nox
+```
+
+成功日志通常包含：
+
+```text
+[plugins] loading feishu from /home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu/index.ts
+[plugins] loaded 3 plugin(s) ...
+[gateway] http server listening (3 plugins: browser, feishu, memory-core; ...)
+[feishu] feishu[default]: WebSocket client started
+```
+
 ### Q: 升级到 OpenClaw 2026.4.29 后，飞书能收到消息但不回复 / 不能发送？
 
 先看 agent 日志里是否出现类似信息：

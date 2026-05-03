@@ -21,6 +21,9 @@ class ObservabilitySummaryOut(BaseModel):
     event_backlog_total: int
     task_backlog_total: int
     healthy_agents: int
+    real_heartbeat_agents: int = 0
+    synthetic_heartbeat_agents: int = 0
+    heartbeat_health_source: str = "unknown"
     total_agents: int
     agent_health_ratio: float
     heartbeat_stale_seconds: int
@@ -62,6 +65,42 @@ class TaskCreate(BaseModel):
     status: str = "INBOX"
     assignee: str | None = None
     tags: list[str] = Field(default_factory=list)
+
+
+class TaskClaimIn(BaseModel):
+    agent_slug: str
+    force: bool = False
+
+
+class TaskCompleteIn(BaseModel):
+    agent_slug: str
+    summary: str | None = None
+    artifact_refs: list[str] = Field(default_factory=list)
+    review_gate: bool = False
+    force: bool = False
+
+
+class TaskReviewDecisionIn(BaseModel):
+    reviewer_slug: str
+    decision: str
+    notes: str | None = None
+    artifact_refs: list[str] = Field(default_factory=list)
+    force: bool = False
+
+
+class TaskRoutePreviewIn(BaseModel):
+    title: str
+    assignee: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    risk_level: str | None = None
+
+
+class TaskRoutePreviewOut(BaseModel):
+    suggested_assignee: str | None = None
+    confidence: float = 0.0
+    matched_rules: list[str] = Field(default_factory=list)
+    reason: str = ""
+    override_assignee: str | None = None
 
 
 class TaskOut(BaseModel):

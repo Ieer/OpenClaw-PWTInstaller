@@ -785,6 +785,41 @@ def _convert_feed(feed: list[dict]) -> list[dict]:
         elif evt_type == "task.created":
             title = str(payload.get("title") or "").strip()
             action = f"created task: {title}" if title else "created a task"
+        elif evt_type == "task.handoff":
+            target_agent = str(payload.get("new_assignee") or payload.get("to") or "agent").strip()
+            previous_agent = str(payload.get("previous_assignee") or agent or "-").strip()
+            if short_task:
+                action = f"handed off task {short_task}: {previous_agent} → {target_agent}"
+            else:
+                action = f"handed off task: {previous_agent} → {target_agent}"
+        elif evt_type == "task.claimed":
+            claim_agent = str(payload.get("new_assignee") or agent or "agent").strip()
+            action = f"claimed task {short_task}: {claim_agent}" if short_task else f"claimed task: {claim_agent}"
+        elif evt_type == "task.review.requested":
+            review_agent = str(payload.get("new_assignee") or agent or "agent").strip()
+            action = (
+                f"requested review for task {short_task}: {review_agent}"
+                if short_task
+                else f"requested review: {review_agent}"
+            )
+        elif evt_type == "task.review.approved":
+            reviewer = str(payload.get("reviewer") or agent or "reviewer").strip()
+            action = f"approved task {short_task}: {reviewer}" if short_task else f"approved task: {reviewer}"
+        elif evt_type == "task.review.changes_requested":
+            reviewer = str(payload.get("reviewer") or agent or "reviewer").strip()
+            action = (
+                f"requested changes for task {short_task}: {reviewer}"
+                if short_task
+                else f"requested changes: {reviewer}"
+            )
+        elif evt_type == "task.done":
+            done_agent = str(payload.get("new_assignee") or agent or "agent").strip()
+            action = f"completed task {short_task}: {done_agent}" if short_task else f"completed task: {done_agent}"
+        elif evt_type == "artifact.created":
+            artifact_refs = payload.get("artifact_refs")
+            artifact_count = len(artifact_refs) if isinstance(artifact_refs, list) else 0
+            suffix = f" ({artifact_count} artifact{'s' if artifact_count != 1 else ''})" if artifact_count else ""
+            action = f"created artifacts for task {short_task}{suffix}" if short_task else f"created artifacts{suffix}"
         elif evt_type == "task.updated":
             action = f"updated task {short_task}" if short_task else "updated a task"
         elif evt_type == "agent.heartbeat":

@@ -22,11 +22,137 @@ fetch-timeout=600000
 EOF
 chown node:node /home/node/.npmrc
 
-# If a global/community Feishu extension was installed previously, remove it so we use
-# the stock Feishu plugin bundled with OpenClaw (avoids duplicate plugin id warnings).
-if [ -d /home/node/.openclaw/extensions/feishu ]; then
-  rm -rf /home/node/.openclaw/extensions/feishu || true
-fi
+OPENCLAW_FEISHU_PLUGIN_NPM_SPEC="${OPENCLAW_FEISHU_PLUGIN_NPM_SPEC:-@m1heng-clawd/feishu@0.1.18}"
+OPENCLAW_FEISHU_PLUGIN_VERSION="${OPENCLAW_FEISHU_PLUGIN_NPM_SPEC##*@}"
+
+stock_feishu_available() {
+  local candidate
+  for candidate in \
+    /usr/local/lib/node_modules/openclaw/dist/extensions/feishu \
+    /usr/local/lib/node_modules/openclaw/extensions/feishu; do
+    if [ -f "$candidate/index.js" ] || [ -f "$candidate/index.ts" ] || [ -f "$candidate/openclaw.plugin.json" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+community_feishu_version() {
+  local package_json=/home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu/package.json
+  if [ ! -f "$package_json" ]; then
+    return 1
+  fi
+  node -e 'const fs=require("fs"); const p=process.argv[1]; process.stdout.write(JSON.parse(fs.readFileSync(p,"utf8")).version || "")' "$package_json"
+}
+
+community_feishu_available() {
+  local version
+  version="$(community_feishu_version 2>/dev/null || true)"
+  [ "$version" = "$OPENCLAW_FEISHU_PLUGIN_VERSION" ]
+}
+
+community_feishu_registered() {
+  local registry_json=/home/node/.openclaw/plugins/installs.json
+  if [ ! -f "$registry_json" ]; then
+    return 1
+  fi
+  node -e '
+const fs = require("fs");
+const registryPath = process.argv[1];
+const expectedVersion = process.argv[2];
+const expectedPath = "/home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu";
+try {
+  const registry = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+  const record = registry && registry.installRecords && registry.installRecords.feishu;
+  if (!record || !record.installPath) process.exit(1);
+  if (record.installPath !== expectedPath) process.exit(1);
+  const packageJsonPath = `${record.installPath}/package.json`;
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+  if (packageJson.version !== expectedVersion) process.exit(1);
+  const plugins = Array.isArray(registry.plugins) ? registry.plugins : [];
+  if (!plugins.some((plugin) => plugin && plugin.pluginId === "feishu")) process.exit(1);
+} catch {
+  process.exit(1);
+}
+' "$registry_json" "$OPENCLAW_FEISHU_PLUGIN_VERSION"
+}
+
+register_community_feishu_plugin() {
+  mkdir -p /home/node/.openclaw/extensions /home/node/.openclaw/npm /home/node/.npm
+  chown node:node /home/node/.openclaw /home/node/.openclaw/openclaw.json 2>/dev/null || true
+  chown node:node /home/node/.openclaw/extensions /home/node/.openclaw/npm /home/node/.npm 2>/dev/null || true
+
+  echo "[info] registering community feishu fallback from image registry cache"
+  rm -rf /home/node/.openclaw/extensions/feishu 2>/dev/null || true
+  restore_cached_feishu_registry && community_feishu_registered
+}
+
+restore_cached_feishu_plugin() {
+  local cache_dir=/opt/openclaw-plugin-cache/npm
+  if [ ! -f "$cache_dir/node_modules/@m1heng-clawd/feishu/package.json" ]; then
+    return 1
+  fi
+  mkdir -p /home/node/.openclaw/npm
+  cp -a "$cache_dir/." /home/node/.openclaw/npm/
+  chown -R node:node /home/node/.openclaw/npm 2>/dev/null || true
+}
+
+restore_cached_feishu_registry() {
+  local cache_dir=/opt/openclaw-plugin-cache/plugins
+  if [ ! -f "$cache_dir/installs.json" ]; then
+    return 1
+  fi
+  mkdir -p /home/node/.openclaw/plugins
+  cp -a "$cache_dir/." /home/node/.openclaw/plugins/
+  chown -R node:node /home/node/.openclaw/plugins 2>/dev/null || true
+}
+
+ensure_feishu_plugin_available() {
+  if stock_feishu_available; then
+    # Stock plugin is preferred when OpenClaw bundles it; remove community copies to avoid duplicate plugin ids.
+    rm -rf /home/node/.openclaw/extensions/feishu \
+      /home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu 2>/dev/null || true
+    echo "[ok] stock:feishu available"
+    return 0
+  fi
+
+  if community_feishu_available; then
+    if community_feishu_registered; then
+      echo "[ok] community feishu fallback registered (${OPENCLAW_FEISHU_PLUGIN_VERSION})"
+      return 0
+    fi
+    if register_community_feishu_plugin && community_feishu_registered; then
+      echo "[ok] registered community feishu fallback (${OPENCLAW_FEISHU_PLUGIN_VERSION})"
+      return 0
+    fi
+    echo "[warn] community feishu fallback package exists but registration failed; Feishu channel may be unavailable"
+    return 0
+  fi
+
+  rm -rf /home/node/.openclaw/extensions/feishu \
+    /home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu 2>/dev/null || true
+
+  if restore_cached_feishu_plugin && community_feishu_available; then
+    if community_feishu_registered; then
+      echo "[ok] restored registered community feishu fallback from image cache (${OPENCLAW_FEISHU_PLUGIN_VERSION})"
+      return 0
+    fi
+    if register_community_feishu_plugin && community_feishu_registered; then
+      echo "[ok] restored and registered community feishu fallback from image cache (${OPENCLAW_FEISHU_PLUGIN_VERSION})"
+      return 0
+    fi
+    echo "[warn] restored community feishu fallback but registration failed; Feishu channel may be unavailable"
+    return 0
+  fi
+
+  if register_community_feishu_plugin && community_feishu_registered; then
+    echo "[ok] installed community feishu fallback (${OPENCLAW_FEISHU_PLUGIN_VERSION})"
+    return 0
+  fi
+
+  echo "[warn] failed to install community feishu fallback; Feishu channel may be unavailable"
+  return 0
+}
 
 # Stock runtime bundles under plugin-runtime-deps import the bare "openclaw" package.
 # Bridge that import back to the global install so stock plugins can resolve it.
@@ -441,6 +567,12 @@ else
   OPENCLAW_GATEWAY_PASSWORD="${OPENCLAW_GATEWAY_PASSWORD}"
   OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH="${OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH:-1}"
   OPENCLAW_COMPACTION_RESERVE_TOKENS_FLOOR="${OPENCLAW_COMPACTION_RESERVE_TOKENS_FLOOR:-32000}"
+  if stock_feishu_available; then
+    OPENCLAW_STOCK_FEISHU_AVAILABLE=1
+  else
+    OPENCLAW_STOCK_FEISHU_AVAILABLE=0
+  fi
+  export OPENCLAW_STOCK_FEISHU_AVAILABLE
 
   python3 - <<'PY'
 import json
@@ -452,6 +584,7 @@ data = json.loads(path.read_text(encoding='utf-8'))
 
 feishu_app_id = os.environ.get('FEISHU_APP_ID', '').strip()
 feishu_app_secret = os.environ.get('FEISHU_APP_SECRET', '').strip()
+stock_feishu_available = os.environ.get('OPENCLAW_STOCK_FEISHU_AVAILABLE', '').strip() == '1'
 gateway_bind = os.environ.get('OPENCLAW_GATEWAY_BIND', '').strip() or 'lan'
 gateway_port_raw = os.environ.get('OPENCLAW_GATEWAY_PORT', '').strip() or '26216'
 gateway_token = os.environ.get('OPENCLAW_GATEWAY_TOKEN', '').strip()
@@ -557,12 +690,25 @@ if feishu_app_id and feishu_app_secret:
   entries = plugins.setdefault('entries', {})
   entries.setdefault('feishu', {}).update({'enabled': True})
 
-  # Ensure we use stock:feishu (do not keep an installs entry pointing to a global plugin)
+  # Prefer stock:feishu when bundled; when it is absent, init.sh provides a community fallback package.
   installs = plugins.setdefault('installs', {})
-  installs.pop('feishu', None)
+  if stock_feishu_available:
+    installs.pop('feishu', None)
 elif isinstance(feishu_existing, dict):
   # Keep existing feishu config but with legacy keys removed.
   channels['feishu'] = ensure_feishu_open_policy_allowlist(feishu_existing)
+
+feishu_configured = channels.get('feishu') if isinstance(channels.get('feishu'), dict) else None
+if feishu_configured and feishu_configured.get('enabled', True):
+  plugins = data.setdefault('plugins', {})
+  entries = plugins.setdefault('entries', {})
+  entries.setdefault('feishu', {}).update({'enabled': True})
+  allow = plugins.get('allow')
+  if not isinstance(allow, list):
+    allow = []
+  if 'feishu' not in allow:
+    allow.append('feishu')
+  plugins['allow'] = allow
 
 # Cleanup stale plugin path configs so OpenClaw can start even if old linked plugins were removed.
 plugins = data.setdefault('plugins', {})
@@ -591,11 +737,39 @@ if load is not None:
 path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 PY
     if [ -n "$FEISHU_APP_ID" ] && [ -n "$FEISHU_APP_SECRET" ]; then
-        echo "✅ 已合并飞书渠道配置（stock:feishu）"
+        if stock_feishu_available; then
+          echo "✅ 已合并飞书渠道配置（stock:feishu）"
+        else
+          echo "✅ 已合并飞书渠道配置（community feishu fallback）"
+        fi
     else
       echo "ℹ️ 未检测到 FEISHU_APP_ID/FEISHU_APP_SECRET，已仅同步 gateway/controlUi 配置"
     fi
 fi
+
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+path = Path('/home/node/.openclaw/openclaw.json')
+if path.exists():
+  data = json.loads(path.read_text(encoding='utf-8'))
+  channels = data.get('channels') if isinstance(data.get('channels'), dict) else {}
+  feishu = channels.get('feishu') if isinstance(channels.get('feishu'), dict) else None
+  if feishu and feishu.get('enabled', True):
+    plugins = data.setdefault('plugins', {})
+    entries = plugins.setdefault('entries', {})
+    entries.setdefault('feishu', {}).update({'enabled': True})
+    allow = plugins.get('allow')
+    if not isinstance(allow, list):
+      allow = []
+    if 'feishu' not in allow:
+      allow.append('feishu')
+    plugins['allow'] = allow
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+PY
+
+ensure_feishu_plugin_available
 
 # 确保关键文件和目录权限正确；默认避免深度遍历大型会话/工作区目录。
 fix_openclaw_permissions

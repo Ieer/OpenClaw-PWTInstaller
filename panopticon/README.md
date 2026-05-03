@@ -226,6 +226,29 @@ bash panopticon/tools/check_panopticon_services.sh
 
 飞书发送链路可用性的最终判定，是使用当前 `channels.feishu.appId/appSecret` 获取 `tenant_access_token` 成功，并调用飞书 `im/v1/messages` 返回 `code=0`。
 
+### OpenClaw 2026.5.2 飞书 fallback 修复
+
+`2026.5.2` 的 npm 包不再包含旧的 `/dist/extensions/feishu` stock bundle。升级后如果日志中出现下面任一现象，优先判断为 Feishu 插件来源缺失或 fallback 版本不兼容，而不是凭证错误：
+
+- `plugins.allow: plugin not found: feishu`
+- `http server listening (2 plugins: browser, memory-core; ...)`
+- `Cannot find module '/usr/local/lib/node_modules/openclaw/dist/plugin-sdk/root-alias.cjs/feishu'`
+
+当前 CN-IM 镜像修复策略：
+
+- stock Feishu 存在时继续优先使用 stock，避免 duplicate plugin id。
+- stock Feishu 缺失时自动恢复/安装 `@m1heng-clawd/feishu@0.1.18`。
+- 避免使用 `@m1heng-clawd/feishu@0.1.19`，该版本在 OpenClaw `2026.5.2` 下会引用已移除的私有 SDK 子路径。
+- 启动时确保已配置 Feishu 的 agent 同时拥有 `plugins.entries.feishu.enabled=true` 和 `plugins.allow` 中的 `feishu`。
+
+修复后重建并替换目标 agent 容器，再检查日志中是否出现：
+
+```text
+[plugins] loading feishu from /home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu/index.ts
+[gateway] http server listening (3 plugins: browser, feishu, memory-core; ...)
+[feishu] feishu[default]: WebSocket client started
+```
+
 ## 常见约束
 
 - 统一从 `18920` 的同源入口访问 chat，不要直接打开 `188xx` 端口。

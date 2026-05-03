@@ -596,7 +596,7 @@ docker build -t justlikemaki/openclaw-docker-cn-im:latest .
 - `openclaw@latest` - OpenClaw 主程序（构建时从 npm 拉取 latest，实际版本以容器内 `openclaw --version` 为准；如需可复现排障请在 `Dockerfile` 将其改为 `openclaw@<固定版本>` 并重新构建）
 - `opencode-ai@latest` - OpenCode AI
 - `playwright` - Playwright 浏览器自动化工具
-- `stock:feishu` - 飞书插件（OpenClaw 自带；不再额外安装社区版以避免 duplicate plugin id）
+- `stock:feishu` / `@m1heng-clawd/feishu@0.1.18` - 飞书插件（优先使用 OpenClaw 自带 stock；OpenClaw 2026.5.x 缺少 stock bundle 时自动使用社区 fallback）
 - `clawdbot-channel-dingtalk` - 钉钉插件（从 GitHub 安装）
 - `qqbot` - QQ 机器人插件（先克隆到 `/tmp/qqbot`，然后从本地目录安装）
 - `openclaw-plugin-wecom` - 企业微信插件（从 GitHub 安装）

@@ -17,6 +17,7 @@ class Settings(BaseModel):
     )
     redis_url: str = "redis://mc-redis:6379/0"
     redis_stream_key: str = "mc:events"
+    redis_stream_maxlen: int = 10000
     global_skills_dir: str = "/data/global-skills"
     agent_homes_dir: str = "/data/agent-homes"
     workspaces_dir: str = "/data/workspaces"
@@ -64,6 +65,18 @@ def _env_flag(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_int(name: str, default: int) -> int:
+    import os
+
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except ValueError:
+        return int(default)
+
+
 def load_settings() -> Settings:
     import os
 
@@ -85,6 +98,7 @@ def load_settings() -> Settings:
         or "postgresql+asyncpg://mission_control:mission_control@mc-postgres:5432/mission_control",
         redis_url=os.getenv("MC_REDIS_URL") or "redis://mc-redis:6379/0",
         redis_stream_key=os.getenv("MC_REDIS_STREAM_KEY") or "mc:events",
+        redis_stream_maxlen=max(0, _env_int("MC_REDIS_STREAM_MAXLEN", 10000)),
         global_skills_dir=os.getenv("MC_GLOBAL_SKILLS_DIR") or "/data/global-skills",
         agent_homes_dir=os.getenv("MC_AGENT_HOMES_DIR") or "/data/agent-homes",
         workspaces_dir=os.getenv("MC_WORKSPACES_DIR") or "/data/workspaces",

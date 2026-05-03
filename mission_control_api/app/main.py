@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import hashlib
 import math
@@ -113,8 +114,13 @@ from .schemas import (
     SkillsMappingPatchIn,
     SkillsMappingPatchOut,
     SkillsReportOut,
+    TaskClaimIn,
+    TaskCompleteIn,
     TaskCreate,
     TaskOut,
+    TaskReviewDecisionIn,
+    TaskRoutePreviewIn,
+    TaskRoutePreviewOut,
     WorkspaceSkillGroup,
 )
 from .voice_commands import VoiceCommand, parse_voice_command, summarize_voice_command, summarize_voice_feedback
@@ -127,6 +133,24 @@ TASK_STATUS_TRANSITIONS = {
     "IN PROGRESS": {"REVIEW", "DONE"},
     "REVIEW": {"IN PROGRESS", "DONE"},
     "DONE": set(),
+}
+TASK_REVIEW_DECISIONS = {
+    "approve": "DONE",
+    "approved": "DONE",
+    "done": "DONE",
+    "request_changes": "IN PROGRESS",
+    "changes_requested": "IN PROGRESS",
+    "rework": "IN PROGRESS",
+}
+TASK_ROUTE_KEYWORDS: dict[str, set[str]] = {
+    "nox": {"roadmap", "product", "priority", "release", "decision", "路线", "优先级", "发布", "决策"},
+    "metrics": {"metric", "metrics", "dashboard", "analysis", "report", "reporting", "data", "统计", "指标", "报表", "分析"},
+    "email": {"email", "campaign", "copy", "deliverability", "邮件", "营销邮件", "群发"},
+    "growth": {"growth", "experiment", "funnel", "activation", "conversion", "增长", "实验", "漏斗", "转化"},
+    "trades": {"trade", "trading", "finance", "market", "position", "财务", "交易", "仓位", "市场"},
+    "health": {"health", "sleep", "training", "recovery", "diet", "健康", "睡眠", "训练", "恢复", "饮食"},
+    "writing": {"writing", "content", "summary", "doc", "ppt", "outline", "写作", "内容", "摘要", "周报", "整理"},
+    "personal": {"personal", "daily", "todo", "schedule", "budget", "travel", "个人", "待办", "日程", "预算", "旅行"},
 }
 
 USAGE_CACHE_TTL_SECONDS = 15.0
@@ -1540,7 +1564,22 @@ def _rewrite_avatar_paths(obj, agent: str):
     if isinstance(obj, list):
         return [_rewrite_avatar_paths(item, agent) for item in obj]
     if isinstance(obj, dict):
-        return {k: _rewrite_avatar_paths(v, agent) for k, v in obj.items()}
+        rewritten = {k: _rewrite_avatar_paths(v, agent) for k, v in obj.items()}
+        _rewrite_missing_avatar_record(
+            rewritten,
+            agent,
+            avatar_key="avatar",
+            status_key="avatarStatus",
+            reason_key="avatarReason",
+        )
+        _rewrite_missing_avatar_record(
+            rewritten,
+            agent,
+            avatar_key="assistantAvatar",
+            status_key="assistantAvatarStatus",
+            reason_key="assistantAvatarReason",
+        )
+        return rewritten
     return obj
 
 
@@ -1578,16 +1617,32 @@ def _build_chat_inject_script(
             [
                 "try{",
                 f'const p="{base_path}";',
+                "const normalizeAvatar=(s)=>{",
+                's=(s||"").trim();',
+                'return s.startsWith("/avatar/")?p+s:s;',
+                "};",
+                "const currentAssistantAvatar=()=>{",
+                'let s=window.__OPENCLAW_ASSISTANT_AVATAR__||"";',
+                'if(!s){const app=document.querySelector("openclaw-app");s=app&&app.assistantAvatar||"";}',
+                "return normalizeAvatar(s);",
+                "};",
                 "const scan=()=>{",
-                "document.querySelectorAll('img.chat-avatar.assistant[src^=\"/avatar/\"]').forEach((img)=>{",
+                "const assistantAvatar=currentAssistantAvatar();",
+                "document.querySelectorAll('img.chat-avatar.assistant').forEach((img)=>{",
                 'const s=img.getAttribute("src")||"";',
-                'if(s.startsWith("/avatar/"))img.setAttribute("src",p+s);',
+                'if(s.startsWith("/avatar/")){img.setAttribute("src",p+s);return;}',
+                'if(assistantAvatar&&img.classList.contains("chat-avatar--logo")){',
+                'img.setAttribute("src",assistantAvatar);',
+                'img.classList.remove("chat-avatar--logo");',
+                '}',
                 "});",
                 "};",
                 "scan();",
                 "const mo=new MutationObserver(()=>scan());",
-                'mo.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["src"]});',
-                'window.addEventListener("beforeunload",()=>mo.disconnect(),{once:true});',
+                'mo.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["class","src"]});',
+                "let tries=0;",
+                "const timer=setInterval(()=>{scan();if(++tries>=40)clearInterval(timer);},250);",
+                'window.addEventListener("beforeunload",()=>{mo.disconnect();clearInterval(timer);},{once:true});',
                 "}catch(e){}",
             ]
         )
@@ -1727,6 +1782,69 @@ def _rewrite_avatar_meta(content: bytes, agent: str, query: str) -> bytes:
     return content
 
 
+def _avatar_fallback_data_uri(agent: str) -> str:
+    encoded = base64.b64encode(_avatar_fallback_svg(agent)).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
+def _rewrite_inline_assistant_avatar_vars(text: str, agent: str) -> str:
+    base_path = f"/chat/{agent}"
+
+    def replace_avatar(match: re.Match[str]) -> str:
+        quote = match.group("quote")
+        avatar = match.group("avatar")
+        if avatar.startswith(f"{base_path}/avatar/"):
+            rewritten = avatar
+        elif avatar.startswith("/avatar/"):
+            rewritten = f"{base_path}{avatar}"
+        else:
+            rewritten = avatar
+        return f"window.__OPENCLAW_ASSISTANT_AVATAR__={quote}{rewritten}{quote}"
+
+    return re.sub(
+        r'window\.__OPENCLAW_ASSISTANT_AVATAR__=(?P<quote>["\'])(?P<avatar>/avatar/[^"\']*)(?P=quote)',
+        replace_avatar,
+        text,
+    )
+
+
+def _assistant_avatar_missing(payload: dict, avatar: str | None, base_path: str) -> bool:
+    if not avatar:
+        return False
+    if not (avatar.startswith("/avatar/") or avatar.startswith(f"{base_path}/avatar/")):
+        return False
+
+    status = str(payload.get("assistantAvatarStatus") or "").strip().lower()
+    reason = str(payload.get("assistantAvatarReason") or "").strip().lower().replace("-", "_")
+    return status == "none" and reason in {"", "missing", "not_found"}
+
+
+def _rewrite_missing_avatar_record(
+    payload: dict,
+    agent: str,
+    *,
+    avatar_key: str,
+    status_key: str,
+    reason_key: str,
+) -> None:
+    base_path = f"/chat/{agent}"
+    avatar = payload.get(avatar_key)
+    if isinstance(avatar, str) and avatar.startswith("/avatar/"):
+        avatar = f"{base_path}{avatar}"
+        payload[avatar_key] = avatar
+    elif not isinstance(avatar, str):
+        avatar = None
+
+    missing_payload = {
+        "assistantAvatarStatus": payload.get(status_key),
+        "assistantAvatarReason": payload.get(reason_key),
+    }
+    if _assistant_avatar_missing(missing_payload, avatar, base_path):
+        payload[avatar_key] = _avatar_fallback_data_uri(agent)
+        payload[status_key] = "data"
+        payload[reason_key] = None
+
+
 def _rewrite_control_ui_config(content: bytes, agent: str, *, rewrite_avatar: bool = True) -> bytes:
     try:
         payload = json.loads(content.decode("utf-8", errors="replace"))
@@ -1740,9 +1858,13 @@ def _rewrite_control_ui_config(content: bytes, agent: str, *, rewrite_avatar: bo
     payload["basePath"] = base_path
 
     if rewrite_avatar:
-        avatar = payload.get("assistantAvatar")
-        if isinstance(avatar, str) and avatar.startswith("/avatar/"):
-            payload["assistantAvatar"] = f"{base_path}{avatar}"
+        _rewrite_missing_avatar_record(
+            payload,
+            agent,
+            avatar_key="assistantAvatar",
+            status_key="assistantAvatarStatus",
+            reason_key="assistantAvatarReason",
+        )
 
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
@@ -2045,10 +2167,23 @@ def _scan_agent_slugs(settings: Settings) -> list[str]:
 
 
 def _known_agent_slugs(settings: Settings) -> set[str]:
+    slugs: set[str] = set()
+
     root = Path(settings.agent_homes_dir)
-    if not root.exists() or not root.is_dir():
-        return set()
-    return {path.name for path in root.iterdir() if path.is_dir()}
+    if root.exists() and root.is_dir():
+        slugs.update(path.name for path in root.iterdir() if path.is_dir())
+
+    for item in build_agent_catalog(settings):
+        slug = str(item.get("slug") or "").strip()
+        if slug:
+            slugs.add(slug)
+
+    for part in str(settings.agent_slugs or "").split(","):
+        slug = part.strip()
+        if slug:
+            slugs.add(slug)
+
+    return slugs
 
 
 def _agent_label_map(settings: Settings) -> dict[str, str]:
@@ -2058,6 +2193,19 @@ def _agent_label_map(settings: Settings) -> dict[str, str]:
         if slug:
             labels[slug] = str(item.get("label") or slug).strip() or slug
     return labels
+
+
+def _normalize_gateway_agent_slug(settings: Settings, agent: str) -> str:
+    slug = str(agent or "").strip().lower()
+    if not slug:
+        raise HTTPException(status_code=400, detail="agent is required")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", slug):
+        raise HTTPException(status_code=400, detail="invalid agent slug")
+
+    known_agents = _known_agent_slugs(settings)
+    if known_agents and slug not in known_agents:
+        raise HTTPException(status_code=404, detail=f"unknown agent: {slug}")
+    return slug
 
 
 def _ordered_agent_slugs(settings: Settings, extra_slugs: list[str] | None = None) -> list[str]:
@@ -2449,6 +2597,257 @@ def _validate_handoff_payload(payload: dict, known_agents: set[str]) -> list[str
         errors.append("payload.review_gate must be boolean")
 
     return errors
+
+
+def _build_handoff_task_update(
+    *,
+    current_status: str,
+    current_assignee: str | None,
+    target_agent: str,
+) -> tuple[dict, list[str]]:
+    status = str(current_status or "").strip().upper()
+    target = str(target_agent or "").strip()
+    errors: list[str] = []
+
+    if status not in ALLOWED_TASK_STATUSES:
+        errors.append(f"task status invalid: {status}; allowed={sorted(ALLOWED_TASK_STATUSES)}")
+    if status == "DONE":
+        errors.append("cannot handoff DONE task")
+    if not target:
+        errors.append("target agent is required")
+
+    next_status = "ASSIGNED"
+    payload = {
+        "previous_assignee": current_assignee,
+        "previous_status": status,
+        "new_assignee": target,
+        "new_status": next_status,
+        "handoff_applied": not errors,
+    }
+    return payload, errors
+
+
+def _build_task_claim_update(
+    *,
+    current_status: str,
+    current_assignee: str | None,
+    agent_slug: str,
+    force: bool = False,
+) -> tuple[dict, list[str]]:
+    status = str(current_status or "").strip().upper()
+    agent = str(agent_slug or "").strip()
+    assignee = str(current_assignee or "").strip() or None
+    errors: list[str] = []
+
+    if status not in ALLOWED_TASK_STATUSES:
+        errors.append(f"task status invalid: {status}; allowed={sorted(ALLOWED_TASK_STATUSES)}")
+    if status == "DONE":
+        errors.append("cannot claim DONE task")
+    if not agent:
+        errors.append("agent_slug is required")
+    if assignee and agent and assignee != agent and not force:
+        errors.append(f"task already assigned to another agent: {assignee}")
+
+    next_status = "IN PROGRESS"
+    payload = {
+        "previous_assignee": assignee,
+        "previous_status": status,
+        "new_assignee": agent,
+        "new_status": next_status,
+        "force": bool(force),
+        "claim_applied": not errors,
+    }
+    return payload, errors
+
+
+def _build_task_completion_update(
+    *,
+    current_status: str,
+    current_assignee: str | None,
+    agent_slug: str,
+    summary: str | None = None,
+    artifact_refs: list[str] | None = None,
+    review_gate: bool = False,
+    force: bool = False,
+) -> tuple[dict, list[str]]:
+    status = str(current_status or "").strip().upper()
+    agent = str(agent_slug or "").strip()
+    assignee = str(current_assignee or "").strip() or None
+    summary_text = str(summary or "").strip() or None
+    next_status = "REVIEW" if review_gate else "DONE"
+    errors: list[str] = []
+
+    cleaned_artifact_refs: list[str] = []
+    has_blank_artifact_ref = False
+    for item in artifact_refs or []:
+        artifact_ref = str(item or "").strip()
+        if not artifact_ref:
+            has_blank_artifact_ref = True
+            continue
+        cleaned_artifact_refs.append(artifact_ref)
+
+    if has_blank_artifact_ref:
+        errors.append("artifact_refs must contain non-empty strings")
+    if status not in ALLOWED_TASK_STATUSES:
+        errors.append(f"task status invalid: {status}; allowed={sorted(ALLOWED_TASK_STATUSES)}")
+    elif status == "DONE":
+        errors.append("cannot complete DONE task")
+    elif status not in {"IN PROGRESS", "REVIEW"} and not force:
+        errors.append("task must be IN PROGRESS or REVIEW before completion")
+    elif next_status != status and next_status not in TASK_STATUS_TRANSITIONS.get(status, set()) and not force:
+        errors.append(
+            f"invalid completion transition: {status} -> {next_status}; "
+            f"allowed={sorted(TASK_STATUS_TRANSITIONS.get(status, set()))}"
+        )
+
+    if not agent:
+        errors.append("agent_slug is required")
+    if assignee and agent and assignee != agent and not force:
+        errors.append(f"task assigned to another agent: {assignee}")
+
+    payload = {
+        "previous_assignee": assignee,
+        "previous_status": status,
+        "new_assignee": agent,
+        "new_status": next_status,
+        "summary": summary_text,
+        "artifact_refs": cleaned_artifact_refs,
+        "review_gate": bool(review_gate),
+        "review_requested": bool(review_gate) and not errors,
+        "force": bool(force),
+        "completion_applied": not errors,
+    }
+    return payload, errors
+
+
+def _normalize_review_decision(decision: str) -> tuple[str, str | None]:
+    normalized = str(decision or "").strip().lower().replace("-", "_").replace(" ", "_")
+    next_status = TASK_REVIEW_DECISIONS.get(normalized)
+    return normalized, next_status
+
+
+def _build_task_review_update(
+    *,
+    current_status: str,
+    current_assignee: str | None,
+    reviewer_slug: str,
+    decision: str,
+    notes: str | None = None,
+    artifact_refs: list[str] | None = None,
+    force: bool = False,
+) -> tuple[dict, list[str]]:
+    status = str(current_status or "").strip().upper()
+    reviewer = str(reviewer_slug or "").strip()
+    assignee = str(current_assignee or "").strip() or None
+    normalized_decision, next_status = _normalize_review_decision(decision)
+    notes_text = str(notes or "").strip() or None
+    errors: list[str] = []
+
+    cleaned_artifact_refs: list[str] = []
+    has_blank_artifact_ref = False
+    for item in artifact_refs or []:
+        artifact_ref = str(item or "").strip()
+        if not artifact_ref:
+            has_blank_artifact_ref = True
+            continue
+        cleaned_artifact_refs.append(artifact_ref)
+
+    if has_blank_artifact_ref:
+        errors.append("artifact_refs must contain non-empty strings")
+    if not reviewer:
+        errors.append("reviewer_slug is required")
+    if not normalized_decision or next_status is None:
+        errors.append(f"review decision invalid: {decision}; allowed={sorted(TASK_REVIEW_DECISIONS)}")
+    if status not in ALLOWED_TASK_STATUSES:
+        errors.append(f"task status invalid: {status}; allowed={sorted(ALLOWED_TASK_STATUSES)}")
+    elif status == "DONE":
+        errors.append("cannot review DONE task")
+    elif status != "REVIEW" and not force:
+        errors.append("task must be REVIEW before review decision")
+    elif next_status and next_status != status and next_status not in TASK_STATUS_TRANSITIONS.get(status, set()) and not force:
+        errors.append(
+            f"invalid review transition: {status} -> {next_status}; "
+            f"allowed={sorted(TASK_STATUS_TRANSITIONS.get(status, set()))}"
+        )
+
+    payload = {
+        "previous_assignee": assignee,
+        "previous_status": status,
+        "new_assignee": assignee,
+        "new_status": next_status or status,
+        "reviewer": reviewer,
+        "decision": normalized_decision,
+        "notes": notes_text,
+        "artifact_refs": cleaned_artifact_refs,
+        "force": bool(force),
+        "review_applied": not errors,
+    }
+    return payload, errors
+
+
+def _suggest_task_route(
+    *,
+    title: str,
+    tags: list[str],
+    assignee: str | None = None,
+    known_agents: set[str] | None = None,
+) -> TaskRoutePreviewOut:
+    known = {str(agent or "").strip().lower() for agent in (known_agents or set()) if str(agent or "").strip()}
+    override = str(assignee or "").strip().lower()
+    if override:
+        if not known or override in known:
+            return TaskRoutePreviewOut(
+                suggested_assignee=override,
+                confidence=1.0,
+                matched_rules=["explicit_assignee"],
+                reason="explicit assignee preserved",
+                override_assignee=override,
+            )
+        return TaskRoutePreviewOut(
+            suggested_assignee=None,
+            confidence=0.0,
+            matched_rules=["explicit_assignee_unknown"],
+            reason=f"explicit assignee is not in known agents: {override}",
+            override_assignee=override,
+        )
+
+    text_parts = [str(title or "").strip().lower()]
+    text_parts.extend(str(tag or "").strip().lower() for tag in tags or [])
+    route_text = " ".join(part for part in text_parts if part)
+
+    scored: list[tuple[int, str, list[str]]] = []
+    for agent, keywords in TASK_ROUTE_KEYWORDS.items():
+        if known and agent not in known:
+            continue
+        hits = sorted(keyword for keyword in keywords if keyword and keyword.lower() in route_text)
+        if hits:
+            scored.append((len(hits), agent, hits))
+
+    if not scored:
+        return TaskRoutePreviewOut(
+            suggested_assignee=None,
+            confidence=0.0,
+            matched_rules=[],
+            reason="no routing rule matched",
+        )
+
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    top_score, top_agent, top_hits = scored[0]
+    tied_agents = [agent for score, agent, _hits in scored if score == top_score]
+    confidence = min(0.95, 0.45 + (0.1 * float(top_score)))
+    if len(tied_agents) > 1:
+        confidence = min(confidence, 0.55)
+
+    return TaskRoutePreviewOut(
+        suggested_assignee=top_agent,
+        confidence=confidence,
+        matched_rules=[f"keyword:{hit}" for hit in top_hits],
+        reason=(
+            f"matched {top_score} routing keyword(s)"
+            if len(tied_agents) == 1
+            else f"matched {top_score} routing keyword(s), tie broken among {', '.join(tied_agents)}"
+        ),
+    )
 
 
 def _parse_iso_datetime(value: str | None) -> datetime | None:
@@ -2862,6 +3261,7 @@ def create_app() -> FastAPI:
                 },
                 "created_at": datetime.utcnow().isoformat() + "Z",
             },
+            maxlen=settings.redis_stream_maxlen,
         )
 
     async def enqueue_local_event(
@@ -3022,6 +3422,47 @@ def create_app() -> FastAPI:
             validation_details["known_agents_count"] = len(known_agents)
 
         event_payload = dict(body.payload)
+        if body.type == "task.handoff" and body.task_id:
+            current_row = (
+                await session.execute(
+                    sa.select(tasks.c.id, tasks.c.status, tasks.c.assignee).where(tasks.c.id == body.task_id)
+                )
+            ).first()
+            if not current_row:
+                validation_errors.append(f"task not found: {body.task_id}")
+
+            if not validation_errors and current_row:
+                target_agent = str(body.payload.get("to") or "").strip()
+                handoff_update, handoff_errors = _build_handoff_task_update(
+                    current_status=str(current_row.status),
+                    current_assignee=current_row.assignee,
+                    target_agent=target_agent,
+                )
+                validation_errors.extend(handoff_errors)
+
+                if not validation_errors:
+                    now = datetime.utcnow()
+                    await session.execute(
+                        tasks.update()
+                        .where(tasks.c.id == body.task_id)
+                        .values(
+                            assignee=target_agent,
+                            status=handoff_update["new_status"],
+                            updated_at=now,
+                        )
+                    )
+                    event_payload.update(handoff_update)
+                    validation_details["handoff"] = {
+                        "from": {
+                            "assignee": handoff_update["previous_assignee"],
+                            "status": handoff_update["previous_status"],
+                        },
+                        "to": {
+                            "assignee": handoff_update["new_assignee"],
+                            "status": handoff_update["new_status"],
+                        },
+                    }
+
         if body.type == "task.status":
             if not body.task_id:
                 validation_errors.append("task.status requires task_id")
@@ -3422,23 +3863,46 @@ def create_app() -> FastAPI:
         known_agents = sorted(_known_agent_slugs(settings))
         total_agents = len(known_agents)
         healthy_agents = 0
+        real_heartbeat_agents: set[str] = set()
+        synthetic_heartbeat_agents: set[str] = set()
 
         if known_agents:
+            source_expr = sa.func.jsonb_extract_path_text(events.c.payload, "source")
             heartbeats_stmt = (
-                sa.select(events.c.agent, sa.func.max(events.c.created_at).label("last_seen"))
+                sa.select(
+                    events.c.agent,
+                    source_expr.label("source"),
+                    sa.func.max(events.c.created_at).label("last_seen"),
+                )
                 .where(
                     events.c.type == "agent.heartbeat",
                     events.c.agent.is_not(None),
                     events.c.agent.in_(known_agents),
                 )
-                .group_by(events.c.agent)
+                .group_by(events.c.agent, source_expr)
             )
             rows = (await session.execute(heartbeats_stmt)).all()
             cutoff = now - timedelta(seconds=stale)
             for row in rows:
                 last_seen = row.last_seen
                 if isinstance(last_seen, datetime) and last_seen >= cutoff:
-                    healthy_agents += 1
+                    agent_slug = str(row.agent or "").strip()
+                    if not agent_slug:
+                        continue
+                    source = str(row.source or "").strip().lower()
+                    if source == "mc-heartbeat":
+                        synthetic_heartbeat_agents.add(agent_slug)
+                    else:
+                        real_heartbeat_agents.add(agent_slug)
+
+            healthy_agents = len(real_heartbeat_agents | synthetic_heartbeat_agents)
+
+        if real_heartbeat_agents:
+            heartbeat_health_source = "mixed" if synthetic_heartbeat_agents else "real"
+        elif synthetic_heartbeat_agents:
+            heartbeat_health_source = "synthetic"
+        else:
+            heartbeat_health_source = "none"
 
         denominator = request_total if request_total > 0 else max(events_total, 1)
         error_rate = float(error_total) / float(denominator)
@@ -3454,6 +3918,9 @@ def create_app() -> FastAPI:
             event_backlog_total=event_backlog_total,
             task_backlog_total=task_backlog_total,
             healthy_agents=healthy_agents,
+            real_heartbeat_agents=len(real_heartbeat_agents),
+            synthetic_heartbeat_agents=len(synthetic_heartbeat_agents),
+            heartbeat_health_source=heartbeat_health_source,
             total_agents=total_agents,
             agent_health_ratio=(float(healthy_agents) / float(total_agents)) if total_agents > 0 else 0.0,
             heartbeat_stale_seconds=stale,
@@ -3700,7 +4167,12 @@ def create_app() -> FastAPI:
                 },
             )
             await session.commit()
-            await publish_event(redis, stream_key=settings.redis_stream_key, event=queued_event)
+            await publish_event(
+                redis,
+                stream_key=settings.redis_stream_key,
+                event=queued_event,
+                maxlen=settings.redis_stream_maxlen,
+            )
 
         _, _, _, _, _, details_by_agent = await _load_skills_snapshot(settings, session, agent_slug=agent_slug)
         detail = details_by_agent[agent_slug]
@@ -6528,7 +7000,12 @@ def create_app() -> FastAPI:
         )
         await session.commit()
 
-        await publish_event(redis, stream_key=settings.redis_stream_key, event=queued_event)
+        await publish_event(
+            redis,
+            stream_key=settings.redis_stream_key,
+            event=queued_event,
+            maxlen=settings.redis_stream_maxlen,
+        )
 
         return SkillsMappingPatchOut(
             updated=updated,
@@ -6555,7 +7032,262 @@ def create_app() -> FastAPI:
             tags=body.tags,
         )
         await session.commit()
-        await publish_event(redis, stream_key=settings.redis_stream_key, event=queued_event)
+        await publish_event(
+            redis,
+            stream_key=settings.redis_stream_key,
+            event=queued_event,
+            maxlen=settings.redis_stream_maxlen,
+        )
+        return task_out
+
+    @app.post("/v1/tasks/route-preview", response_model=TaskRoutePreviewOut)
+    async def preview_task_route(
+        body: TaskRoutePreviewIn,
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+    ) -> TaskRoutePreviewOut:
+        return _suggest_task_route(
+            title=body.title,
+            tags=body.tags,
+            assignee=body.assignee,
+            known_agents=_known_agent_slugs(settings),
+        )
+
+    @app.post("/v1/tasks/{task_id}/claim", response_model=TaskOut)
+    async def claim_task(
+        task_id: UUID,
+        body: TaskClaimIn,
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> TaskOut:
+        agent_slug = _normalize_gateway_agent_slug(settings, body.agent_slug)
+        current_row = (
+            await session.execute(
+                sa.select(
+                    tasks.c.id,
+                    tasks.c.title,
+                    tasks.c.status,
+                    tasks.c.assignee,
+                    tasks.c.tags,
+                    tasks.c.created_at,
+                    tasks.c.updated_at,
+                ).where(tasks.c.id == task_id)
+            )
+        ).first()
+        if not current_row:
+            raise HTTPException(status_code=404, detail=f"task not found: {task_id}")
+
+        claim_payload, claim_errors = _build_task_claim_update(
+            current_status=str(current_row.status),
+            current_assignee=current_row.assignee,
+            agent_slug=agent_slug,
+            force=body.force,
+        )
+        if claim_errors:
+            raise HTTPException(status_code=409, detail={"errors": claim_errors})
+
+        now = datetime.utcnow()
+        update_stmt = (
+            tasks.update()
+            .where(tasks.c.id == task_id)
+            .values(
+                assignee=agent_slug,
+                status=claim_payload["new_status"],
+                updated_at=now,
+            )
+            .returning(
+                tasks.c.id,
+                tasks.c.title,
+                tasks.c.status,
+                tasks.c.assignee,
+                tasks.c.tags,
+                tasks.c.created_at,
+                tasks.c.updated_at,
+            )
+        )
+        row = (await session.execute(update_stmt)).one()
+        task_out = TaskOut(**row._asdict())
+        queued_event = await enqueue_local_event(
+            session,
+            event_type="task.claimed",
+            agent=agent_slug,
+            task_id=task_id,
+            payload=claim_payload,
+        )
+        await session.commit()
+        await publish_event(
+            redis,
+            stream_key=settings.redis_stream_key,
+            event=queued_event,
+            maxlen=settings.redis_stream_maxlen,
+        )
+        return task_out
+
+    @app.post("/v1/tasks/{task_id}/complete", response_model=TaskOut)
+    async def complete_task(
+        task_id: UUID,
+        body: TaskCompleteIn,
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> TaskOut:
+        agent_slug = _normalize_gateway_agent_slug(settings, body.agent_slug)
+        current_row = (
+            await session.execute(
+                sa.select(
+                    tasks.c.id,
+                    tasks.c.title,
+                    tasks.c.status,
+                    tasks.c.assignee,
+                    tasks.c.tags,
+                    tasks.c.created_at,
+                    tasks.c.updated_at,
+                ).where(tasks.c.id == task_id)
+            )
+        ).first()
+        if not current_row:
+            raise HTTPException(status_code=404, detail=f"task not found: {task_id}")
+
+        completion_payload, completion_errors = _build_task_completion_update(
+            current_status=str(current_row.status),
+            current_assignee=current_row.assignee,
+            agent_slug=agent_slug,
+            summary=body.summary,
+            artifact_refs=body.artifact_refs,
+            review_gate=body.review_gate,
+            force=body.force,
+        )
+        if completion_errors:
+            raise HTTPException(status_code=409, detail={"errors": completion_errors})
+
+        now = datetime.utcnow()
+        update_stmt = (
+            tasks.update()
+            .where(tasks.c.id == task_id)
+            .values(
+                assignee=agent_slug,
+                status=completion_payload["new_status"],
+                updated_at=now,
+            )
+            .returning(
+                tasks.c.id,
+                tasks.c.title,
+                tasks.c.status,
+                tasks.c.assignee,
+                tasks.c.tags,
+                tasks.c.created_at,
+                tasks.c.updated_at,
+            )
+        )
+        row = (await session.execute(update_stmt)).one()
+        task_out = TaskOut(**row._asdict())
+
+        event_type = "task.review.requested" if completion_payload["review_gate"] else "task.done"
+        queued_events: list[dict] = []
+        if completion_payload["artifact_refs"]:
+            queued_events.append(
+                await enqueue_local_event(
+                    session,
+                    event_type="artifact.created",
+                    agent=agent_slug,
+                    task_id=task_id,
+                    payload={
+                        "artifact_refs": completion_payload["artifact_refs"],
+                        "summary": completion_payload["summary"],
+                        "review_gate": completion_payload["review_gate"],
+                        "source_event_type": event_type,
+                    },
+                )
+            )
+        queued_events.append(
+            await enqueue_local_event(
+                session,
+                event_type=event_type,
+                agent=agent_slug,
+                task_id=task_id,
+                payload=completion_payload,
+            )
+        )
+        await session.commit()
+        for queued_event in queued_events:
+            await publish_event(
+                redis,
+                stream_key=settings.redis_stream_key,
+                event=queued_event,
+                maxlen=settings.redis_stream_maxlen,
+            )
+        return task_out
+
+    @app.post("/v1/tasks/{task_id}/review", response_model=TaskOut)
+    async def review_task(
+        task_id: UUID,
+        body: TaskReviewDecisionIn,
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> TaskOut:
+        reviewer_slug = _normalize_gateway_agent_slug(settings, body.reviewer_slug)
+        current_row = (
+            await session.execute(
+                sa.select(
+                    tasks.c.id,
+                    tasks.c.title,
+                    tasks.c.status,
+                    tasks.c.assignee,
+                    tasks.c.tags,
+                    tasks.c.created_at,
+                    tasks.c.updated_at,
+                ).where(tasks.c.id == task_id)
+            )
+        ).first()
+        if not current_row:
+            raise HTTPException(status_code=404, detail=f"task not found: {task_id}")
+
+        review_payload, review_errors = _build_task_review_update(
+            current_status=str(current_row.status),
+            current_assignee=current_row.assignee,
+            reviewer_slug=reviewer_slug,
+            decision=body.decision,
+            notes=body.notes,
+            artifact_refs=body.artifact_refs,
+            force=body.force,
+        )
+        if review_errors:
+            raise HTTPException(status_code=409, detail={"errors": review_errors})
+
+        now = datetime.utcnow()
+        update_stmt = (
+            tasks.update()
+            .where(tasks.c.id == task_id)
+            .values(
+                status=review_payload["new_status"],
+                updated_at=now,
+            )
+            .returning(
+                tasks.c.id,
+                tasks.c.title,
+                tasks.c.status,
+                tasks.c.assignee,
+                tasks.c.tags,
+                tasks.c.created_at,
+                tasks.c.updated_at,
+            )
+        )
+        row = (await session.execute(update_stmt)).one()
+        task_out = TaskOut(**row._asdict())
+
+        event_type = "task.review.approved" if review_payload["new_status"] == "DONE" else "task.review.changes_requested"
+        queued_event = await enqueue_local_event(
+            session,
+            event_type=event_type,
+            agent=reviewer_slug,
+            task_id=task_id,
+            payload=review_payload,
+        )
+        await session.commit()
+        await publish_event(
+            redis,
+            stream_key=settings.redis_stream_key,
+            event=queued_event,
+            maxlen=settings.redis_stream_maxlen,
+        )
         return task_out
 
     @app.get("/v1/boards/default", response_model=BoardOut)
@@ -6599,7 +7331,12 @@ def create_app() -> FastAPI:
             body=body.body,
         )
         await session.commit()
-        await publish_event(redis, stream_key=settings.redis_stream_key, event=queued_event)
+        await publish_event(
+            redis,
+            stream_key=settings.redis_stream_key,
+            event=queued_event,
+            maxlen=settings.redis_stream_maxlen,
+        )
         return comment_out
 
     @app.post("/v1/events", response_model=EventOut)
@@ -6646,9 +7383,19 @@ def create_app() -> FastAPI:
             queued_events = await _execute_voice_command(session, source_event)
         await session.commit()
 
-        await publish_event(redis, stream_key=settings.redis_stream_key, event=source_event)
+        await publish_event(
+            redis,
+            stream_key=settings.redis_stream_key,
+            event=source_event,
+            maxlen=settings.redis_stream_maxlen,
+        )
         for queued_event in queued_events:
-            await publish_event(redis, stream_key=settings.redis_stream_key, event=queued_event)
+            await publish_event(
+                redis,
+                stream_key=settings.redis_stream_key,
+                event=queued_event,
+                maxlen=settings.redis_stream_maxlen,
+            )
 
         await publish_validation_result(
             accepted=True,
@@ -6754,6 +7501,7 @@ def create_app() -> FastAPI:
     async def chat_proxy(agent: str, path: str, request: Request):
         started = time.perf_counter()
         upgrade = request.headers.get("upgrade", "").lower() == "websocket"
+        agent = _normalize_gateway_agent_slug(settings, agent)
             
         target_url = f"http://openclaw-{agent}:{settings.chat_upstream_port}/{path}"
         query = request.url.query
@@ -6802,6 +7550,7 @@ def create_app() -> FastAPI:
                                 "ts": datetime.utcnow().isoformat() + "Z",
                             },
                         },
+                        maxlen=settings.redis_stream_maxlen,
                     )
                 raise HTTPException(status_code=502, detail=f"Proxy error: {e}")
             
@@ -6832,11 +7581,7 @@ def create_app() -> FastAPI:
                         else:
                             text = f"{injected}{text}"
                     if settings.chat_dom_avatar_rewrite:
-                        text = re.sub(
-                            r'window\.__OPENCLAW_ASSISTANT_AVATAR__=("|\')/avatar/[^"\']*("|\')',
-                            'window.__OPENCLAW_ASSISTANT_AVATAR__=""',
-                            text,
-                        )
+                        text = _rewrite_inline_assistant_avatar_vars(text, agent)
                 await resp.aclose()
                 
                 return HTMLResponse(content=text, status_code=resp.status_code)
@@ -6892,10 +7637,17 @@ def create_app() -> FastAPI:
                             "ts": datetime.utcnow().isoformat() + "Z",
                         },
                     },
+                    maxlen=settings.redis_stream_maxlen,
                 )
             return r
 
     async def _chat_ws_proxy_impl(agent: str, path: str, websocket: WebSocket):
+        try:
+            agent = _normalize_gateway_agent_slug(settings, agent)
+        except HTTPException as exc:
+            await websocket.close(code=4404 if exc.status_code == 404 else 4400)
+            return
+
         await websocket.accept()
         
         payload = {
@@ -6917,6 +7669,7 @@ def create_app() -> FastAPI:
                 "agent": agent,
                 "payload": payload,
             },
+            maxlen=settings.redis_stream_maxlen,
         )
             
         target_ws_url = f"ws://openclaw-{agent}:{settings.chat_upstream_port}/{path}"
@@ -6999,8 +7752,17 @@ def create_app() -> FastAPI:
     return app
 
 
-async def publish_event(redis: Redis, stream_key: str, event: dict) -> None:
-    await redis.xadd(stream_key, {"event": json.dumps(event, ensure_ascii=False)})
+async def publish_event(
+    redis: Redis,
+    stream_key: str,
+    event: dict,
+    *,
+    maxlen: int | None = None,
+) -> None:
+    kwargs = {}
+    if maxlen is not None and int(maxlen) > 0:
+        kwargs = {"maxlen": int(maxlen), "approximate": True}
+    await redis.xadd(stream_key, {"event": json.dumps(event, ensure_ascii=False)}, **kwargs)
 
 
 app = create_app()
