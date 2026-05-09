@@ -22,7 +22,8 @@
 ## 最终要求
 
 - 优先一次收集高信号维度；若题数受限，可拆成 2 轮
-- **必须把** `presentation_scenario`、`core_audience`、`target_action`、`page_density`、`visual_style`、`language_mode`、`imagery_strategy`、`material_strategy` 做成带丰富备选项的结构化选择
+- **必须把** `presentation_scenario`、`core_audience`、`target_action`、`expected_pages`、`page_density`、`visual_style`、`language_mode`、`imagery_strategy`、`material_strategy` 做成带丰富备选项的结构化选择
+- `expected_pages` 必须包含“1页简报 / executive one-pager”选项；`page_density` 必须包含“高密度但可读”和“容量极大（一页简报/情报板）”选项
 - 允许用户对开放项自由补充，或是选择“其他”
 - 收集完成后，主 agent 再写 `interview-qa.txt` 与 `requirements-interview.txt`
 - 写 `interview-qa.txt` 时，必须追加 canonical 锚点段，显式写出 `target_action`、`must_avoid`、`material_strategy` 等关键字段，避免 validator 因用户回答过短而漏检

@@ -96,6 +96,20 @@ python3 SKILL_DIR/scripts/resource_loader.py images --images-dir IMAGES_DIR
 
 填写后，`resource_loader.py resolve` 会自动把对应原则文件的完整正文注入 HTML 阶段的上下文。
 
+### 高密度安全模式（rich-density / one-pager）
+
+当 `requirements-interview.txt` 中出现“高密度但可读 / 容量极大 / 一页简报 / one-pager / 给老板一页看完”等信号时，允许内容页进入高密度安全模式，但必须遵守以下约束：
+
+- 推荐 `layout_hint` 使用 `one-pager-grid` 或 `mixed-grid`；单页简报优先 `one-pager-grid`。
+- 推荐 4-6 张主卡片：最多 1 张 `anchor`，2-4 张 `support`，0-2 张 `context`。
+- `visual_weight` 可设为 `8` 或 `9`；`negative_space_target` 可设为 `low`，但必须在 `director_command.spatial_strategy` 写清楚阅读顺序。
+- `resources.principle_refs` 必须同时包含 `visual-hierarchy`、`composition`、`cognitive-load`。
+- `resources.resource_rationale` 必须说明信息压缩策略：哪些信息做成 KPI / 短标签 / 图表 / action rail / source strip。
+- 每张卡的 `content_budget` 必须更克制：KPI 卡最多 1 行解释，support 卡最多 2-3 bullet，source 信息放到来源条或卡片 footer。
+- 高密度不是缩小字号：如果 planning 需要依赖 12px 以下正文才能成立，说明内容没有被合并，应在本阶段删减或聚合。
+
+单页简报必须形成闭环：`Executive takeaway → Context → Evidence/KPI → Implication → Action/Risk`。如果只有标题和几个指标，不算合格 one-pager。
+
 ---
 
 ## Phase 3：`planningN.json` 结构合同（强制）
@@ -190,7 +204,7 @@ python3 SKILL_DIR/scripts/resource_loader.py images --images-dir IMAGES_DIR
 - 顶层页字段至少要有：`slide_number`、`page_type`、`title`、`page_goal`、`cards`、`visual_weight`、`director_command`、`decoration_hints`、`resources`、`workflow_metadata`。
 - `page_type`：`cover` / `toc` / `section` / `content` / `end`
 - `narrative_role`：与 outline 的叙事角色对齐，使用 `cover` / `toc` / `section` / `evidence` / `comparison` / `process` / `close` / `cta`
-- 内容页必须有 `layout_hint`，并从 validator 认可的集合中选，如 `single-focus`、`symmetric`、`asymmetric`、`three-column`、`primary-secondary`、`hero-top`、`mixed-grid`、`l-shape`、`t-shape`、`waterfall`
+- 内容页必须有 `layout_hint`，并从 validator 认可的集合中选，如 `single-focus`、`symmetric`、`asymmetric`、`three-column`、`primary-secondary`、`hero-top`、`mixed-grid`、`one-pager-grid`、`l-shape`、`t-shape`、`waterfall`
 - `cards[].role`：`anchor` / `support` / `context`
 - `cards[].card_style`：`accent` / `elevated` / `filled` / `outline` / `glass` / `transparent`
 - `cards[].body` 必须是**字符串数组**，不要写成单个字符串

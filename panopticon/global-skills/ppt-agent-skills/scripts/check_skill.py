@@ -21,7 +21,7 @@ REFERENCES_DIR = ROOT_DIR / "references"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from planning_validator import validate_page, load_planning_pages  # noqa: E402
+from planning_validator import VALID_LAYOUT_HINTS, validate_page, load_planning_pages  # noqa: E402
 from prompt_harness import VAR_PATTERN  # noqa: E402
 
 
@@ -93,6 +93,53 @@ RESOURCE_ROUTE_DOC_RULES = {
         r"\|\s*`page_type`\s*\|\s*`page-templates/`\s*\|",
         r"\|\s*`card_type`\s*\|\s*`blocks/`\s*\|",
         r"\|\s*`chart_type`\s*\|\s*`charts/`\s*\|",
+    ],
+}
+
+CHART_DOC_EXCLUDES = {"README.md", "runtime-chart-rules.md"}
+
+ONE_PAGER_REQUIRED_FILES = {
+    ROOT_DIR / "references/layouts/one-pager-grid.md": [
+        "单页简报网格版式",
+        "Executive takeaway",
+        "4-6 个信息模块",
+    ],
+    ROOT_DIR / "references/page-templates/one-pager.md": [
+        "单页简报模板",
+        "Executive takeaway",
+        "Action / Risk",
+    ],
+    ROOT_DIR / "references/layouts/README.md": [
+        "one-pager-grid.md",
+        "单页简报",
+    ],
+    ROOT_DIR / "references/playbooks/outline-phase1-playbook.md": [
+        "单页简报例外",
+        "expected_pages = 1",
+        "Context → Key Finding → Evidence/KPI → Implication → Recommended Action/Risk",
+    ],
+    ROOT_DIR / "references/playbooks/step4/page-planning-playbook.md": [
+        "高密度安全模式",
+        "one-pager-grid",
+        "visual-hierarchy",
+        "cognitive-load",
+    ],
+    ROOT_DIR / "references/playbooks/step4/page-html-playbook.md": [
+        "高密度 / 单页简报落地合同",
+        "source strip",
+        "结论 → 关键数字 → 主洞察/证据 → 影响 → 建议动作/风险",
+    ],
+    ROOT_DIR / "references/design-runtime/pptx-export-safety.md": [
+        "高密度 / 单页简报页",
+        "one-pager-grid",
+    ],
+    ROOT_DIR / "references/prompts/tpl-interview.md": [
+        "1页简报",
+        "高密度但可读",
+    ],
+    ROOT_DIR / "references/prompts/module-text-interview-fallback.md": [
+        "Executive one-pager",
+        "1页简报",
     ],
 }
 
@@ -276,6 +323,70 @@ def check_resource_route_docs(result: CheckResult) -> None:
                 result.error(f"{format_rel(path)}: missing documented resource route pattern `{pattern}`")
 
 
+def chart_type_from_doc(path: Path) -> str:
+    return path.stem.replace("-", "_")
+
+
+def extract_svg_chart_registry_types(result: CheckResult) -> set[str]:
+    path = ROOT_DIR / "scripts/svg2pptx.py"
+    text = read_text(path)
+    match = re.search(
+        r"def _chart_promotion_registry\(self\):(?P<body>.*?)\n    def _render_semantic_charts",
+        text,
+        flags=re.S,
+    )
+    if not match:
+        result.error(f"{format_rel(path)}: cannot locate _chart_promotion_registry body")
+        return set()
+    return set(re.findall(r"^\s*'([a-z0-9_]+)'\s*:\s*\{", match.group("body"), flags=re.M))
+
+
+def check_chart_promotion_contract(result: CheckResult) -> None:
+    """Keep chart reference docs, README, and SVG->PPTX promotion registry in sync."""
+    charts_dir = REFERENCES_DIR / "charts"
+    chart_docs = [
+        path
+        for path in sorted(charts_dir.glob("*.md"))
+        if path.name not in CHART_DOC_EXCLUDES
+    ]
+    documented_types = {chart_type_from_doc(path) for path in chart_docs}
+    registry_types = extract_svg_chart_registry_types(result)
+
+    missing_exporters = sorted(documented_types - registry_types)
+    if missing_exporters:
+        result.error(
+            "scripts/svg2pptx.py: missing chart promotion registry entries for documented chart types "
+            f"{missing_exporters}"
+        )
+
+    orphaned_exporters = sorted(registry_types - documented_types)
+    if orphaned_exporters:
+        result.error(
+            "references/charts/: missing chart docs for svg2pptx promotion registry entries "
+            f"{orphaned_exporters}"
+        )
+
+    readme = charts_dir / "README.md"
+    readme_text = read_text(readme)
+    for doc_path in chart_docs:
+        if doc_path.name not in readme_text:
+            result.error(f"{format_rel(readme)}: chart selection guide missing `{doc_path.name}`")
+
+
+def check_one_pager_contract(result: CheckResult) -> None:
+    if "one-pager-grid" not in VALID_LAYOUT_HINTS:
+        result.error("scripts/planning_validator.py: VALID_LAYOUT_HINTS missing `one-pager-grid`")
+
+    for path, tokens in ONE_PAGER_REQUIRED_FILES.items():
+        if not path.exists():
+            result.error(f"{format_rel(path)}: missing one-pager contract artifact")
+            continue
+        text = read_text(path)
+        for token in tokens:
+            if token not in text:
+                result.error(f"{format_rel(path)}: missing one-pager token `{token}`")
+
+
 def check_step0_interview_contract(result: CheckResult) -> None:
     required_patterns = {
         ROOT_DIR / "SKILL.md": [
@@ -369,6 +480,8 @@ def run_all_checks() -> CheckResult:
     check_planning_example(result)
     check_truth_source_docs(result)
     check_resource_route_docs(result)
+    check_chart_promotion_contract(result)
+    check_one_pager_contract(result)
     check_step0_interview_contract(result)
     return result
 

@@ -41,6 +41,26 @@ SVG_EXPORT_METHODS = {
     "pdf2svg_pathified",
     "failed",
 }
+GENERIC_STYLE_TERMS = [
+    "clean and modern",
+    "modern and clean",
+    "clean",
+    "modern",
+    "professional",
+    "premium",
+    "minimal",
+    "minimalist",
+    "sleek",
+    "高级感",
+    "现代感",
+    "科技感",
+    "商务风",
+    "简洁",
+    "现代",
+    "高级",
+    "专业",
+    "大气",
+]
 
 
 @dataclass
@@ -61,6 +81,32 @@ class ValidationResult:
 
 def is_non_empty_string(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+def style_specificity_fingerprint(value: str) -> str:
+    text = value.lower()
+    for term in GENERIC_STYLE_TERMS:
+        text = text.replace(term.lower(), "")
+    return re.sub(r"[\s\W_]+", "", text, flags=re.UNICODE)
+
+
+def warn_if_low_style_specificity(
+    result: ValidationResult,
+    label: str,
+    value: Any,
+    *,
+    min_chars: int = 10,
+) -> int:
+    if not is_non_empty_string(value):
+        return 0
+    fingerprint = style_specificity_fingerprint(str(value))
+    if len(fingerprint) < min_chars:
+        result.warn(
+            f"style: {label} is too generic; add concrete visual actions, motif vocabulary, "
+            "and source-specific constraints"
+        )
+        return 1
+    return 0
 
 
 def parse_iso_timestamp(label: str, value: Any, result: ValidationResult) -> datetime | None:
@@ -1185,12 +1231,27 @@ def validate_style(path: Path) -> tuple[ValidationResult, dict[str, Any]]:
             result.error("style: 'mood_keywords' must contain 3-5 items")
 
     design_soul = payload.get("design_soul") or payload.get("soul") or payload.get("mood") or payload.get("灵魂宣言")
+    style_quality_warnings = 0
     if not is_non_empty_string(design_soul):
         result.error("style: missing non-empty 'design_soul'")
+    else:
+        style_quality_warnings += warn_if_low_style_specificity(
+            result,
+            "design_soul",
+            design_soul,
+            min_chars=14,
+        )
 
     variation_strategy = payload.get("variation_strategy")
     if not is_non_empty_string(variation_strategy):
         result.error("style: missing non-empty 'variation_strategy'")
+    else:
+        style_quality_warnings += warn_if_low_style_specificity(
+            result,
+            "variation_strategy",
+            variation_strategy,
+            min_chars=16,
+        )
 
     decoration = payload.get("decoration_dna") or payload.get("decoration")
     if not isinstance(decoration, dict):
@@ -1199,6 +1260,13 @@ def validate_style(path: Path) -> tuple[ValidationResult, dict[str, Any]]:
         signature_move = decoration.get("signature_move")
         if not is_non_empty_string(signature_move):
             result.error("style: decoration_dna missing non-empty 'signature_move'")
+        else:
+            style_quality_warnings += warn_if_low_style_specificity(
+                result,
+                "decoration_dna.signature_move",
+                signature_move,
+                min_chars=12,
+            )
 
         forbidden = decoration.get("forbidden")
         if not isinstance(forbidden, list):
@@ -1219,6 +1287,13 @@ def validate_style(path: Path) -> tuple[ValidationResult, dict[str, Any]]:
                 result.error("style: decoration_dna.recommended_combos must contain only non-empty strings")
             if len(cleaned_combos) < 2 or len(cleaned_combos) > 4:
                 result.error("style: decoration_dna.recommended_combos must contain 2-4 items")
+            for index, combo in enumerate(cleaned_combos, start=1):
+                style_quality_warnings += warn_if_low_style_specificity(
+                    result,
+                    f"decoration_dna.recommended_combos[{index}]",
+                    combo,
+                    min_chars=8,
+                )
 
     css_vars = payload.get("css_variables") or payload.get("css_vars")
     required_css_keys = [
@@ -1264,6 +1339,7 @@ def validate_style(path: Path) -> tuple[ValidationResult, dict[str, Any]]:
         "has_font_family": bool(is_non_empty_string(font_family)),
         "has_decoration": isinstance(decoration, dict),
         "has_css_snippets": isinstance(css_snippets, dict),
+        "style_quality_warnings": style_quality_warnings,
         "errors": len(result.errors),
         "warnings": len(result.warnings),
     }

@@ -249,6 +249,183 @@ def build_content_page_fixture(image_source_hint: str | None = None) -> dict[str
     }
 
 
+def build_one_pager_fixture() -> dict[str, object]:
+    """Build a high-density executive one-pager planning fixture for smoke testing."""
+    return {
+        "page": {
+            "slide_number": 1,
+            "page_type": "content",
+            "narrative_role": "cta",
+            "title": "AI 项目周报一页简报",
+            "page_goal": "在一页内完成状态、证据、风险与行动建议闭环",
+            "audience_takeaway": "项目总体可控，但需要本周拍板算力资源与上线窗口",
+            "visual_weight": 9,
+            "layout_hint": "one-pager-grid",
+            "layout_variation_note": "单页简报采用 12 栏高密度网格，不沿用多页 deck 的封面/目录节奏",
+            "focus_zone": "上方结论带先给 Executive takeaway，左中主洞察作为唯一视觉锚点",
+            "negative_space_target": "low",
+            "page_text_strategy": "短标题、KPI 数字化、风险与行动收束到侧栏，来源放 source strip",
+            "rhythm_action": "决策收束",
+            "must_avoid": ["禁止把封面当一页简报", "禁止低于可读字号硬塞正文", "禁止多个 anchor 抢焦点"],
+            "variation_guardrails": {
+                "same_gene_as_deck": "保留统一字体、圆角卡片和冷色科技线条",
+                "different_from_previous": ["用一页简报网格承载 5 个模块", "以 source strip 替代长脚注"],
+            },
+            "director_command": {
+                "mood": "高密度但克制、结论先行、面向拍板",
+                "spatial_strategy": "顶部结论带 + KPI 行 + 左侧主洞察 + 右侧行动/风险栏 + 底部来源条",
+                "anchor_treatment": "只允许主洞察卡做最大视觉锚点，其余模块通过字号和色阶降级",
+                "techniques": ["T1", "T9", "W3"],
+                "prose": "一页内让管理者按结论、指标、原因、风险、行动的顺序扫读完成决策。",
+            },
+            "decoration_hints": {
+                "background": {"feel": "低对比深色渐变", "restraint": "不占用信息网格", "techniques": ["T1"]},
+                "floating": {"feel": "细线网格和微光点", "restraint": "仅强化阅读动线", "techniques": ["W3"]},
+                "page_accent": {"feel": "行动项使用单一强调色", "restraint": "KPI 与风险不同时高亮", "techniques": ["T9"]},
+            },
+            "source_guidance": {
+                "brief_sections": ["项目状态", "关键指标", "风险与建议"],
+                "citation_expectation": "所有 KPI 与风险判断进入底部 source strip，使用短来源标签不占主卡空间。",
+                "strictness": "不得补充 brief 外的新结论；不确定信息放入假设/待确认来源条。",
+            },
+            "resources": {
+                "page_template": "one-pager",
+                "layout_refs": ["one-pager-grid"],
+                "block_refs": ["comparison", "matrix-chart"],
+                "chart_refs": ["kpi", "metric-row", "progress-bar"],
+                "principle_refs": ["visual-hierarchy", "composition", "cognitive-load"],
+                "resource_rationale": "通过顶部结论带、KPI 行、唯一主洞察锚点、右侧行动/风险栏和底部 source strip 建立阅读顺序；把细节压缩为 5 个模块避免微字堆叠。",
+            },
+            "cards": [
+                {
+                    "card_id": "s01-anchor-insight",
+                    "role": "anchor",
+                    "card_type": "data_highlight",
+                    "card_style": "accent",
+                    "argument_role": "claim",
+                    "headline": "总体可控",
+                    "body": ["两项核心里程碑按期推进，最大瓶颈转为算力审批。"],
+                    "data_points": [
+                        {"label": "按期里程碑", "value": "2/3", "unit": "项", "source": "brief.status[1]"},
+                        {"label": "风险敞口", "value": "中", "unit": "", "source": "brief.risk[2]"},
+                    ],
+                    "chart": {"chart_type": "kpi"},
+                    "content_budget": {"headline_max_chars": 12, "body_max_bullets": 1, "body_max_lines": 3},
+                    "image": {
+                        "mode": "decorate",
+                        "needed": False,
+                        "usage": None,
+                        "placement": None,
+                        "content_description": None,
+                        "source_hint": None,
+                        "decorate_brief": "用大号数字、细线背景和低透明光晕形成唯一主锚点。",
+                    },
+                    "resource_ref": {"chart": "kpi", "principle": "visual-hierarchy"},
+                },
+                {
+                    "card_id": "s01-kpi-row",
+                    "role": "support",
+                    "card_type": "data",
+                    "card_style": "elevated",
+                    "argument_role": "evidence",
+                    "headline": "关键指标",
+                    "body": ["进度、质量、成本三项用于快速判断项目健康度。"],
+                    "data_points": [
+                        {"label": "进度", "value": "78", "unit": "%", "source": "brief.metrics[1]"},
+                        {"label": "缺陷关闭", "value": "91", "unit": "%", "source": "brief.metrics[2]"},
+                        {"label": "预算消耗", "value": "64", "unit": "%", "source": "brief.metrics[3]"},
+                    ],
+                    "chart": {"chart_type": "metric_row"},
+                    "content_budget": {"headline_max_chars": 10, "body_max_bullets": 1, "body_max_lines": 2},
+                    "image": {
+                        "mode": "decorate",
+                        "needed": False,
+                        "usage": None,
+                        "placement": None,
+                        "content_description": None,
+                        "source_hint": None,
+                        "decorate_brief": "用三枚紧凑 KPI chip，字号层级大于说明文字。",
+                    },
+                    "resource_ref": {"chart": "metric-row", "principle": "composition"},
+                },
+                {
+                    "card_id": "s01-progress",
+                    "role": "support",
+                    "card_type": "comparison",
+                    "card_style": "outline",
+                    "argument_role": "evidence",
+                    "headline": "本周推进",
+                    "body": ["模型评测完成；灰度环境待资源确认。"],
+                    "data_points": [
+                        {"label": "灰度准备度", "value": "72", "unit": "%", "source": "brief.delivery[1]"}
+                    ],
+                    "chart": {"chart_type": "progress_bar"},
+                    "content_budget": {"headline_max_chars": 10, "body_max_bullets": 2, "body_max_lines": 3},
+                    "image": {
+                        "mode": "decorate",
+                        "needed": False,
+                        "usage": None,
+                        "placement": None,
+                        "content_description": None,
+                        "source_hint": None,
+                        "decorate_brief": "用单条进度条和两个短标签表达本周状态。",
+                    },
+                    "resource_ref": {"block": "comparison", "chart": "progress-bar"},
+                },
+                {
+                    "card_id": "s01-risk",
+                    "role": "context",
+                    "card_type": "matrix_chart",
+                    "card_style": "glass",
+                    "argument_role": "constraint",
+                    "headline": "风险窗口",
+                    "body": ["算力审批延迟会推迟灰度；数据权限需法务确认。"],
+                    "data_points": [],
+                    "content_budget": {"headline_max_chars": 10, "body_max_bullets": 2, "body_max_lines": 3},
+                    "image": {
+                        "mode": "decorate",
+                        "needed": False,
+                        "usage": None,
+                        "placement": None,
+                        "content_description": None,
+                        "source_hint": None,
+                        "decorate_brief": "用 2x2 风险小矩阵，保持低对比不抢主锚点。",
+                    },
+                    "resource_ref": {"block": "matrix-chart", "principle": "cognitive-load"},
+                },
+                {
+                    "card_id": "s01-action",
+                    "role": "support",
+                    "card_type": "text",
+                    "card_style": "filled",
+                    "argument_role": "synthesis",
+                    "headline": "本周拍板",
+                    "body": ["确认 2 台推理机资源", "锁定 6/18 灰度窗口", "风险复盘放入周五例会"],
+                    "data_points": [],
+                    "content_budget": {"headline_max_chars": 10, "body_max_bullets": 3, "body_max_lines": 4},
+                    "image": {
+                        "mode": "decorate",
+                        "needed": False,
+                        "usage": None,
+                        "placement": None,
+                        "content_description": None,
+                        "source_hint": None,
+                        "decorate_brief": "用强调色编号清单形成行动侧栏，底部预留 source strip。",
+                    },
+                    "resource_ref": {"principle": "visual-hierarchy"},
+                },
+            ],
+            "workflow_metadata": {
+                "stage": "planning",
+                "workflow_version": WORKFLOW_VERSION,
+                "planning_schema_version": PLANNING_SCHEMA_VERSION,
+                "planning_packet_version": PLANNING_PACKET_VERSION,
+                "planning_continuity_version": PLANNING_CONTINUITY_VERSION,
+            },
+        }
+    }
+
+
 def assert_contains(label: str, haystack: str, needles: list[str], result: SmokeResult) -> None:
     missing = [needle for needle in needles if needle not in haystack]
     if missing:
@@ -1694,6 +1871,54 @@ def run_smoke() -> SmokeResult:
                 result,
             )
             assert_no_unfilled_vars("resource-loader-resolve", resolve.stdout, result)
+
+        one_pager_dir = tmp_dir / "planning-one-pager"
+        one_pager_path = one_pager_dir / "planning1.json"
+        write_text(one_pager_path, json.dumps(build_one_pager_fixture(), ensure_ascii=False, indent=2))
+        one_pager_validate = run_cmd(
+            "planning-validator-one-pager",
+            [
+                py,
+                str(SCRIPTS_DIR / "planning_validator.py"),
+                str(one_pager_dir),
+                "--refs",
+                str(REFERENCES_DIR),
+                "--strict",
+                "--page",
+                "1",
+            ],
+            result,
+        )
+        if one_pager_validate.returncode == 0:
+            assert_contains("planning-validator-one-pager", one_pager_validate.stdout, ["OK"], result)
+
+        one_pager_resolve = run_cmd(
+            "resource-loader-resolve-one-pager",
+            [
+                py,
+                str(SCRIPTS_DIR / "resource_loader.py"),
+                "resolve",
+                "--refs-dir",
+                str(REFERENCES_DIR),
+                "--planning",
+                str(one_pager_path),
+            ],
+            result,
+        )
+        if one_pager_resolve.returncode == 0:
+            assert_contains(
+                "resource-loader-resolve-one-pager",
+                one_pager_resolve.stdout,
+                [
+                    "# 单页简报网格版式",
+                    "# 单页简报模板",
+                    "# 认知负荷与信息密度",
+                    "Executive takeaway",
+                    "source strip",
+                ],
+                result,
+            )
+            assert_no_unfilled_vars("resource-loader-resolve-one-pager", one_pager_resolve.stdout, result)
 
         images = run_cmd(
             "resource-loader-images",

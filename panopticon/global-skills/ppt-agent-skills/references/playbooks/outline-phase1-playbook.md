@@ -90,6 +90,24 @@ Part 目标：{part_goal}
 - 任何 Part 的首页不是 section（除 Part 1 的首页是 cover/toc 外） = **结构缺陷，该 Part 必须有 section 页**
 - section 页只做呼吸过渡，**绝对禁止**在 section 页塞数据图表或多卡片布局
 
+### 单页简报例外（expected_pages = 1 / one-pager）
+
+当用户明确要求“1页简报 / 一页 PPT / one-page briefing / executive one-pager / 给老板一页看完”时，**禁止套用上面的多页演示骨架**。此时大纲必须生成一个单独的闭环 `content` 页：
+
+- `总页数` 必须为 `1`。
+- 第 1 页的 `页面类型映射` 必须为 `content`，不要写 `cover` 或 `end`。
+- `叙事角色` 从 `evidence` / `comparison` / `process` / `cta` 中选最贴合的一个，不得写 `cover`。
+- `内容支撑` 必须同时覆盖：背景 / 关键结论 / 证据或 KPI / 影响 / 建议动作或风险。
+- `页目标` 仍然只能是一句话，但这句话要表达一页简报的核心决策结论，而不是“介绍某主题”。
+
+单页简报推荐叙事模型：
+
+```text
+Context → Key Finding → Evidence/KPI → Implication → Recommended Action/Risk
+```
+
+自审时，若 `总页数: 1`，只检查“单页闭环是否完整”，不要再检查 cover / end / toc / section 缺失。
+
 ### 主题延续规则（灵活性保障）
 
 - 一个 Part 的主题**不限定只用一个 Part 讲完**：如果一个主题内容丰富，可以拆分为多个 Part，每个 Part 聚焦该主题的不同维度

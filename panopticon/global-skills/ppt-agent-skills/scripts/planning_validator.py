@@ -46,9 +46,11 @@ VALID_ARGUMENT_ROLES = {
 }
 VALID_LAYOUT_HINTS = {
     "single-focus", "symmetric", "asymmetric", "three-column", "primary-secondary",
-    "hero-top", "mixed-grid", "l-shape", "t-shape", "waterfall", "free-cover",
+    "hero-top", "mixed-grid", "one-pager-grid", "l-shape", "t-shape", "waterfall", "free-cover",
     "free-section", "free-end", "toc-route",
 }
+HIGH_DENSITY_LAYOUT_HINTS = {"one-pager-grid"}
+HIGH_DENSITY_REQUIRED_PRINCIPLES = {"visual-hierarchy", "composition", "cognitive-load"}
 VALID_IMAGE_MODES = {"generate", "provided", "manual_slot", "decorate"}
 VALID_IMAGE_USAGES = {
     "hero-background", "inline-illustration", "icon-accent", "data-visualization-bg",
@@ -231,6 +233,68 @@ def resource_exists(refs_dir: Path, group: str, value: str) -> bool:
     normalized = raw.replace("_", "-")
     candidate_norm = base_dir / f"{normalized}.md"
     return candidate_norm.exists()
+
+
+def normalize_resource_token(value: Any) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    token = value.strip().removeprefix("references/")
+    token = Path(token).stem if "/" in token or token.endswith(".md") else token
+    return token.replace("_", "-")
+
+
+def validate_high_density_page(
+    page: dict[str, Any],
+    label: str,
+    cards: list[dict[str, Any]],
+    result: ValidationResult,
+) -> None:
+    layout_hint = page.get("layout_hint")
+    visual_weight = page.get("visual_weight")
+    negative_space = page.get("negative_space_target")
+    is_high_density = (
+        layout_hint in HIGH_DENSITY_LAYOUT_HINTS
+        or (isinstance(visual_weight, int) and visual_weight >= 8)
+        or negative_space == "low"
+    )
+    if page.get("page_type") != "content" or not is_high_density:
+        return
+
+    card_count = len(cards)
+    if layout_hint == "one-pager-grid" and not (4 <= card_count <= 6):
+        result.warn(f"{label}: one-pager-grid should use 4-6 cards, got {card_count}")
+    elif isinstance(visual_weight, int) and visual_weight >= 8 and card_count < 3:
+        result.warn(f"{label}: high-density page should have enough structured modules, got {card_count} cards")
+
+    anchor_count = sum(1 for card in cards if card.get("role") == "anchor")
+    if layout_hint == "one-pager-grid" and anchor_count != 1:
+        result.warn(f"{label}: one-pager-grid should have exactly one anchor card, got {anchor_count}")
+
+    resources = page.get("resources") if isinstance(page.get("resources"), dict) else {}
+    principle_tokens = {
+        token
+        for token in (normalize_resource_token(item) for item in as_list(resources.get("principle_refs")))
+        if token
+    }
+    missing_principles = sorted(HIGH_DENSITY_REQUIRED_PRINCIPLES - principle_tokens)
+    if missing_principles:
+        result.warn(f"{label}: high-density page should include principle_refs {missing_principles}")
+
+    rationale = resources.get("resource_rationale")
+    if not isinstance(rationale, str) or len(rationale.strip()) < 24:
+        result.warn(f"{label}: high-density page should explain compression/read-order in resources.resource_rationale")
+
+    source_guidance = page.get("source_guidance") if isinstance(page.get("source_guidance"), dict) else {}
+    citation = source_guidance.get("citation_expectation")
+    if not isinstance(citation, str) or len(citation.strip()) < 8:
+        result.warn(f"{label}: high-density page should define citation/source-strip strategy")
+
+    card_styles = {card.get("card_style") for card in cards if isinstance(card.get("card_style"), str)}
+    if layout_hint == "one-pager-grid" and len(card_styles) < 3:
+        result.warn(f"{label}: one-pager-grid benefits from at least 3 card styles for hierarchy")
+
+    if layout_hint == "one-pager-grid" and isinstance(visual_weight, int) and visual_weight < 8:
+        result.warn(f"{label}: one-pager-grid usually expects visual_weight >= 8")
 
 
 def validate_card(
@@ -441,6 +505,8 @@ def validate_page(page: dict[str, Any], refs_dir: Path | None, planning_base_dir
 
     for index, card in enumerate(cards, start=1):
         validate_card(card, label, index, refs_dir, result, planning_base_dir)
+
+    validate_high_density_page(page, label, cards, result)
 
     if page_type == "content":
         layout_hint = page.get("layout_hint")

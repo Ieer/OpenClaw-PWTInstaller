@@ -5,30 +5,6 @@ description: 专业 PPT 演示文稿全流程 AI 生成助手。模拟顶级 PPT
 
 # PPT Agent v4 — 主控制台合同
 
-## Use Cases
-
-- 制作新的多页演示文稿、路演 deck、汇报材料或培训课件。
-- 将现有文档、表格或数据整理成可展示的 PPT/HTML 演示稿。
-- 美化或重做已有幻灯片，同时保留原始信息结构。
-
-## Workflow
-
-- 按 Canonical Plan 严格执行 `P0 → P1 → (P2A|P2B) → P3 → P3.5 → P4 → P5`。
-- 通过 harness 生成所有阶段 prompt，再创建对应 subagent 执行。
-- 每个阶段都先校验前序 Gate，再推进到下一阶段。
-
-## Outputs
-
-- `interview-qa.txt`、`requirements-interview.txt`、`search.txt`、`search-brief.txt`、`source-brief.txt`、`outline.txt`、`style.json`。
-- `planning/planningN.json`、`slides/slide-N.html`、`png/slide-N.png`、`speech-script.json`、`speech-script.md`、`preview.html`。
-- `presentation-png.pptx`、`presentation-svg.pptx`、`delivery-manifest.json`。
-
-## Safety Rules
-
-- 不得跳过 Gate，不得跳过子代理，不得手写正式产物。
-- 不得在未到步骤前读取对应阶段文件。
-- 任何失败只能重试当前步骤或回退到明确的 `ROLLBACK→StepID`。
-
 ## 1. 主 Agent 角色
 
 **只做**：维护计划、调用 harness、管理 subagent 生命周期、校验 Gate、与用户交互。
@@ -50,6 +26,8 @@ description: 专业 PPT 演示文稿全流程 AI 生成助手。模拟顶级 PPT
 ### 2.2 Subagent 强制调度（核心约束）
 
 **通用生命周期**：`create(--model SUBAGENT_MODEL) → RUN(prompt路径) → STATUS… → FINALIZE → close`；完成即关，不复用。Step 4 每页一个 PageAgent-N，通过 orchestrator prompt 内部自主渐进完成 Planning → HTML → Review，整页 FINALIZE 后立刻关闭。创建时**必须**显式传 `--model SUBAGENT_MODEL`，禁止省略。`SUBAGENT_MODEL` 由用户在 Step 0 采访时指定（详见 3.1.0 及 6.2）。
+
+**PageAgent 并发护栏**：Step 4 允许并行，但必须按批次管理，默认同时活跃 PageAgent 不超过 4 个；本地/CLI 明确支持更高并发时也不得超过 6 个。若总页数超过 20 页，主 agent 必须先在对话中输出批次计划（页码范围、并发上限、每批 Gate 策略），再启动第一批。任一批出现脚本接口错误、频率限制、连续 2 页 Visual QA 失败或资源耗尽信号时，立即暂停新批次并降级为并发 2，必要时串行重跑失败页。
 
 **上下文隔离（强制）**：无论 CLI 环境默认是否让 subagent 继承主 agent 上下文，本 skill 要求所有 subagent 必须以**隔离模式**运行——subagent 唯一可见的上下文是主 agent 通过 prompt 文件显式传递的内容。如果 CLI 支持隔离参数（如 `--no-context`、沙箱模式等），必须在《Subagent 操作手册》中记录并在调用模板中包含。主 agent 的对话历史、SKILL.md 内容、环境变量等**不应该**泄露给 subagent。
 
@@ -257,7 +235,7 @@ P4.NN.02 harness 生成三份阶段 prompt + orchestrator prompt
 P4.NN.03 RUN orchestrator prompt → PageAgent 内部自主渐进完成 Planning→HTML→Review
 P4.NN.04 回收 FINALIZE → 整页终检（产物校验 + visual_qa + 主 agent 看图）
 P4.NN.05 关闭 PageAgent-NN
-（所有页并行推进）
+（所有页按 PageAgent 并发护栏分批推进；批内并行，批间必须完成 Gate 后再扩容）
 
 P5.01  harness → speech phase1 + phase2 + orchestrator prompt
 P5.02  创建 SpeechSynth subagent（发 orchestrator，subagent 内部自主渐进：整 deck 讲稿编排 → 合同自审）

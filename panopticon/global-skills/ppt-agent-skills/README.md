@@ -42,6 +42,8 @@ npx skills add sunbigfly/ppt-agent-skills
 
 **数据层与渲染层隔离**：每页先生成并由 `planning_validator.py` 通过校验的 JSON 合同，再驱动 HTML 渲染。写入前校验拦截所有结构错误，不进入渲染流程。
 
+**单页简报 / Executive One-pager**：当用户要求“1 页 PPT”“给老板一页看完”“one-page briefing”时，系统会跳过传统多页骨架，使用高密度但可读的 one-pager 结构，把结论、KPI、证据、风险和行动建议压缩到一页闭环简报。
+
 **双引擎 PPTX 导出**：PNG 光栅流保证跨平台 100% 视觉还原；SVG 矢量流保留字体可独立编辑，并可将高频图表块逐步提升为原生对象或命名原生组合（当前已覆盖 `comparison_bar`、`progress_bar`、`stacked_bar`、`sparkline`、`rating`、`kpi`、`ring`、`metric_row`、`timeline`、`funnel`、`radar`）。
 
 ## 图表能力矩阵
@@ -117,6 +119,10 @@ interview-qa.txt → requirements-interview.txt
 本项目以 Agent Skill 形式运行，无需独立部署。在支持 Skill 的代理环境中直接输入需求即可触发完整流程：
 
 > *"帮我生成一份关于 2026 年具身智能发展趋势的 15 页路演 Deck，暗色科技风格。"*
+
+单页简报示例：
+
+> *"帮我做一页给老板看的 AI 项目周报简报，信息密度高但可读，要包含结论、KPI、风险和下一步。"*
 
 所有产物输出至 `ppt-output/runs/<RUN_ID>/`，包含网页预览、speech-script.md 以及双格式 PPTX。
 
