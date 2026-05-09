@@ -35,10 +35,11 @@ A subscription business wants to predict which customers are likely to churn wit
 ## PyCaret Example
 
 ```python
-from pycaret.classification import setup, compare_models, tune_model, finalize_model, predict_model, save_model
+from pycaret.classification import setup, compare_models, tune_model, finalize_model, predict_model, save_model, pull
 import pandas as pd
 
 data = pd.read_csv("customer_churn.csv")
+candidate_models = ["lr", "lightgbm", "rf", "et", "gbc"]
 
 setup(
     data=data,
@@ -50,13 +51,24 @@ setup(
     remove_outliers=True,
     normalize=True,
     fold=5,
+    html=False,
+    log_experiment=False,
+    system_log=False,
+    verbose=False,
 )
 
-best_model = compare_models(sort="AUC")
-tuned_model = tune_model(best_model, optimize="AUC")
-final_model = finalize_model(tuned_model)
+best_model = compare_models(include=candidate_models, sort="AUC", errors="ignore", verbose=False)
+comparison_table = pull()
+baseline_auc = float(comparison_table.iloc[0]["AUC"])
 
-holdout_predictions = predict_model(final_model)
+tuned_model = tune_model(best_model, optimize="AUC", choose_better=True, verbose=False)
+tuning_table = pull()
+tuned_auc = float(tuning_table.loc["Mean", "AUC"] if "Mean" in tuning_table.index else tuning_table["AUC"].mean())
+
+selected_model = tuned_model if tuned_auc > baseline_auc else best_model
+final_model = finalize_model(selected_model)
+
+holdout_predictions = predict_model(final_model, verbose=False)
 save_model(final_model, "customer_churn_model")
 ```
 

@@ -1,7 +1,7 @@
 {
   "name": "pycaret-automl",
   "version": "0.2.0",
-  "description": "Publish-ready OpenClaw skill for end-to-end AutoML with PyCaret across classification, regression, and time series forecasting, with data-readiness checks and accuracy guardrails.",
+  "description": "Publish-ready OpenClaw skill for reproducible, testable, auditable, token-efficient AutoML with PyCaret across classification, regression, time series forecasting, clustering, anomaly detection, explainability, monitoring handoff, deployment handoff, and business reporting.",
   "requires": {
     "env": [],
     "credentials": []
@@ -10,12 +10,23 @@
     "latest",
     "automl",
     "pycaret",
-    "data-quality",
-    "model-evaluation",
     "forecasting",
     "classification",
     "regression",
     "time-series",
-    "demand-planning"
+    "demand-planning",
+    "churn-prediction",
+    "clustering",
+    "anomaly-detection",
+    "business-reporting",
+    "accuracy-optimization",
+    "benchmarking",
+    "token-efficient",
+    "explainability",
+    "model-monitoring",
+    "deployment-handoff",
+    "reproducibility",
+    "production-readiness",
+    "auditability"
   ]
 }

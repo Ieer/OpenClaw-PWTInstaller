@@ -4,14 +4,10 @@ import numpy as np
 import pandas as pd
 from pycaret.classification import compare_models as compare_cls_models
 from pycaret.classification import finalize_model as finalize_cls_model
-from pycaret.classification import pull as pull_cls
 from pycaret.classification import predict_model as predict_cls_model
 from pycaret.classification import save_model as save_cls_model
 from pycaret.classification import setup as setup_cls
-from pycaret.classification import tune_model as tune_cls_model
 from pycaret.time_series import TSForecastingExperiment
-
-from quality_checks import summarize_tabular_data, summarize_time_series, write_report
 
 
 def build_churn_sample() -> pd.DataFrame:
@@ -51,8 +47,6 @@ def build_churn_sample() -> pd.DataFrame:
 
 def run_churn_workflow(output_dir: Path) -> None:
     churn_data = build_churn_sample()
-    quality_report = summarize_tabular_data(data=churn_data, target="churned_30d")
-    write_report(output_dir / "churn_quality_report.json", quality_report)
 
     setup_cls(
         data=churn_data,
@@ -62,23 +56,16 @@ def run_churn_workflow(output_dir: Path) -> None:
         fold=3,
         numeric_imputation="median",
         categorical_imputation="mode",
-        normalize=True,
-        fix_imbalance=True,
+        html=False,
+        log_experiment=False,
+        system_log=False,
         verbose=False,
     )
 
-    candidate_models = compare_cls_models(sort="AUC", n_select=3)
-    comparison_table = pull_cls().copy()
-    best_model = candidate_models[0] if isinstance(candidate_models, list) else candidate_models
-    tuned_model = tune_cls_model(best_model, optimize="AUC", choose_better=True)
-    tuning_table = pull_cls().copy()
-    final_model = finalize_cls_model(tuned_model)
-    predictions = predict_cls_model(final_model)
-    holdout_metrics = pull_cls().copy()
+    best_model = compare_cls_models(sort="AUC", verbose=False)
+    final_model = finalize_cls_model(best_model)
+    predictions = predict_cls_model(final_model, verbose=False)
 
-    comparison_table.to_csv(output_dir / "churn_model_comparison.csv", index=False)
-    tuning_table.to_csv(output_dir / "churn_tuning_results.csv", index=False)
-    holdout_metrics.to_csv(output_dir / "churn_holdout_metrics.csv", index=False)
     predictions.to_csv(output_dir / "churn_predictions.csv", index=False)
     save_cls_model(final_model, str(output_dir / "customer_churn_model"))
 
@@ -86,15 +73,8 @@ def run_churn_workflow(output_dir: Path) -> None:
 def run_forecast_workflow(base_dir: Path, output_dir: Path) -> None:
     sample_csv = base_dir / "sample_data" / "sales_forecast_sample.csv"
     data = pd.read_csv(sample_csv)
-    quality_report = summarize_time_series(data=data, time_col="month", value_col="sales", freq="M")
-    quality_report["source_csv"] = sample_csv.resolve()
-    write_report(output_dir / "forecast_quality_report.json", quality_report)
-
     data["month"] = pd.PeriodIndex(pd.to_datetime(data["month"]), freq="M")
-    data = data.sort_values("month").drop_duplicates(subset="month", keep="last")
-    sales_series = data.set_index("month")["sales"].astype(float)
-    full_index = pd.period_range(sales_series.index.min(), sales_series.index.max(), freq="M")
-    sales_series = sales_series.reindex(full_index).interpolate(limit_direction="both")
+    sales_series = data.set_index("month")["sales"]
 
     experiment = TSForecastingExperiment()
     experiment.setup(
@@ -103,23 +83,16 @@ def run_forecast_workflow(base_dir: Path, output_dir: Path) -> None:
         fold=3,
         fold_strategy="expanding",
         session_id=42,
+        html=False,
+        log_experiment=False,
+        system_log=False,
         verbose=False,
     )
 
-    candidate_models = experiment.compare_models(sort="MASE", n_select=3)
-    comparison_table = experiment.pull().copy()
-    best_model = candidate_models[0] if isinstance(candidate_models, list) else candidate_models
-    tuned_model = experiment.tune_model(best_model, optimize="MASE", choose_better=True)
-    tuning_table = experiment.pull().copy()
-    holdout_metrics = experiment.predict_model(tuned_model)
-    holdout_metrics_table = experiment.pull().copy()
-    final_model = experiment.finalize_model(tuned_model)
-    future_predictions = experiment.predict_model(final_model, fh=6)
+    best_model = experiment.compare_models(sort="MASE", verbose=False)
+    final_model = experiment.finalize_model(best_model)
+    future_predictions = experiment.predict_model(final_model, fh=6, verbose=False)
 
-    comparison_table.to_csv(output_dir / "forecast_model_comparison.csv", index=False)
-    tuning_table.to_csv(output_dir / "forecast_tuning_results.csv", index=False)
-    holdout_metrics.to_csv(output_dir / "forecast_holdout_predictions.csv")
-    holdout_metrics_table.to_csv(output_dir / "forecast_holdout_metrics.csv", index=False)
     future_predictions.to_csv(output_dir / "future_sales_forecast.csv")
     experiment.save_model(final_model, str(output_dir / "sales_forecast_model"), model_only=True)
 

@@ -22,6 +22,7 @@
 | Interpretation | interpret_model | Inspect feature impact and explainability |
 | Prediction | predict_model | Score holdout or unseen data |
 | Finalization | finalize_model / save_model | Lock and save the chosen model |
+| Deployment handoff | create_api / create_docker / create_app when available | Generate wrapper scaffolds for controlled deployment review |
 
 ## Metric Guidance
 
@@ -56,8 +57,21 @@
 - `use_gpu`
 - `numeric_imputation`
 - `categorical_imputation`
+- `transformation`
+- `transform_target` for regression
 - `remove_outliers`
+- `remove_multicollinearity`
 - `normalize`
+- `html`
+- `system_log`
+
+## Runtime and Handoff Options to Review
+
+- `compare_models(..., budget_time=...)` for bounded broad searches
+- `compare_models(..., include=[...])` for shortlist-first exploration
+- `tune_model(..., choose_better=True)` for conservative tuning acceptance
+- `save_model` for trusted Python-environment artifacts
+- `create_api`, `create_docker`, or `create_app` only when supported by the installed PyCaret module and downstream deployment path
 
 ## Risk Notes
 
@@ -65,3 +79,7 @@
 - Best raw metric does not guarantee best interpretability
 - Time series tasks should prioritize temporal stability, not just one score table
 - Data leakage is often more damaging than model choice
+- Tuning is not automatically better; accept tuned models only when the target metric improves against the baseline
+- Full model searches cost more context and runtime than shortlists; expand only after the data is clean and the baseline is below target
+- Pickle artifacts are not a deployment plan by themselves; document serving contract, environment, artifact trust, rollback, and monitoring
+- High-impact decisions need explanation artifacts or a documented reason for skipping them

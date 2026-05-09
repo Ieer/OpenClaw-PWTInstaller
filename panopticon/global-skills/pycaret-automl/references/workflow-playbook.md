@@ -21,6 +21,7 @@ If the user is vague, clarify these points first:
 
 Always check:
 
+- File size, row count estimate, memory fit, and whether sampling is needed before full loading
 - Row count, column count, and target distribution
 - Missing-value rate and missingness patterns
 - Duplicate records
@@ -34,6 +35,8 @@ The output should explicitly name:
 - Fields that should be excluded
 - Fields that still need business clarification
 
+For large files or constrained machines, run a lightweight preflight before loading the full dataset. Prefer schema inspection, chunked row counts, and a stratified or time-aware sample for the first pass. Escalate to distributed or database-backed processing only after the small workflow proves the target, leakage rules, and metric are valid.
+
 ## 3. Integrate and Clean the Data
 
 Common actions include:
@@ -45,6 +48,12 @@ Common actions include:
 - Building rolling-window, aggregate, frequency, interval, and ratio features
 
 When the data spans multiple periods, enforce a clear split boundary so future information does not enter training.
+
+Keep feature engineering boundaries explicit:
+
+- Build business features before PyCaret when they depend on domain definitions, time windows, joins, or production data availability.
+- Let PyCaret own statistical preprocessing such as imputation, encoding, scaling, transformations, and optional dimensionality reduction.
+- Record each engineered feature's source fields, lookback window, prediction-time availability, and refresh cadence.
 
 ## 4. Design the Modeling Plan
 
@@ -90,11 +99,20 @@ predict_model(best_or_final_model)
 save_model(best_or_final_model, "model_name")
 ```
 
+Use a compact first pass before expensive searches:
+
+- Clean the data and exclude leakage fields
+- Compare a short task-specific candidate list
+- Set a runtime budget before `compare_models` or expensive tuning when data size or environment capacity is uncertain
+- Tune only the strongest candidate with `choose_better=True`
+- Keep the baseline if tuning, blending, or stacking does not improve the target metric
+- Save large comparison tables to files and summarize only the key rows in the final response
+
 Optional enhancements:
 
 - `blend_model`
 - `stack_models`
-- `interpret_model`
+- `interpret_model` for feature impact, model explanation, or regulated/user-impacting decisions
 - `plot_model`
 
 ## 6. Forecast and Simulate
@@ -129,3 +147,10 @@ Every conclusion should state whether it comes from:
 - Scenario assumptions
 
 Do not present correlation as causation.
+
+For production handoff, also include:
+
+- Explainability artifact paths or a clear reason interpretation was skipped
+- Training-data baseline distributions for drift monitoring
+- Deployment format, serving boundary, dependency lock, and rollback owner
+- Retraining triggers tied to metric decay, drift thresholds, or business cadence
