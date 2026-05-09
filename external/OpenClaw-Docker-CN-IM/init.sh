@@ -77,6 +77,210 @@ try {
 ' "$registry_json" "$OPENCLAW_FEISHU_PLUGIN_VERSION"
 }
 
+compile_openclaw_typescript_entry() {
+  local plugin_dir="$1"
+  local plugin_label="$2"
+
+  if [ ! -f "$plugin_dir/index.ts" ]; then
+    echo "[warn] $plugin_label plugin has no index.ts to compile"
+    return 1
+  fi
+
+  echo "[info] compiling $plugin_label TypeScript entry for OpenClaw 2026.5.x"
+  if command -v esbuild >/dev/null 2>&1; then
+    (cd "$plugin_dir" && esbuild index.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=index.js)
+  else
+    (cd "$plugin_dir" && npx --yes esbuild@0.24.2 index.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=index.js)
+  fi
+  chown node:node "$plugin_dir/index.js" 2>/dev/null || true
+}
+
+ensure_community_feishu_manifest_metadata() {
+  local plugin_dir=/home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu
+  local manifest_json="$plugin_dir/openclaw.plugin.json"
+  if [ ! -f "$manifest_json" ]; then
+    return 1
+  fi
+
+  node - "$plugin_dir" "$manifest_json" <<'NODE'
+const fs = require('fs');
+const path = require('path');
+
+const pluginDir = process.argv[2];
+const manifestPath = process.argv[3];
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+
+manifest.channelConfigs = manifest.channelConfigs && typeof manifest.channelConfigs === 'object' && !Array.isArray(manifest.channelConfigs)
+  ? manifest.channelConfigs
+  : {};
+manifest.channelConfigs.feishu = {
+  label: 'Feishu',
+  description: 'Feishu/Lark enterprise messaging.',
+  ...(manifest.channelConfigs.feishu || {}),
+  schema: {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    type: 'object',
+    additionalProperties: true,
+    properties: {
+      enabled: { type: 'boolean' },
+      appId: { type: 'string' },
+      appSecret: { type: 'string' },
+      connectionMode: { type: 'string', enum: ['websocket', 'webhook'] },
+      dmPolicy: { type: 'string', enum: ['pairing', 'open', 'allowlist'] },
+      groupPolicy: { type: 'string', enum: ['allowlist', 'open'] },
+      requireMention: { type: 'boolean' },
+      allowFrom: { type: 'array', items: { type: 'string' } },
+      groupAllowFrom: { type: 'array', items: { type: 'string' } },
+      webhookPath: { type: 'string' },
+      domain: { type: 'string' },
+      reactionNotifications: { type: 'string' },
+      typingIndicator: { type: 'boolean' },
+      resolveSenderNames: { type: 'boolean' },
+      encryptKey: { type: 'string' },
+      verificationToken: { type: 'string' },
+    },
+  },
+};
+
+const toolNames = new Set();
+function walk(dir) {
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== 'node_modules') walk(fullPath);
+      continue;
+    }
+    if (!entry.isFile() || !/\.[cm]?[tj]s$/.test(entry.name)) continue;
+    const source = fs.readFileSync(fullPath, 'utf8');
+    for (const match of source.matchAll(/name:\s*["'](feishu_[A-Za-z0-9_]+)["']/g)) {
+      toolNames.add(match[1]);
+    }
+  }
+}
+walk(path.join(pluginDir, 'src'));
+
+if (toolNames.size > 0) {
+  manifest.contracts = manifest.contracts && typeof manifest.contracts === 'object' && !Array.isArray(manifest.contracts)
+    ? manifest.contracts
+    : {};
+  const existingTools = Array.isArray(manifest.contracts.tools) ? manifest.contracts.tools : [];
+  manifest.contracts.tools = Array.from(new Set([...existingTools, ...toolNames])).sort();
+}
+
+fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+NODE
+  chown node:node "$manifest_json" 2>/dev/null || true
+}
+
+community_feishu_runtime_ready() {
+  local plugin_dir=/home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu
+  if [ ! -f "$plugin_dir/index.js" ]; then
+    return 1
+  fi
+  node - "$plugin_dir/openclaw.plugin.json" <<'NODE'
+const fs = require('fs');
+const manifest = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+if (!manifest.channelConfigs || !manifest.channelConfigs.feishu) process.exit(1);
+if (!manifest.contracts || !Array.isArray(manifest.contracts.tools) || manifest.contracts.tools.length === 0) process.exit(1);
+NODE
+}
+
+ensure_community_feishu_runtime_output() {
+  local plugin_dir=/home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu
+  if [ ! -f "$plugin_dir/package.json" ]; then
+    return 1
+  fi
+
+  ensure_community_feishu_manifest_metadata || return 1
+
+  if community_feishu_runtime_ready; then
+    return 0
+  fi
+
+  if [ ! -f "$plugin_dir/index.ts" ]; then
+    echo "[warn] community feishu fallback has no index.ts to compile"
+    return 1
+  fi
+
+  compile_openclaw_typescript_entry "$plugin_dir" "community feishu fallback ${OPENCLAW_FEISHU_PLUGIN_VERSION}" || return 1
+  community_feishu_runtime_ready
+}
+
+ensure_qqbot_manifest_metadata() {
+  local plugin_dir=/home/node/.openclaw/extensions/qqbot
+  local manifest_json="$plugin_dir/openclaw.plugin.json"
+  if [ ! -f "$manifest_json" ]; then
+    return 1
+  fi
+
+  node - "$manifest_json" <<'NODE'
+const fs = require('fs');
+
+const manifestPath = process.argv[2];
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+
+const accountSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    enabled: { type: 'boolean' },
+    name: { type: 'string' },
+    appId: { type: 'string' },
+    clientSecret: { type: 'string' },
+    clientSecretFile: { type: 'string' },
+    dmPolicy: { type: 'string', enum: ['pairing', 'open', 'allowlist'] },
+    allowFrom: { type: 'array', items: { type: 'string' } },
+    systemPrompt: { type: 'string' },
+    imageServerBaseUrl: { type: 'string' },
+  },
+};
+
+manifest.channelConfigs = manifest.channelConfigs && typeof manifest.channelConfigs === 'object' && !Array.isArray(manifest.channelConfigs)
+  ? manifest.channelConfigs
+  : {};
+manifest.channelConfigs.qqbot = {
+  label: 'QQ Bot',
+  description: 'QQ Bot channel via the official QQ Bot API.',
+  ...(manifest.channelConfigs.qqbot || {}),
+  schema: {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    ...accountSchema,
+    properties: {
+      ...accountSchema.properties,
+      accounts: {
+        type: 'object',
+        additionalProperties: accountSchema,
+      },
+    },
+  },
+};
+
+fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+NODE
+  chown node:node "$manifest_json" 2>/dev/null || true
+}
+
+ensure_qqbot_runtime_output() {
+  local plugin_dir=/home/node/.openclaw/extensions/qqbot
+  if [ ! -d "$plugin_dir" ]; then
+    return 0
+  fi
+
+  if ! ensure_qqbot_manifest_metadata; then
+    echo "[warn] qqbot manifest metadata repair failed; QQ Bot channel setup metadata may be incomplete"
+  fi
+
+  if [ -f "$plugin_dir/index.js" ]; then
+    return 0
+  fi
+
+  if ! compile_openclaw_typescript_entry "$plugin_dir" "qqbot"; then
+    echo "[warn] qqbot runtime compatibility repair failed; QQ Bot channel may be unavailable"
+  fi
+  return 0
+}
+
 register_community_feishu_plugin() {
   mkdir -p /home/node/.openclaw/extensions /home/node/.openclaw/npm /home/node/.npm
   chown node:node /home/node/.openclaw /home/node/.openclaw/openclaw.json 2>/dev/null || true
@@ -117,6 +321,9 @@ ensure_feishu_plugin_available() {
   fi
 
   if community_feishu_available; then
+    if ! ensure_community_feishu_runtime_output; then
+      echo "[warn] community feishu fallback package exists but OpenClaw 2026.5.x runtime compatibility repair failed; Feishu channel may be unavailable"
+    fi
     if community_feishu_registered; then
       echo "[ok] community feishu fallback registered (${OPENCLAW_FEISHU_PLUGIN_VERSION})"
       return 0
@@ -133,6 +340,9 @@ ensure_feishu_plugin_available() {
     /home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu 2>/dev/null || true
 
   if restore_cached_feishu_plugin && community_feishu_available; then
+    if ! ensure_community_feishu_runtime_output; then
+      echo "[warn] restored community feishu fallback but OpenClaw 2026.5.x runtime compatibility repair failed; Feishu channel may be unavailable"
+    fi
     if community_feishu_registered; then
       echo "[ok] restored registered community feishu fallback from image cache (${OPENCLAW_FEISHU_PLUGIN_VERSION})"
       return 0
@@ -770,6 +980,7 @@ if path.exists():
 PY
 
 ensure_feishu_plugin_available
+ensure_qqbot_runtime_output
 
 # 确保关键文件和目录权限正确；默认避免深度遍历大型会话/工作区目录。
 fix_openclaw_permissions

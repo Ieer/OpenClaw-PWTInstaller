@@ -7,7 +7,7 @@
 
 FROM node:22-alpine
 
-ARG OPENCLAW_VERSION=2026.5.2
+ARG OPENCLAW_VERSION=2026.5.7
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 
 LABEL maintainer="OpenClaw Community"

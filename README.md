@@ -178,6 +178,14 @@ python tools/rollout_release_upgrade.py --mode fast-panopticon
 python tools/rollback_release_upgrade.py
 ```
 
+如果本轮升级需要确认飞书渠道，直接使用飞书校验策略；它会先检查 agent 端点，再检查 Feishu 配置、fallback 插件、compiled runtime output、Gateway 加载日志和 WebSocket 启动状态：
+
+```bash
+python tools/rollout_release_upgrade.py --mode fast-panopticon --verify feishu
+python panopticon/tools/check_feishu_status.py --tail 800
+CHECK_FEISHU_STATUS=1 bash panopticon/tools/check_panopticon_services.sh
+```
+
 - `fast-panopticon` 适合只刷新 OpenClaw agent 容器，默认走轻量 prepare 和 agent endpoint 校验。
 - `release` 模式适合完整发布链路，默认会带上 Mission Control，并走更重的 smoke 校验。
 - rollout 和 rollback 都带运行版本门禁；如果目标服务版本完全没变化，脚本会直接失败，而不是把 no-op 当成功。

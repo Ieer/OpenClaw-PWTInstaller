@@ -21,6 +21,7 @@ PREPARE_SCRIPT = ROOT / "tools" / "prepare_release_upgrade.py"
 SMOKE_SCRIPT = ROOT / "panopticon" / "tools" / "smoke_chat_proxy.py"
 AGENT_ENDPOINT_SCRIPT = ROOT / "panopticon" / "tools" / "check_agent_endpoints.sh"
 PANOPTICON_HEALTH_SCRIPT = ROOT / "panopticon" / "tools" / "check_panopticon_services.sh"
+FEISHU_STATUS_SCRIPT = ROOT / "panopticon" / "tools" / "check_feishu_status.py"
 OPENCLAW_VERSION_RE = re.compile(r"(?P<version>\d{4}\.\d+\.\d+)")
 
 
@@ -72,7 +73,7 @@ def normalize_prepare_level(metadata: dict) -> str:
 
 def normalize_verify_strategy(metadata: dict) -> str:
     verify_strategy = str(metadata.get("verify_strategy") or "").strip()
-    if verify_strategy in {"none", "agent-endpoints", "panopticon", "smoke"}:
+    if verify_strategy in {"none", "agent-endpoints", "panopticon", "feishu", "smoke"}:
         return verify_strategy
 
     mode = str(metadata.get("mode") or "release").strip()
@@ -293,6 +294,11 @@ def run_verify_step(verify_strategy: str, selected_agents: list[str], smoke_base
 
     if verify_strategy == "panopticon":
         run_step("Post-rollback Panopticon health verify", ["bash", str(PANOPTICON_HEALTH_SCRIPT)])
+        return
+
+    if verify_strategy == "feishu":
+        run_step("Post-rollback agent endpoint verify", ["bash", str(AGENT_ENDPOINT_SCRIPT), *selected_agents])
+        run_step("Post-rollback Feishu status verify", [python_exe(), str(FEISHU_STATUS_SCRIPT), *selected_agents])
         return
 
     if verify_strategy == "smoke":

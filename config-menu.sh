@@ -51,7 +51,7 @@ BG_RED='\033[41m'
 
 # ================================ 配置变量 ================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_OPENCLAW_VERSION="2026.5.2"
+DEFAULT_OPENCLAW_VERSION="2026.5.7"
 RELEASE_MANIFEST_PATH="$SCRIPT_DIR/openclaw-release.yaml"
 CONFIG_DIR="$HOME/.openclaw"
 
@@ -3147,7 +3147,7 @@ config_imessage() {
     press_enter
 }
 
-# 安装飞书插件（2026.5.2 兼容版本；0.1.19 依赖已移除的私有 SDK 子路径）
+# 安装飞书插件（2026.5.x 兼容版本；0.1.19 依赖已移除的私有 SDK 子路径）
 install_feishu_plugin() {
     echo -e "${YELLOW}安装飞书插件...${NC}"
     echo ""
@@ -3164,7 +3164,7 @@ install_feishu_plugin() {
     echo ""
     
     # 使用 openclaw plugins install 安装指定版本。
-    # 0.1.19 在 OpenClaw 2026.5.2 下会导入已移除的 openclaw/plugin-sdk/feishu 与 matrix 子路径。
+    # 0.1.19 在 OpenClaw 2026.5.x 下会导入已移除的 openclaw/plugin-sdk/feishu 与 matrix 子路径。
     local install_output
     install_output=$(openclaw plugins install @m1heng-clawd/feishu@0.1.18 2>&1)
     local install_exit=$?
@@ -3183,7 +3183,7 @@ install_feishu_plugin() {
         echo -e "${CYAN}请手动安装:${NC}"
         echo "  openclaw plugins install @m1heng-clawd/feishu@0.1.18"
         echo ""
-        echo -e "${YELLOW}⚠️  注意: OpenClaw 2026.5.2 请使用 0.1.18；0.1.19 会因 SDK 子路径缺失加载失败${NC}"
+        echo -e "${YELLOW}⚠️  注意: OpenClaw 2026.5.x 请使用 0.1.18；0.1.19 会因 SDK 子路径缺失加载失败${NC}"
         echo ""
         return 1
     fi

@@ -14,6 +14,7 @@ PANOPTICON_DOTENV_FILE="$PANOPTICON_DIR/.env"
 PANOPTICON_MANIFEST_FILE="$PANOPTICON_DIR/agents.manifest.yaml"
 PANOPTICON_GENERATOR_SCRIPT="$PANOPTICON_DIR/tools/generate_panopticon.py"
 VOICE_ASSESS_SCRIPT="$PANOPTICON_DIR/tools/assess_voice_service.py"
+FEISHU_STATUS_SCRIPT="$PANOPTICON_DIR/tools/check_feishu_status.py"
 MISSION_CONTROL_ENV_FILE="$PANOPTICON_DIR/env/mission-control.env"
 MISSION_CONTROL_API_BASE="${MISSION_CONTROL_API_BASE:-http://localhost:18910}"
 MISSION_CONTROL_HEALTH_URL="${MISSION_CONTROL_API_BASE%/}/health"
@@ -21,6 +22,7 @@ MISSION_CONTROL_READY_URL="${MISSION_CONTROL_API_BASE%/}/ready"
 CONTAINER_HEALTH_URL="${MISSION_CONTROL_API_BASE%/}/v1/observability/container-health"
 VOICE_CONTAINER="${MC_VOICE_BRIDGE_CONTAINER:-mission-control-voice-bridge}"
 CHECK_VOICE_E2E="${CHECK_VOICE_E2E:-auto}"
+CHECK_FEISHU_STATUS="${CHECK_FEISHU_STATUS:-auto}"
 CHAT_PROXY_EXPECTED="${CHAT_PROXY_EXPECTED:-websocket}"
 CHAT_PROXY_URL="${CHAT_PROXY_URL:-http://localhost:18920/chat/nox/}"
 
@@ -594,6 +596,9 @@ TOTAL_COUNT=${#SERVICES[@]}
 VOICE_FAILED=0
 VOICE_CHECK_RAN=0
 VOICE_STRICT=0
+FEISHU_FAILED=0
+FEISHU_CHECK_RAN=0
+FEISHU_STRICT=0
 
 summarize_layer() {
   local label="$1"
@@ -640,6 +645,43 @@ fi
 
 check_container_health "$MISSION_CONTROL_AUTH_TOKEN" || true
 
+if [[ "$CHECK_FEISHU_STATUS" == "1" ]]; then
+  FEISHU_STRICT=1
+fi
+if [[ "$CHECK_FEISHU_STATUS" != "0" ]]; then
+  section_header "Feishu Readiness (Optional)"
+  FEISHU_CHECK_RAN=1
+  if [[ -f "$FEISHU_STATUS_SCRIPT" ]]; then
+    FEISHU_ARGS=(--tail "${FEISHU_LOG_TAIL:-800}")
+    if [[ -n "${FEISHU_LOG_SINCE:-}" ]]; then
+      FEISHU_ARGS+=(--since "$FEISHU_LOG_SINCE")
+    fi
+    if [[ "$FEISHU_STRICT" -eq 1 ]]; then
+      FEISHU_ARGS+=(--require-configured)
+    fi
+
+    if python3 "$FEISHU_STATUS_SCRIPT" "${FEISHU_ARGS[@]}"; then
+      print_ok "Feishu readiness 通过"
+    else
+      FEISHU_FAILED=1
+      if [[ "$FEISHU_STRICT" -eq 1 ]]; then
+        print_fail "Feishu readiness 失败（strict 模式阻断）"
+        mark_failure readiness
+      else
+        print_warn "Feishu readiness 有告警（auto 模式不阻断）"
+      fi
+    fi
+  else
+    FEISHU_FAILED=1
+    if [[ "$FEISHU_STRICT" -eq 1 ]]; then
+      print_fail "Feishu readiness 脚本不存在: $FEISHU_STATUS_SCRIPT"
+      mark_failure readiness
+    else
+      print_warn "Feishu readiness 脚本不存在: $FEISHU_STATUS_SCRIPT"
+    fi
+  fi
+fi
+
 if [[ "$CHECK_VOICE_E2E" == "1" ]]; then
   VOICE_STRICT=1
 fi
@@ -685,6 +727,21 @@ section_header "Summary"
 summarize_layer "Host-side" "$HOST_FAILED"
 summarize_layer "Liveness" "$LIVENESS_FAILED"
 summarize_layer "Readiness" "$READINESS_FAILED"
+if [[ "$FEISHU_CHECK_RAN" -eq 1 ]]; then
+  if [[ "$FEISHU_FAILED" -eq 1 ]]; then
+    if [[ "$FEISHU_STRICT" -eq 1 ]]; then
+      print_fail "Feishu readiness 失败（strict 模式阻断）"
+    else
+      print_warn "Feishu readiness 有告警（auto 模式不阻断）"
+    fi
+  else
+    print_ok "Feishu readiness 通过"
+  fi
+elif [[ "$CHECK_FEISHU_STATUS" == "0" ]]; then
+  print_skip "Feishu readiness 已关闭 (CHECK_FEISHU_STATUS=0)"
+else
+  print_skip "Feishu readiness 未执行"
+fi
 if [[ "$VOICE_CHECK_RAN" -eq 1 ]]; then
   if [[ "$VOICE_FAILED" -eq 1 ]]; then
     if [[ "$VOICE_STRICT" -eq 1 ]]; then
@@ -717,6 +774,10 @@ if [[ "$LIVENESS_FAILED" -eq 1 || "$READINESS_FAILED" -eq 1 ]]; then
 fi
 if [[ "$READINESS_FAILED" -eq 1 ]]; then
   echo "docker compose -f $COMPOSE_FILE logs --tail=80 mission-control-api mission-control-ui mission-control-gateway"
+fi
+if [[ "$FEISHU_FAILED" -eq 1 ]]; then
+  echo "python3 panopticon/tools/check_feishu_status.py --tail 800"
+  echo "docker compose -f $COMPOSE_FILE logs --tail=120 openclaw-nox openclaw-metrics openclaw-email openclaw-growth openclaw-trades openclaw-health openclaw-writing openclaw-personal"
 fi
 if [[ "$VOICE_FAILED" -eq 1 ]]; then
   echo "docker compose -f $COMPOSE_FILE logs --tail=80 $VOICE_CONTAINER"

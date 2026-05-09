@@ -166,6 +166,15 @@ python tools/rollout_release_upgrade.py --mode fast-panopticon
 bash panopticon/tools/check_agent_endpoints.sh
 ```
 
+如果升级后需要同时确认飞书渠道状态，推荐直接把 rollout 的 verify 策略切到 `feishu`：
+
+```bash
+python tools/rollout_release_upgrade.py --mode fast-panopticon --verify feishu
+python panopticon/tools/check_feishu_status.py --tail 800
+```
+
+`--verify feishu` 会先跑 agent endpoint 校验，再确认已配置飞书的 agent 拥有可加载的 Feishu 插件、compiled `index.js`、`channelConfigs.feishu`、`contracts.tools`，并且日志中出现 Feishu Gateway 加载和 WebSocket 启动信号。日常平台巡检也可以用 `CHECK_FEISHU_STATUS=1 bash panopticon/tools/check_panopticon_services.sh` 强制把飞书状态纳入 readiness。
+
 需要回退时：
 
 ```bash
@@ -226,9 +235,9 @@ bash panopticon/tools/check_panopticon_services.sh
 
 飞书发送链路可用性的最终判定，是使用当前 `channels.feishu.appId/appSecret` 获取 `tenant_access_token` 成功，并调用飞书 `im/v1/messages` 返回 `code=0`。
 
-### OpenClaw 2026.5.2 飞书 fallback 修复
+### OpenClaw 2026.5.x 飞书 fallback 修复
 
-`2026.5.2` 的 npm 包不再包含旧的 `/dist/extensions/feishu` stock bundle。升级后如果日志中出现下面任一现象，优先判断为 Feishu 插件来源缺失或 fallback 版本不兼容，而不是凭证错误：
+`2026.5.x` 的 npm 包可能不再包含旧的 `/dist/extensions/feishu` stock bundle。升级后如果日志中出现下面任一现象，优先判断为 Feishu 插件来源缺失或 fallback 版本不兼容，而不是凭证错误：
 
 - `plugins.allow: plugin not found: feishu`
 - `http server listening (2 plugins: browser, memory-core; ...)`
@@ -238,13 +247,13 @@ bash panopticon/tools/check_panopticon_services.sh
 
 - stock Feishu 存在时继续优先使用 stock，避免 duplicate plugin id。
 - stock Feishu 缺失时自动恢复/安装 `@m1heng-clawd/feishu@0.1.18`。
-- 避免使用 `@m1heng-clawd/feishu@0.1.19`，该版本在 OpenClaw `2026.5.2` 下会引用已移除的私有 SDK 子路径。
+- 避免使用 `@m1heng-clawd/feishu@0.1.19`，该版本在 OpenClaw `2026.5.x` 下会引用已移除的私有 SDK 子路径。
 - 启动时确保已配置 Feishu 的 agent 同时拥有 `plugins.entries.feishu.enabled=true` 和 `plugins.allow` 中的 `feishu`。
 
 修复后重建并替换目标 agent 容器，再检查日志中是否出现：
 
 ```text
-[plugins] loading feishu from /home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu/index.ts
+[plugins] loading feishu from /home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu/index.js
 [gateway] http server listening (3 plugins: browser, feishu, memory-core; ...)
 [feishu] feishu[default]: WebSocket client started
 ```

@@ -214,7 +214,9 @@ python3 panopticon/global-skills/openclaw-self-heal/scripts/scaffold_agent_self_
 | `python tools/rollout_release_upgrade.py --mode fast-panopticon` | 快路径替换 8 个 OpenClaw agent | 默认 `prepare=light`、`verify=agent-endpoints`，默认不重建 Mission Control |
 | `python tools/rollout_release_upgrade.py --mode fast-panopticon email growth` | 只替换指定 agent | 适合局部验证共享镜像变更 |
 | `python tools/rollout_release_upgrade.py --mode fast-panopticon --include-mission-control` | 快路径但同时带上 Mission Control | 用于 agent 与 UI/API 需要一起切换的场景 |
-| `python tools/rollout_release_upgrade.py --verify panopticon` | 覆盖默认校验策略 | 也支持 `none`、`agent-endpoints`、`smoke` |
+| `python tools/rollout_release_upgrade.py --verify panopticon` | 覆盖默认校验策略 | 也支持 `none`、`agent-endpoints`、`feishu`、`smoke` |
+| `python tools/rollout_release_upgrade.py --mode fast-panopticon --verify feishu` | 升级后强制检查飞书状态 | 先跑 endpoint，再检查 Feishu 配置、插件、compiled runtime output、Gateway 加载和 WebSocket 启动 |
+| `python panopticon/tools/check_feishu_status.py --tail 800` | 单独检查飞书状态 | 默认不发送飞书消息；真实发送测试需显式使用主动 API 选项 |
 
 当前默认语义：
 
@@ -331,8 +333,8 @@ rollout 和 rollback 现在都带运行版本硬门禁，不再只看 compose �
 如果你的目标是“先快速把 Panopticon 的 OpenClaw 容器切到新版本，再决定要不要做完整发布级校验”，优先顺序应当是：
 
 1. `python tools/prepare_release_upgrade.py --level light --skip-smoke`
-2. `python tools/rollout_release_upgrade.py --mode fast-panopticon`
-3. `bash panopticon/tools/check_agent_endpoints.sh`
+2. `python tools/rollout_release_upgrade.py --mode fast-panopticon --verify feishu`（未使用飞书时可继续用默认 verify）
+3. `python panopticon/tools/check_feishu_status.py --tail 800`
 4. 必要时再执行 `python tools/rollback_release_upgrade.py`
 
 ## 9. 安全隔离、审批与备份

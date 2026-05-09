@@ -3,7 +3,7 @@ FROM node:22-slim
 
 # When set to 1, fail the build if plugin installation fails.
 ARG STRICT_PLUGIN_INSTALL=0
-ARG OPENCLAW_VERSION=2026.5.2
+ARG OPENCLAW_VERSION=2026.5.7
 ARG FEISHU_PLUGIN_NPM_SPEC=@m1heng-clawd/feishu@0.1.18
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 
@@ -129,6 +129,19 @@ RUN if [ "$STRICT_PLUGIN_INSTALL" = "1" ]; then test -d /home/node/.openclaw/ext
 
 # 切换回 root 用户继续后续操作
 USER root
+
+# OpenClaw 2026.5.x requires external plugin TypeScript entries to have compiled JS output.
+RUN npm install -g esbuild@0.24.2
+
+RUN for plugin_dir in \
+    /home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu \
+    /home/node/.openclaw/extensions/qqbot; do \
+    if [ -f "$plugin_dir/index.ts" ]; then \
+      cd "$plugin_dir" \
+        && esbuild index.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=index.js \
+        && chown node:node index.js; \
+    fi; \
+  done
 
 # 缓存社区 Feishu fallback；运行时 agent home 由 bind mount 覆盖，init.sh 会按需恢复此缓存。
 RUN mkdir -p /opt/openclaw-plugin-cache \
