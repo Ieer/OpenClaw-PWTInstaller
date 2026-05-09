@@ -35,9 +35,9 @@ MISSION_CONTROL_VOICE_OVERLAY_ENABLED = (
 )
 
 try:
-    MISSION_CONTROL_WS_TICK_MS = max(80, int((os.getenv("MISSION_CONTROL_WS_TICK_MS") or "150").strip()))
+    MISSION_CONTROL_WS_TICK_MS = max(250, int((os.getenv("MISSION_CONTROL_WS_TICK_MS") or "1000").strip()))
 except ValueError:
-    MISSION_CONTROL_WS_TICK_MS = 150
+    MISSION_CONTROL_WS_TICK_MS = 1000
 
 
 def _env_float(name: str, default: float) -> float:
@@ -1680,6 +1680,7 @@ app.layout = html.Div(
 
 @app.callback(
     Output("ui-state", "data"),
+    Output("url", "search"),
     Input("url", "search"),
     Input("board-filter-all", "n_clicks"),
     Input("board-filter-tasks", "n_clicks"),
@@ -1692,8 +1693,19 @@ app.layout = html.Div(
     State("ui-state", "data"),
     prevent_initial_call=False,
 )
-def update_ui_state(*args):
-    state = args[-1] or {}
+def update_ui_state(
+    url_search,
+    _board_all_clicks,
+    _board_tasks_clicks,
+    _feed_all_clicks,
+    _feed_tasks_clicks,
+    _feed_comments_clicks,
+    _feed_chat_clicks,
+    _feed_system_clicks,
+    _clear_clicks,
+    state,
+):
+    state = state or {}
     trigger = ctx.triggered_id
 
     board_filter = (state.get("board_filter") or "all").lower()
@@ -1712,43 +1724,29 @@ def update_ui_state(*args):
     }
 
     if trigger == "url" or trigger is None:
-        url_search = args[0]
         board_filter, feed_filter = _parse_filters_from_search(url_search)
         return {
             "board_filter": board_filter,
             "feed_filter": feed_filter,
-        }
+        }, no_update
 
     if trigger == "clear-filters":
-        return {
-            "board_filter": "all",
-            "feed_filter": "all",
-        }
+        board_filter = "all"
+        feed_filter = "all"
 
     if trigger in board_map:
         board_filter = board_map[trigger]
     if trigger in feed_map:
         feed_filter = feed_map[trigger]
 
-    return {
+    new_state = {
         "board_filter": board_filter,
         "feed_filter": feed_filter,
     }
-
-
-@app.callback(
-    Output("url", "search"),
-    Input("ui-state", "data"),
-    State("url", "search"),
-)
-def sync_url_with_filters(state, current_search):
-    state = state or {}
-    board_filter = _sanitize_board_filter(state.get("board_filter"))
-    feed_filter = _sanitize_feed_filter(state.get("feed_filter"))
     expected = _build_search(board_filter, feed_filter)
-    if (current_search or "") == expected:
-        return no_update
-    return expected
+    if (url_search or "") == expected:
+        return new_state, no_update
+    return new_state, expected
 
 
 @app.callback(
@@ -2433,40 +2431,13 @@ def bulk_select_agents(_, __, options, current):
 
 
 @app.callback(
-    Output("skills-detail-agent", "value"),
-    Input("skills-detail-agent", "options"),
-    Input("skills-ui", "data"),
-    State("skills-detail-agent", "value"),
-    State("skills-agent-checklist", "value"),
-    prevent_initial_call=False,
-)
-def sync_skills_detail_agent(options, skills_ui, current_value, selected_agent_slugs):
-    valid_values = [str(opt.get("value")) for opt in (options or []) if opt.get("value")]
-    if not valid_values:
-        return None
-
-    current = str(current_value or "").strip()
-    preferred = str((skills_ui or {}).get("detail_agent") or "").strip()
-    selected_agents = [str(item) for item in (selected_agent_slugs or []) if item]
-
-    if preferred and preferred in valid_values:
-        return preferred
-    if selected_agents:
-        for agent_slug in selected_agents:
-            if agent_slug in valid_values:
-                return agent_slug
-    if current in valid_values:
-        return current
-    return valid_values[0]
-
-
-@app.callback(
     Output("skills-modal", "className"),
     Output("skills-global-checklist", "options"),
     Output("skills-global-checklist", "value"),
     Output("skills-agent-checklist", "options"),
     Output("skills-agent-checklist", "value"),
     Output("skills-detail-agent", "options"),
+    Output("skills-detail-agent", "value"),
     Output("skills-overview", "children"),
     Output("skills-inventory-view", "children"),
     Output("skills-agent-detail-view", "children"),
@@ -2497,6 +2468,7 @@ def render_skills_modal(skills_ui, global_search, agent_search, selected_detail_
             [],
             [],
             [],
+            None,
             [html.Div("Open Skills to load overview.", className="column-empty")],
             [html.Div("Open Skills to load inventory.", className="column-empty")],
             [html.Div("Choose an agent to inspect skills and runtime config.", className="column-empty")],
@@ -2523,6 +2495,7 @@ def render_skills_modal(skills_ui, global_search, agent_search, selected_detail_
             [],
             [],
             [],
+            None,
             [html.Div(msg, className="column-empty")],
             [html.Div(msg, className="column-empty")],
             [html.Div(msg, className="column-empty")],
@@ -2698,6 +2671,7 @@ def render_skills_modal(skills_ui, global_search, agent_search, selected_detail_
         agent_options,
         selected_agent_slugs,
         detail_options,
+        chosen_detail_agent or None,
         overview_children,
         inventory_children,
         detail_children,
