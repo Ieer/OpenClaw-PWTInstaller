@@ -1,0 +1,45 @@
+wake_node:
+  ros__parameters:
+    # manual, keyboard, or energy_threshold
+    mode: manual
+    # Yahboom baseline uses about 2s wakeup debounce to suppress echo/noise.
+    cooldown_ms: 2000
+    mic_device: ""
+    energy_threshold: 1500.0
+    sample_rate: 16000
+    channels: 1
+
+asr_node:
+  ros__parameters:
+    # Start with dummy until the full ROS2 -> Mission Control path is verified.
+    asr_engine: dummy
+    dummy_text: "指挥 帮我建个任务给 health：检查今晚备份状态"
+    # For HTTP ASR, export OPENCLAW_ASR_HTTP_URL and optional OPENCLAW_ASR_HTTP_TOKEN.
+    # asr_engine: http
+    # For Vosk, install vosk and point model_path to a local model directory.
+    # asr_engine: vosk
+    # model_path: /home/pi/models/vosk-model-small-cn
+    sample_rate: 16000
+    channels: 1
+    # First real-device pass uses fixed-duration capture. Yahboom's VAD flow uses
+    # max_wait_speech_seconds=6 and max_record_seconds=10; keep this modest until
+    # streaming VAD is added.
+    max_utterance_seconds: 6.0
+    # Delay after wakeup to avoid recording wakeup cue / speaker echo.
+    wakeup_record_delay_ms: 400
+    mic_device: ""
+
+tts_node:
+  ros__parameters:
+    # espeak is a quick smoke choice; install espeak-ng.
+    tts_engine: espeak
+    voice: zh
+    speed: 165
+    # For edge-tts: install edge-tts and mpg123/ffplay, then set tts_engine: edge.
+    # For Piper: install piper, set tts_engine: piper and model_path.
+
+mc_tts_feedback_node:
+  ros__parameters:
+    mc_api_url: http://127.0.0.1:18910
+    mc_auth_token_env: MC_AUTH_TOKEN
+    poll_interval_seconds: 0.5

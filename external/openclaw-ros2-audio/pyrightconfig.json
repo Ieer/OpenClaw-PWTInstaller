@@ -1,0 +1,7 @@
+{
+  "include": ["src/openclaw_voice_stack", "tests"],
+  "extraPaths": ["src/openclaw_voice_stack"],
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none",
+  "pythonVersion": "3.11"
+}

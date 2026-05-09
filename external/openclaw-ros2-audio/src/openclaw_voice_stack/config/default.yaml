@@ -1,0 +1,58 @@
+wake_node:
+  ros__parameters:
+    wake_topic: wakeup
+    mode: manual
+    cooldown_ms: 1800
+    energy_threshold: 1200.0
+    mic_device: ""
+    energy_probe_seconds: 0.35
+    sample_rate: 16000
+    channels: 1
+
+asr_node:
+  ros__parameters:
+    wake_topic: wakeup
+    asr_topic: asr
+    asr_engine: dummy
+    dummy_text: "指挥 帮我建个任务给 health：检查今晚备份状态"
+    language: zh-CN
+    sample_rate: 16000
+    channels: 1
+    max_utterance_seconds: 5.0
+    wakeup_record_delay_ms: 0
+    mic_device: ""
+    model_path: ""
+    asr_http_url_env: OPENCLAW_ASR_HTTP_URL
+    asr_http_token_env: OPENCLAW_ASR_HTTP_TOKEN
+
+tts_node:
+  ros__parameters:
+    tts_request_topic: tts_request
+    tts_topic: tts_topic
+    tts_engine: espeak
+    voice: zh
+    speed: 165
+    model_path: ""
+    command: ""
+
+mc_tts_feedback_node:
+  ros__parameters:
+    tts_request_topic: tts_request
+    mc_api_url: http://127.0.0.1:18910
+    mc_auth_token_env: MC_AUTH_TOKEN
+    feed_limit: 80
+    poll_interval_seconds: 1.0
+
+manual_turn_node:
+  ros__parameters:
+    wake_topic: wakeup
+    asr_topic: asr
+    text_response_topic: text_response
+    tts_topic: tts_topic
+    asr_text: "指挥 帮我建个任务给 health：检查今晚备份状态"
+    text_response: "processing manual turn"
+    tts_text: "manual turn speaking"
+    publish_text_response: false
+    delay_seconds: 0.35
+    wait_for_subscriptions: true
+    subscription_wait_seconds: 5.0
