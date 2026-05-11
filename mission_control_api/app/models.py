@@ -30,6 +30,9 @@ tasks = sa.Table(
     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
 )
 
+sa.Index("idx_tasks_status_updated_at_desc", tasks.c.status, tasks.c.updated_at.desc())
+sa.Index("idx_tasks_updated_at_desc", tasks.c.updated_at.desc())
+
 
 comments = sa.Table(
     "comments",
@@ -51,6 +54,15 @@ events = sa.Table(
     sa.Column("task_id", sa.Uuid, nullable=True),
     sa.Column("payload", sa.JSON, nullable=False, server_default=sa.text("'{}'::jsonb")),
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+)
+
+sa.Index("idx_events_created_at_desc", events.c.created_at.desc())
+sa.Index("idx_events_type_created_at_desc", events.c.type, events.c.created_at.desc())
+sa.Index(
+    "idx_events_heartbeat_agent_created_at_desc",
+    events.c.agent,
+    events.c.created_at.desc(),
+    postgresql_where=events.c.type == "agent.heartbeat",
 )
 
 

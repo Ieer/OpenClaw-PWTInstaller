@@ -3867,6 +3867,7 @@ def create_app() -> FastAPI:
         synthetic_heartbeat_agents: set[str] = set()
 
         if known_agents:
+            cutoff = now - timedelta(seconds=stale)
             source_expr = sa.func.jsonb_extract_path_text(events.c.payload, "source")
             heartbeats_stmt = (
                 sa.select(
@@ -3878,11 +3879,11 @@ def create_app() -> FastAPI:
                     events.c.type == "agent.heartbeat",
                     events.c.agent.is_not(None),
                     events.c.agent.in_(known_agents),
+                    events.c.created_at >= cutoff,
                 )
                 .group_by(events.c.agent, source_expr)
             )
             rows = (await session.execute(heartbeats_stmt)).all()
-            cutoff = now - timedelta(seconds=stale)
             for row in rows:
                 last_seen = row.last_seen
                 if isinstance(last_seen, datetime) and last_seen >= cutoff:

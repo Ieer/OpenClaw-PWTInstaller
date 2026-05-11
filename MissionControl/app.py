@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import requests
 import websocket
 from dash import ALL, Dash, Input, Output, State, ctx, dcc, html, no_update
-from flask import Response
+from flask import Response, request
 
 APP_TITLE = "Mission Control"
 
@@ -994,7 +994,52 @@ def feed_item(item):
     )
 
 
-app = Dash(__name__)
+app = Dash(__name__, update_title=None)
+
+
+@app.server.after_request
+def add_dash_runtime_cache_headers(response):
+    if request.path == "/" or request.path.startswith("/_dash-"):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
+@app.server.before_request
+def ignore_stale_dash_duplicate_output_callbacks():
+    if request.path != "/_dash-update-component" or request.method != "POST":
+        return None
+
+    payload = request.get_json(silent=True) or {}
+    output = str(payload.get("output") or "")
+
+    callback_config = app.callback_map.get(output)
+    if callback_config is not None:
+        inputs = payload.get("inputs")
+        state = payload.get("state")
+        actual_inputs = len(inputs) if isinstance(inputs, list) else 0
+        actual_state = len(state) if isinstance(state, list) else 0
+        expected_inputs = len(callback_config.get("inputs") or [])
+        expected_state = len(callback_config.get("state") or [])
+        if actual_inputs != expected_inputs or actual_state != expected_state:
+            return Response(status=204)
+        return None
+
+    if "@" not in output:
+        return None
+
+    stale_duplicate_outputs = {
+        "voice-ui.data",
+        "chat-ui.data",
+        "settings-ui.data",
+        "skills-ui.data",
+        "skills-global-checklist.value",
+        "skills-agent-checklist.value",
+    }
+    if output.split("@", 1)[0] in stale_duplicate_outputs:
+        return Response(status=204)
+    return None
 app.title = APP_TITLE
 
 app.clientside_callback(
@@ -1077,7 +1122,6 @@ app.layout = html.Div(
         dcc.Location(id="url", refresh=False),
         dcc.Interval(id="refresh", interval=5_000, n_intervals=0),
         dcc.Interval(id="ws-tick", interval=MISSION_CONTROL_WS_TICK_MS, n_intervals=0),
-        dcc.Interval(id="clock-tick", interval=1_000, n_intervals=0),
         dcc.Store(
             id="ui-state",
             data={
@@ -1752,18 +1796,42 @@ def update_ui_state(
 @app.callback(
     Output("voice-ui", "data"),
     Input("ws-tick", "n_intervals"),
+    Input("voice-overlay-close", "n_clicks"),
     State("voice-ui", "data"),
     prevent_initial_call=False,
 )
-def update_voice_overlay_from_event(_, voice_ui):
+def update_voice_overlay_from_event(_, _close_clicks, voice_ui):
     state = _voice_overlay_default()
     if isinstance(voice_ui, dict):
         state.update(voice_ui)
+
+    now = time.time()
+
+    if ctx.triggered_id == "voice-overlay-close":
+        state["visible"] = False
+        state["state"] = "idle"
+        state["title"] = ""
+        state["subtitle"] = ""
+        state["manual_dismiss_until_epoch"] = now + 2.0
+        state["updated_at_epoch"] = now
+        return state
 
     if not state.get("enabled"):
         if state != (voice_ui or {}):
             return state
         return no_update
+
+    def maybe_fade_expired_overlay():
+        if not state.get("visible"):
+            return no_update
+        if now < float(state.get("expires_at_epoch") or 0.0):
+            return no_update
+        state["visible"] = False
+        state["state"] = "idle"
+        state["title"] = ""
+        state["subtitle"] = ""
+        state["updated_at_epoch"] = now
+        return state
 
     ws_state = _get_ws_state()
     event_type = str(ws_state.get("last_event_type") or "")
@@ -1772,9 +1840,9 @@ def update_voice_overlay_from_event(_, voice_ui):
     payload = ws_state.get("last_event_payload") if isinstance(ws_state.get("last_event_payload"), dict) else {}
 
     if not event_type:
-        return no_update
+        return maybe_fade_expired_overlay()
     if event_id and event_id == str(state.get("last_event_id") or ""):
-        return no_update
+        return maybe_fade_expired_overlay()
 
     next_voice_state = _voice_state_from_event(event_type, payload)
     if not next_voice_state:
@@ -1784,7 +1852,6 @@ def update_voice_overlay_from_event(_, voice_ui):
             return state
         return no_update
 
-    now = time.time()
     if now < float(state.get("manual_dismiss_until_epoch") or 0.0) and next_voice_state != "error":
         state["last_event_id"] = event_id
         state["last_event_type"] = event_type
@@ -1825,55 +1892,6 @@ def update_voice_overlay_from_event(_, voice_ui):
     state["updated_at_epoch"] = now
     state["expires_at_epoch"] = now + _overlay_duration_seconds(next_voice_state)
     state["cooldown_until_epoch"] = now + (0.8 if next_voice_state != "error" else 0.0)
-    return state
-
-
-@app.callback(
-    Output("voice-ui", "data", allow_duplicate=True),
-    Input("clock-tick", "n_intervals"),
-    State("voice-ui", "data"),
-    prevent_initial_call=True,
-)
-def auto_fade_voice_overlay(_, voice_ui):
-    state = _voice_overlay_default()
-    if isinstance(voice_ui, dict):
-        state.update(voice_ui)
-
-    if not state.get("enabled"):
-        return state
-    if not state.get("visible"):
-        return no_update
-
-    now = time.time()
-    if now < float(state.get("expires_at_epoch") or 0.0):
-        return no_update
-
-    state["visible"] = False
-    state["state"] = "idle"
-    state["title"] = ""
-    state["subtitle"] = ""
-    state["updated_at_epoch"] = now
-    return state
-
-
-@app.callback(
-    Output("voice-ui", "data", allow_duplicate=True),
-    Input("voice-overlay-close", "n_clicks"),
-    State("voice-ui", "data"),
-    prevent_initial_call=True,
-)
-def close_voice_overlay(_, voice_ui):
-    state = _voice_overlay_default()
-    if isinstance(voice_ui, dict):
-        state.update(voice_ui)
-
-    now = time.time()
-    state["visible"] = False
-    state["state"] = "idle"
-    state["title"] = ""
-    state["subtitle"] = ""
-    state["manual_dismiss_until_epoch"] = now + 2.0
-    state["updated_at_epoch"] = now
     return state
 
 
