@@ -39,6 +39,14 @@ try:
 except ValueError:
     MISSION_CONTROL_WS_TICK_MS = 1000
 
+try:
+    MISSION_CONTROL_WS_LIVE_POLL_SECONDS = max(
+        10,
+        int((os.getenv("MISSION_CONTROL_WS_LIVE_POLL_SECONDS") or "60").strip()),
+    )
+except ValueError:
+    MISSION_CONTROL_WS_LIVE_POLL_SECONDS = 60
+
 
 def _env_float(name: str, default: float) -> float:
     raw = (os.getenv(name) or "").strip()
@@ -465,16 +473,70 @@ def _api_headers() -> dict[str, str]:
 def _format_api_status(is_online: bool, last_success: str = "", error: Exception | None = None) -> str:
     base = MISSION_CONTROL_API_URL
     ws_info = _get_ws_state()
-    ws_suffix = " | ws:live" if ws_info.get("connected") else " | ws:fallback"
+    ws_suffix = "ws:live" if ws_info.get("connected") else "ws:fallback polling"
+    sync_tail = f" · last sync {last_success}" if last_success else ""
     if is_online:
-        tail = f" · updated {last_success}" if last_success else ""
-        return f"Online · {base}{tail}{ws_suffix}"
+        return f"Online · {base}{sync_tail} · {ws_suffix}"
     if not error:
-        return f"Offline · {base}{ws_suffix} · retry in 5s"
+        return f"Offline · {base}{sync_tail} · {ws_suffix} · retry in 5s"
     detail = f"{error.__class__.__name__}: {error}".strip()
     if len(detail) > 80:
         detail = detail[:77] + "..."
-    return f"Offline · {base}{ws_suffix} · {detail} · retry in 5s"
+    return f"Offline · {base}{sync_tail} · {ws_suffix} · {detail} · retry in 5s"
+
+
+def _sync_state_default() -> dict:
+    return {
+        "last_success": "",
+        "last_success_epoch": 0.0,
+        "last_ws_revision": 0,
+        "last_event_id": "",
+        "last_event_type": "",
+        "last_trigger": "initial",
+    }
+
+
+def _normalize_sync_state(value) -> dict:
+    state = _sync_state_default()
+    if isinstance(value, dict):
+        state.update(value)
+    try:
+        state["last_success_epoch"] = float(state.get("last_success_epoch") or 0.0)
+    except (TypeError, ValueError):
+        state["last_success_epoch"] = 0.0
+    try:
+        state["last_ws_revision"] = int(state.get("last_ws_revision") or 0)
+    except (TypeError, ValueError):
+        state["last_ws_revision"] = 0
+    state["last_success"] = str(state.get("last_success") or "")
+    state["last_event_id"] = str(state.get("last_event_id") or "")
+    state["last_event_type"] = str(state.get("last_event_type") or "")
+    state["last_trigger"] = str(state.get("last_trigger") or "")
+    return state
+
+
+def _sync_state_with_ws(sync_state: dict, ws_state: dict, *, trigger: str | None = None) -> dict:
+    next_state = _normalize_sync_state(sync_state)
+    next_state["last_ws_revision"] = int(ws_state.get("revision") or 0)
+    event_id = str(ws_state.get("last_event_id") or "")
+    event_type = str(ws_state.get("last_event_type") or "")
+    if event_id:
+        next_state["last_event_id"] = event_id
+    if event_type:
+        next_state["last_event_type"] = event_type
+    if trigger:
+        next_state["last_trigger"] = trigger
+    return next_state
+
+
+def _should_refresh_from_ws(sync_state: dict, ws_state: dict) -> bool:
+    event_type = str(ws_state.get("last_event_type") or "")
+    if not event_type or event_type == "ping":
+        return False
+    event_id = str(ws_state.get("last_event_id") or "")
+    if event_id:
+        return event_id != str(sync_state.get("last_event_id") or "")
+    return int(ws_state.get("revision") or 0) != int(sync_state.get("last_ws_revision") or 0)
 
 
 def api_get_json(path: str, *, timeout: float = 3.0):
@@ -1129,6 +1191,7 @@ app.layout = html.Div(
                 "feed_filter": "all",
             },
         ),
+        dcc.Store(id="sync-state", data=_sync_state_default()),
         dcc.Store(
             id="skills-ui",
             data={
@@ -2843,15 +2906,60 @@ def sync_filter_chip_classes(state):
     Output("agents-count", "children"),
     Output("api-status", "children"),
     Output("api-status", "className"),
+    Output("sync-state", "data"),
     Input("refresh", "n_intervals"),
+    Input("ws-tick", "n_intervals"),
     Input("ui-state", "data"),
+    State("sync-state", "data"),
     prevent_initial_call=False,
 )
-def refresh_data(n_intervals, state):
+def refresh_data(n_intervals, _ws_tick, state, sync_state):
     _ = n_intervals
     state = state or {}
+    sync_state = _normalize_sync_state(sync_state)
+    ws_state = _get_ws_state()
+    trigger = str(ctx.triggered_id or "initial")
     board_filter = (state.get("board_filter") or "all").lower()
     feed_filter = (state.get("feed_filter") or "all").lower()
+
+    now_epoch = time.time()
+    last_success_epoch = float(sync_state.get("last_success_epoch") or 0.0)
+    ws_connected = bool(ws_state.get("connected"))
+    refresh_due = now_epoch - last_success_epoch >= float(MISSION_CONTROL_WS_LIVE_POLL_SECONDS)
+    ws_event_due = _should_refresh_from_ws(sync_state, ws_state)
+    should_fetch = False
+
+    if trigger in {"initial", "ui-state"}:
+        should_fetch = True
+    elif trigger == "ws-tick":
+        should_fetch = ws_event_due
+    elif trigger == "refresh":
+        should_fetch = not ws_connected or last_success_epoch <= 0.0 or refresh_due
+
+    if not should_fetch:
+        next_sync_state = _sync_state_with_ws(sync_state, ws_state, trigger=trigger)
+        last_success = str(next_sync_state.get("last_success") or "")
+        status_class = "status-pill status-online" if last_success else "status-pill status-unknown"
+        sync_state_output = next_sync_state if next_sync_state != sync_state else no_update
+        return (
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            _format_api_status(bool(last_success), last_success),
+            status_class,
+            sync_state_output,
+        )
 
     try:
         board_json = api_get_json("/v1/boards/default")
@@ -2941,6 +3049,9 @@ def refresh_data(n_intervals, state):
             pass
 
         now_text = datetime.now().strftime("%H:%M:%S")
+        next_sync_state = _sync_state_with_ws(sync_state, ws_state, trigger=trigger)
+        next_sync_state["last_success"] = now_text
+        next_sync_state["last_success_epoch"] = now_epoch
 
         agents_children = [agent_card(a) for a in agents] or [
             html.Div("No agents", className="column-empty")
@@ -2969,8 +3080,31 @@ def refresh_data(n_intervals, state):
             str(len(agents)),
             _format_api_status(True, now_text),
             "status-pill status-online",
+            next_sync_state,
         )
     except Exception as e:
+        next_sync_state = _sync_state_with_ws(sync_state, ws_state, trigger=trigger)
+        last_success = str(next_sync_state.get("last_success") or "")
+        if last_success:
+            return (
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+                _format_api_status(False, last_success, e),
+                "status-pill status-offline",
+                next_sync_state,
+            )
         return (
             [html.Div("API unavailable", className="column-empty")],
             [html.Div("API unavailable", className="column-empty")],
@@ -2986,8 +3120,9 @@ def refresh_data(n_intervals, state):
             "stat",
             "stat",
             "-",
-            _format_api_status(False, "", e),
+            _format_api_status(False, last_success, e),
             "status-pill status-offline",
+            next_sync_state,
         )
 
 _ensure_ws_thread_started()

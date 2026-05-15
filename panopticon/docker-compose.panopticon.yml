@@ -194,7 +194,10 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.7"
+        OPENCLAW_VERSION: "2026.5.12"
+        BUILDKIT_INLINE_CACHE: "1"
+      cache_from:
+        - openclaw-docker-cn-im:local
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -234,7 +237,10 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.7"
+        OPENCLAW_VERSION: "2026.5.12"
+        BUILDKIT_INLINE_CACHE: "1"
+      cache_from:
+        - openclaw-docker-cn-im:local
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -274,7 +280,10 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.7"
+        OPENCLAW_VERSION: "2026.5.12"
+        BUILDKIT_INLINE_CACHE: "1"
+      cache_from:
+        - openclaw-docker-cn-im:local
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -314,7 +323,10 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.7"
+        OPENCLAW_VERSION: "2026.5.12"
+        BUILDKIT_INLINE_CACHE: "1"
+      cache_from:
+        - openclaw-docker-cn-im:local
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -354,7 +366,10 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.7"
+        OPENCLAW_VERSION: "2026.5.12"
+        BUILDKIT_INLINE_CACHE: "1"
+      cache_from:
+        - openclaw-docker-cn-im:local
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -394,7 +409,10 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.7"
+        OPENCLAW_VERSION: "2026.5.12"
+        BUILDKIT_INLINE_CACHE: "1"
+      cache_from:
+        - openclaw-docker-cn-im:local
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -434,7 +452,10 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.7"
+        OPENCLAW_VERSION: "2026.5.12"
+        BUILDKIT_INLINE_CACHE: "1"
+      cache_from:
+        - openclaw-docker-cn-im:local
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN
@@ -474,7 +495,10 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.7"
+        OPENCLAW_VERSION: "2026.5.12"
+        BUILDKIT_INLINE_CACHE: "1"
+      cache_from:
+        - openclaw-docker-cn-im:local
     image: openclaw-docker-cn-im:local
     cap_add:
       - CHOWN

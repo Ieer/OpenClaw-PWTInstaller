@@ -89,8 +89,12 @@ compile_openclaw_typescript_entry() {
   echo "[info] compiling $plugin_label TypeScript entry for OpenClaw 2026.5.x"
   if command -v esbuild >/dev/null 2>&1; then
     (cd "$plugin_dir" && esbuild index.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=index.js)
-  else
+  elif [ "${OPENCLAW_ALLOW_RUNTIME_NPX_ESBUILD:-0}" = "1" ]; then
+    echo "[warn] esbuild binary not found; using runtime npx fallback because OPENCLAW_ALLOW_RUNTIME_NPX_ESBUILD=1"
     (cd "$plugin_dir" && npx --yes esbuild@0.24.2 index.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=index.js)
+  else
+    echo "[warn] esbuild binary not found; skip $plugin_label runtime TypeScript compile to avoid startup network dependency"
+    return 1
   fi
   chown node:node "$plugin_dir/index.js" 2>/dev/null || true
 }
@@ -309,6 +313,51 @@ restore_cached_feishu_registry() {
   mkdir -p /home/node/.openclaw/plugins
   cp -a "$cache_dir/." /home/node/.openclaw/plugins/
   chown -R node:node /home/node/.openclaw/plugins 2>/dev/null || true
+}
+
+qqbot_configured() {
+  local config_json=/home/node/.openclaw/openclaw.json
+  if [ ! -f "$config_json" ]; then
+    return 1
+  fi
+  node - "$config_json" <<'NODE'
+const fs = require('fs');
+const configPath = process.argv[2];
+try {
+  const data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  const channels = data.channels && typeof data.channels === 'object' ? data.channels : {};
+  const plugins = data.plugins && typeof data.plugins === 'object' ? data.plugins : {};
+  const entries = plugins.entries && typeof plugins.entries === 'object' ? plugins.entries : {};
+  const installs = plugins.installs && typeof plugins.installs === 'object' ? plugins.installs : {};
+  const channel = channels.qqbot && typeof channels.qqbot === 'object' ? channels.qqbot : null;
+  const entry = entries.qqbot && typeof entries.qqbot === 'object' ? entries.qqbot : null;
+  if ((channel && channel.enabled !== false) || (entry && entry.enabled !== false) || installs.qqbot) {
+    process.exit(0);
+  }
+} catch {
+  process.exit(1);
+}
+process.exit(1);
+NODE
+}
+
+restore_cached_qqbot_plugin() {
+  local extension_cache=/opt/openclaw-plugin-cache/extensions/qqbot
+  local source_cache=/opt/openclaw-plugin-cache/qqbot
+  if [ ! -d "$extension_cache" ]; then
+    return 1
+  fi
+
+  mkdir -p /home/node/.openclaw/extensions
+  rm -rf /home/node/.openclaw/extensions/qqbot 2>/dev/null || true
+  cp -a "$extension_cache" /home/node/.openclaw/extensions/qqbot
+
+  if [ -d "$source_cache" ]; then
+    rm -rf /home/node/.openclaw/qqbot 2>/dev/null || true
+    cp -a "$source_cache" /home/node/.openclaw/qqbot
+  fi
+
+  chown -R node:node /home/node/.openclaw/extensions/qqbot /home/node/.openclaw/qqbot 2>/dev/null || true
 }
 
 ensure_feishu_plugin_available() {
@@ -980,6 +1029,13 @@ if path.exists():
 PY
 
 ensure_feishu_plugin_available
+if qqbot_configured && [ ! -d /home/node/.openclaw/extensions/qqbot ]; then
+  if restore_cached_qqbot_plugin; then
+    echo "[ok] restored qqbot plugin from image cache"
+  else
+    echo "[warn] qqbot is configured but no image cache was found; QQ Bot channel may be unavailable"
+  fi
+fi
 ensure_qqbot_runtime_output
 
 # 确保关键文件和目录权限正确；默认避免深度遍历大型会话/工作区目录。

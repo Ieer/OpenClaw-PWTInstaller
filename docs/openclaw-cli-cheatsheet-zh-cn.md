@@ -203,8 +203,8 @@ python3 panopticon/global-skills/openclaw-self-heal/scripts/scaffold_agent_self_
 
 | 命令 | 说明 | 示例 / 备注 |
 | --- | --- | --- |
-| `python tools/prepare_release_upgrade.py --level full` | 完整 prepare | 会执行 sync、generate、validate、Python 编译检查；默认仍可带 smoke |
-| `python tools/prepare_release_upgrade.py --level light --skip-smoke` | 轻量 prepare | 只做 sync、generate、validate，适合 fast-panopticon 快路径 |
+| `python tools/prepare_release_upgrade.py --level full` | 完整 prepare | 会执行 sync、generate、validate、shell 语法检查、Python 编译检查；默认仍可带 smoke |
+| `python tools/prepare_release_upgrade.py --level light --skip-smoke` | 轻量 prepare | 会执行 sync、generate、validate、shell 语法检查，适合 fast-panopticon 快路径 |
 
 ### Rollout
 
@@ -244,6 +244,8 @@ python3 panopticon/global-skills/openclaw-self-heal/scripts/scaffold_agent_self_
 docker compose -f panopticon/docker-compose.panopticon.yml up -d --build --no-deps openclaw-nox
 docker compose -f panopticon/docker-compose.panopticon.yml up -d --build --no-deps openclaw-email openclaw-growth openclaw-health openclaw-metrics openclaw-personal openclaw-trades openclaw-writing
 ```
+
+生成的 Panopticon compose 会对 `openclaw-*` 构建启用 `cache_from: openclaw-docker-cn-im:local` 和 inline cache。只要本机还保留上一版 `openclaw-docker-cn-im:local` 镜像，即使 builder cache 被清理，也应优先复用 apt、OpenClaw npm 和 Playwright/Chromium 这些重层；首次完整冷构建仍会受 Debian apt 与 npm 网络速度影响。
 
 局部验证时，也可以只替换单个服务：
 

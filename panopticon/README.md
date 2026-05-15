@@ -207,6 +207,8 @@ docker compose -f panopticon/docker-compose.panopticon.yml up -d --build --no-de
 docker compose -f panopticon/docker-compose.panopticon.yml up -d --build --no-deps openclaw-email openclaw-growth openclaw-health openclaw-metrics openclaw-personal openclaw-trades openclaw-writing
 ```
 
+生成的 compose 会让 `openclaw-*` 构建从本机上一版 `openclaw-docker-cn-im:local` 导入缓存，并写入 inline cache 元数据。这样在只改启动脚本或插件缓存逻辑时，通常可以复用 apt、OpenClaw npm、Playwright/Chromium 等重层；如果本机没有旧镜像或需要完整冷构建，Debian apt 和 npm 网络层仍会比较慢。
+
 如果只想局部验证，也可以只重建一个或几个 `openclaw-*` 服务。更完整的排障说明见 [../docs/feishu-setup-zh-cn.md](../docs/feishu-setup-zh-cn.md)。
 
 ### OpenClaw 2026.4.29 飞书 open 策略修复

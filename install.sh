@@ -39,7 +39,7 @@ GRAY='\033[0;90m'
 NC='\033[0m' # 无颜色
 
 # ================================ 配置变量 ================================
-OPENCLAW_VERSION_DEFAULT="2026.5.7"
+OPENCLAW_VERSION_DEFAULT="2026.5.12"
 OPENCLAW_VERSION="$OPENCLAW_VERSION_DEFAULT"
 CONFIG_DIR="$HOME/.openclaw"
 MIN_NODE_VERSION=22

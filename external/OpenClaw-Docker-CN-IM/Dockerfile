@@ -3,7 +3,7 @@ FROM node:22-slim
 
 # When set to 1, fail the build if plugin installation fails.
 ARG STRICT_PLUGIN_INSTALL=0
-ARG OPENCLAW_VERSION=2026.5.7
+ARG OPENCLAW_VERSION=2026.5.12
 ARG FEISHU_PLUGIN_NPM_SPEC=@m1heng-clawd/feishu@0.1.18
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 
@@ -152,6 +152,13 @@ RUN mkdir -p /opt/openclaw-plugin-cache \
   && if [ -f /home/node/.openclaw/plugins/installs.json ]; then \
     mkdir -p /opt/openclaw-plugin-cache/plugins; \
     cp -a /home/node/.openclaw/plugins/. /opt/openclaw-plugin-cache/plugins/; \
+  fi \
+  && if [ -d /home/node/.openclaw/extensions/qqbot ]; then \
+    mkdir -p /opt/openclaw-plugin-cache/extensions; \
+    cp -a /home/node/.openclaw/extensions/qqbot /opt/openclaw-plugin-cache/extensions/qqbot; \
+  fi \
+  && if [ -d /home/node/.openclaw/qqbot ]; then \
+    cp -a /home/node/.openclaw/qqbot /opt/openclaw-plugin-cache/qqbot; \
   fi \
   && chown -R node:node /opt/openclaw-plugin-cache
 

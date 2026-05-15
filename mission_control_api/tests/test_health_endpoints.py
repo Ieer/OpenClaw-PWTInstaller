@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from unittest.mock import patch
 
@@ -65,9 +66,19 @@ class _FakeEngine:
 
 
 class HealthEndpointTests(unittest.TestCase):
-    def _build_client(self, *, redis_fail: bool = False, db_fail: bool = False) -> TestClient:
+    def _build_client(
+        self,
+        *,
+        redis_fail: bool = False,
+        db_fail: bool = False,
+        settings: Settings | None = None,
+    ) -> TestClient:
         fake_session_factory = _FakeSessionFactory(_FakeSession(fail=db_fail))
-        fake_settings = Settings(auth_token=None)
+        fake_settings = settings or Settings(
+            auth_token=None,
+            agent_homes_dir="/missing-agent-homes",
+            agent_manifest_path="/missing-agent-manifest.yaml",
+        )
         fake_engine = _FakeEngine()
 
         patches = [
@@ -115,6 +126,66 @@ class HealthEndpointTests(unittest.TestCase):
         self.assertEqual(payload["dependency_ok"], 1)
         self.assertEqual(payload["dependency_total"], 2)
         self.assertIn("redis unavailable", payload["signals"][0]["detail"])
+
+    def test_container_health_probes_port_and_http_targets_concurrently(self) -> None:
+        fake_settings = Settings(
+            auth_token=None,
+            agent_homes_dir="/missing-agent-homes",
+            agent_manifest_path="/missing-agent-manifest.yaml",
+            agent_slugs="nox,metrics,email,growth",
+            container_health_probe_concurrency=2,
+        )
+        active = {"port": 0, "http": 0}
+        max_active = {"port": 0, "http": 0}
+
+        async def fake_probe_tcp(host: str, port: int, *, timeout_seconds: float = 1.2):
+            active["port"] += 1
+            max_active["port"] = max(max_active["port"], active["port"])
+            try:
+                await asyncio.sleep(0.01)
+                return True, 7, f"tcp-ok {host}:{port}"
+            finally:
+                active["port"] -= 1
+
+        async def fake_probe_http(url: str, *, timeout_seconds: float = 1.5):
+            active["http"] += 1
+            max_active["http"] = max(max_active["http"], active["http"])
+            try:
+                await asyncio.sleep(0.01)
+                return True, 11, f"HTTP 204 {url}"
+            finally:
+                active["http"] -= 1
+
+        with patch("mission_control_api.app.main._probe_tcp", new=fake_probe_tcp), patch(
+            "mission_control_api.app.main._probe_http",
+            new=fake_probe_http,
+        ):
+            with self._build_client(settings=fake_settings) as client:
+                response = client.get("/v1/observability/container-health")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["compose_total"], 2)
+        self.assertEqual(payload["port_total"], 7)
+        self.assertEqual(payload["http_total"], 3)
+        self.assertEqual(payload["port_ok"], 7)
+        self.assertEqual(payload["http_ok"], 3)
+        self.assertEqual(payload["overall_ok"], 12)
+        self.assertEqual(payload["overall_total"], 12)
+        self.assertEqual(max_active["port"], 2)
+        self.assertEqual(max_active["http"], 2)
+
+        port_signals = [item for item in payload["signals"] if item["source"] == "port"]
+        http_signals = [item for item in payload["signals"] if item["source"] == "http"]
+        self.assertEqual([item["name"] for item in port_signals[:3]], [
+            "mission-control-api",
+            "mission-control-ui",
+            "mission-control-gateway",
+        ])
+        self.assertTrue(all(item["latency_ms"] == 7 for item in port_signals))
+        self.assertTrue(all(item["detail"].startswith("tcp-ok") for item in port_signals))
+        self.assertTrue(all(item["latency_ms"] == 11 for item in http_signals))
+        self.assertTrue(all(item["detail"].startswith("HTTP 204") for item in http_signals))
 
 
 if __name__ == "__main__":

@@ -2893,6 +2893,69 @@ async def _probe_http(url: str, *, timeout_seconds: float = 1.5) -> tuple[bool, 
         return False, None, f"{exc.__class__.__name__}: {exc}"
 
 
+def _container_health_probe_concurrency(settings: Settings) -> int:
+    try:
+        raw_value = int(getattr(settings, "container_health_probe_concurrency", 8) or 8)
+    except (TypeError, ValueError):
+        raw_value = 8
+    return max(1, min(raw_value, 64))
+
+
+async def _gather_health_signals_limited(targets: list, *, concurrency: int, probe_one) -> list[HealthSignalOut]:
+    if not targets:
+        return []
+
+    semaphore = asyncio.Semaphore(max(1, int(concurrency or 1)))
+
+    async def run_one(target) -> HealthSignalOut:
+        async with semaphore:
+            return await probe_one(target)
+
+    return list(await asyncio.gather(*(run_one(target) for target in targets)))
+
+
+async def _probe_port_targets(
+    targets: list[tuple[str, str, int]],
+    *,
+    concurrency: int,
+) -> tuple[int, list[HealthSignalOut]]:
+    async def probe_one(target: tuple[str, str, int]) -> HealthSignalOut:
+        name, host, port = target
+        ok, latency_ms, detail = await _probe_tcp(host, port)
+        return HealthSignalOut(
+            name=name,
+            source="port",
+            target=f"{host}:{port}",
+            ok=ok,
+            latency_ms=latency_ms,
+            detail=detail,
+        )
+
+    signals = await _gather_health_signals_limited(targets, concurrency=concurrency, probe_one=probe_one)
+    return sum(1 for signal in signals if signal.ok), signals
+
+
+async def _probe_http_targets(
+    targets: list[tuple[str, str]],
+    *,
+    concurrency: int,
+) -> tuple[int, list[HealthSignalOut]]:
+    async def probe_one(target: tuple[str, str]) -> HealthSignalOut:
+        name, url = target
+        ok, latency_ms, detail = await _probe_http(url)
+        return HealthSignalOut(
+            name=name,
+            source="http",
+            target=url,
+            ok=ok,
+            latency_ms=latency_ms,
+            detail=detail,
+        )
+
+    signals = await _gather_health_signals_limited(targets, concurrency=concurrency, probe_one=probe_one)
+    return sum(1 for signal in signals if signal.ok), signals
+
+
 async def _probe_compose_dependencies(
     redis_client: Redis,
     session,
@@ -3943,22 +4006,10 @@ def create_app() -> FastAPI:
         for slug in sorted(_known_agent_slugs(settings)):
             port_targets.append((f"openclaw-{slug}", f"openclaw-{slug}", settings.chat_upstream_port))
 
-        port_ok = 0
+        probe_concurrency = _container_health_probe_concurrency(settings)
         port_total = len(port_targets)
-        for name, host, port in port_targets:
-            ok, latency_ms, detail = await _probe_tcp(host, port)
-            if ok:
-                port_ok += 1
-            signals.append(
-                HealthSignalOut(
-                    name=name,
-                    source="port",
-                    target=f"{host}:{port}",
-                    ok=ok,
-                    latency_ms=latency_ms,
-                    detail=detail,
-                )
-            )
+        port_ok, port_signals = await _probe_port_targets(port_targets, concurrency=probe_concurrency)
+        signals.extend(port_signals)
 
         http_targets: list[tuple[str, str]] = [
             ("mission-control-api.health", "http://mission-control-api:9090/health"),
@@ -3966,22 +4017,9 @@ def create_app() -> FastAPI:
             ("mission-control-ui.root", "http://mission-control-ui:9090/"),
         ]
 
-        http_ok = 0
         http_total = len(http_targets)
-        for name, url in http_targets:
-            ok, latency_ms, detail = await _probe_http(url)
-            if ok:
-                http_ok += 1
-            signals.append(
-                HealthSignalOut(
-                    name=name,
-                    source="http",
-                    target=url,
-                    ok=ok,
-                    latency_ms=latency_ms,
-                    detail=detail,
-                )
-            )
+        http_ok, http_signals = await _probe_http_targets(http_targets, concurrency=probe_concurrency)
+        signals.extend(http_signals)
 
         overall_ok = compose_ok + port_ok + http_ok
         overall_total = compose_total + port_total + http_total

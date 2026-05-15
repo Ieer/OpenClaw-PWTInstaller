@@ -86,6 +86,15 @@ alembic revision -m "your migration message"
 alembic downgrade -1
 ```
 
+容器启动时，[docker-entrypoint.sh](docker-entrypoint.sh) 会先执行 `alembic upgrade head`，成功后再启动 Uvicorn。迁移失败会被标记为 `db-not-ready`、`db-auth`、`db-host`、`migration-error` 或 `unknown`：连接未就绪和 DNS 类问题会继续按 `MC_DB_MIGRATION_MAX_RETRIES` 重试，认证失败和迁移脚本错误会快速退出，避免把确定性配置错误伪装成长时间等待。
+
+提交前可以用下面的命令同时检查 entrypoint 语法和分类规则：
+
+```bash
+sh -n mission_control_api/docker-entrypoint.sh
+python -m unittest discover -s mission_control_api/tests -p 'test_docker_entrypoint.py'
+```
+
 ## 回归与验收
 
 仓库已经提供面向知识系统和主路线的专项脚本，提交前优先跑与你改动相关的那组：

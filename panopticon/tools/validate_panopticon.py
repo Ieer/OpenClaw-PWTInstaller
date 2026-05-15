@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import socket
 from pathlib import Path
 
 import yaml
@@ -11,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "agents.manifest.yaml"
 COMPOSE_PATH = ROOT / "docker-compose.panopticon.yml"
 ENV_DIR = ROOT / "env"
+PANOPTICON_DOTENV_PATH = ROOT / ".env"
 RELEASE_PATH = ROOT.parent / "openclaw-release.yaml"
 
 REQUIRED_STATIC_ENV_EXAMPLES = {
@@ -22,6 +25,7 @@ REQUIRED_STATIC_ENV_EXAMPLES = {
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 PLACEHOLDER_VALUE_RE = re.compile(r"^(CHANGE_ME|TODO|REPLACE_ME|YOUR_TOKEN)(?:[_-].*)?$", re.IGNORECASE)
+TRUE_VALUE_RE = re.compile(r"^(1|true|yes|on)$", re.IGNORECASE)
 
 
 def load_manifest(path: Path) -> dict:
@@ -47,6 +51,10 @@ def _is_placeholder_value(value: object) -> bool:
     return bool(PLACEHOLDER_VALUE_RE.match(text))
 
 
+def _is_true_value(value: object) -> bool:
+    return bool(TRUE_VALUE_RE.match(str(value or "").strip()))
+
+
 def _load_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     if not path.exists() or not path.is_file():
@@ -58,6 +66,30 @@ def _load_env_file(path: Path) -> dict[str, str]:
         key, value = line.split("=", 1)
         values[key.strip()] = value.strip()
     return values
+
+
+def _load_panopticon_environment() -> dict[str, str]:
+    values = _load_env_file(PANOPTICON_DOTENV_PATH)
+    for key, value in os.environ.items():
+        if key.startswith("PANOPTICON_"):
+            values[key] = value
+    return values
+
+
+def _resolve_panopticon_path(raw_value: str, *, base_dir: Path = ROOT) -> Path:
+    raw = raw_value.strip()
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = base_dir / path
+    return path.resolve(strict=False)
+
+
+def _host_port_accepts_connections(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.25):
+            return True
+    except OSError:
+        return False
 
 
 def _load_agent_runtime_env(slug: str) -> tuple[dict[str, str], bool]:
@@ -313,24 +345,98 @@ def validate_controller_security(manifest: dict) -> list[str]:
     if not controller_enabled:
         return errors
 
+    controller_url = str(mission_control.get("agent_controller_url") or "").strip()
+    if controller_url and not controller_url.startswith(("http://", "https://")):
+        errors.append("mission_control.agent_controller_url must start with http:// or https://")
+
     example_env_path = ENV_DIR / "mission-control.env.example"
     local_env_path = ENV_DIR / "mission-control.env"
-    if not example_env_path.exists() and not local_env_path.exists():
+    if not local_env_path.exists():
         errors.append(
-            "mission-control.env.example or mission-control.env is required when mission_control.agent_controller_enabled=true; create a local panopticon/env/mission-control.env and set MC_AGENT_CONTROLLER_AUTH_TOKEN to a random long token"
+            "panopticon/env/mission-control.env is required when mission_control.agent_controller_enabled=true; set MC_AGENT_CONTROLLER_AUTH_TOKEN to a random long token and MC_AGENT_CONTROLLER_RISK_ACCEPTED=1"
         )
         return errors
 
     env_values = _load_env_file(example_env_path)
-    has_local_env = local_env_path.exists()
-    if has_local_env:
-        env_values.update(_load_env_file(local_env_path))
+    env_values.update(_load_env_file(local_env_path))
     token = env_values.get("MC_AGENT_CONTROLLER_AUTH_TOKEN", "")
-    if has_local_env and _is_placeholder_value(token):
+    if _is_placeholder_value(token) or len(str(token).strip()) < 32:
         errors.append(
-            "panopticon/env/mission-control.env must set MC_AGENT_CONTROLLER_AUTH_TOKEN to a random long token when mission_control.agent_controller_enabled=true"
+            "panopticon/env/mission-control.env must set MC_AGENT_CONTROLLER_AUTH_TOKEN to a non-placeholder random token of at least 32 characters when mission_control.agent_controller_enabled=true"
+        )
+    if not _is_true_value(env_values.get("MC_AGENT_CONTROLLER_RISK_ACCEPTED", "")):
+        errors.append(
+            "panopticon/env/mission-control.env must set MC_AGENT_CONTROLLER_RISK_ACCEPTED=1 when mission_control.agent_controller_enabled=true because the controller mounts docker.sock"
         )
     return errors
+
+
+def validate_local_environment(
+    manifest: dict,
+    *,
+    strict_local: bool = False,
+    check_host_ports: bool = False,
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    def add_local_issue(message: str) -> None:
+        if strict_local:
+            errors.append(message)
+        else:
+            warnings.append(message)
+
+    panopticon_env = _load_panopticon_environment()
+    path_defaults = {
+        "PANOPTICON_DATA_DIR": ".",
+        "PANOPTICON_USB_HOST_PATH": "./shared-usb",
+        "PANOPTICON_KNOWLEDGE_RAW_SOURCES_PATH": "./mission-control/knowledge-sources",
+    }
+    for name, default in path_defaults.items():
+        raw_value = str(panopticon_env.get(name) or default).strip()
+        path = _resolve_panopticon_path(raw_value)
+        is_custom = name in panopticon_env
+        if path.exists() and not path.is_dir():
+            errors.append(f"{name} must point to a directory, got file: {path}")
+        elif not path.exists() and (strict_local or is_custom):
+            add_local_issue(f"{name} path does not exist yet: {path}")
+
+    usb_container_path = str(panopticon_env.get("PANOPTICON_USB_CONTAINER_PATH") or "/mnt/usb").strip()
+    if not usb_container_path.startswith("/"):
+        errors.append("PANOPTICON_USB_CONTAINER_PATH must be an absolute container path")
+
+    enabled_agents = [agent for agent in manifest.get("agents", []) if agent.get("enabled", True)]
+    if strict_local:
+        for agent in enabled_agents:
+            slug = str(agent.get("slug") or "").strip()
+            if slug and not (ENV_DIR / f"{slug}.env").exists():
+                errors.append(f"missing local env override for enabled agent: panopticon/env/{slug}.env")
+
+        for env_name in ["mission-control.env", "mission-control-ui.env", "mission-control-gateway.env"]:
+            if not (ENV_DIR / env_name).exists():
+                errors.append(f"missing local Mission Control env override: panopticon/env/{env_name}")
+
+    if check_host_ports:
+        mission_control = manifest.get("mission_control", {})
+        ports: dict[int, str] = {}
+        for key, label in [("api_port", "mission-control-api"), ("ui_port", "mission-control-ui")]:
+            value = mission_control.get(key)
+            if isinstance(value, int):
+                ports[value] = label
+        for agent in enabled_agents:
+            slug = str(agent.get("slug") or "").strip()
+            for key in ["gateway_host_port", "bridge_host_port"]:
+                value = agent.get(key)
+                if isinstance(value, int):
+                    ports[value] = f"openclaw-{slug}.{key}"
+
+        for port, label in sorted(ports.items()):
+            if _host_port_accepts_connections(port):
+                warnings.append(
+                    f"host port {port} for {label} is already accepting connections; expected if the stack is already running"
+                )
+
+    return errors, warnings
 
 
 def validate_generated_files(manifest: dict) -> list[str]:
@@ -407,6 +513,16 @@ if __name__ == "__main__":
         default=RELEASE_PATH,
         help="Path to openclaw-release.yaml",
     )
+    parser.add_argument(
+        "--strict-local",
+        action="store_true",
+        help="Also require local env overrides and local data paths to exist",
+    )
+    parser.add_argument(
+        "--check-host-ports",
+        action="store_true",
+        help="Warn when generated host ports are already accepting connections",
+    )
     args = parser.parse_args()
 
     manifest = load_manifest(args.manifest)
@@ -416,6 +532,17 @@ if __name__ == "__main__":
     errors.extend(validate_release_alignment(manifest, release))
     errors.extend(validate_runtime_consistency(manifest))
     errors.extend(validate_controller_security(manifest))
+    local_errors, warnings = validate_local_environment(
+        manifest,
+        strict_local=args.strict_local,
+        check_host_ports=args.check_host_ports,
+    )
+    errors.extend(local_errors)
+
+    if warnings:
+        print("Validation warnings:")
+        for item in warnings:
+            print(f"- {item}")
 
     if errors:
         print("Validation failed:")

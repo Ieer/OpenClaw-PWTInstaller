@@ -353,6 +353,9 @@ def render_compose(manifest: dict) -> str:
                 dockerfile: {cnim_dockerfile}
                 args:
                   OPENCLAW_VERSION: "{openclaw_version}"
+                  BUILDKIT_INLINE_CACHE: "1"
+                cache_from:
+                  - {cnim_image}
               image: {cnim_image}
               cap_add:
                 - CHOWN

@@ -50,6 +50,7 @@ class Settings(BaseModel):
     agent_controller_url: str = "http://mission-control-agent-controller:9091"
     agent_controller_auth_token: str | None = None
     agent_controller_timeout_seconds: float = 5.0
+    container_health_probe_concurrency: int = 8
     voice_commands_enabled: bool = True
     voice_command_require_prefix: bool = True
     voice_command_prefixes: list[str] = []
@@ -135,6 +136,7 @@ def load_settings() -> Settings:
         agent_controller_url=(os.getenv("MC_AGENT_CONTROLLER_URL") or "http://mission-control-agent-controller:9091").strip(),
         agent_controller_auth_token=(os.getenv("MC_AGENT_CONTROLLER_AUTH_TOKEN") or "").strip() or None,
         agent_controller_timeout_seconds=float((os.getenv("MC_AGENT_CONTROLLER_TIMEOUT_SECONDS") or "5.0").strip()),
+        container_health_probe_concurrency=max(1, _env_int("MC_CONTAINER_HEALTH_PROBE_CONCURRENCY", 8)),
         voice_commands_enabled=_env_flag("MC_VOICE_COMMANDS_ENABLED", True),
         voice_command_require_prefix=_env_flag("MC_VOICE_COMMAND_REQUIRE_PREFIX", True),
         voice_command_prefixes=[

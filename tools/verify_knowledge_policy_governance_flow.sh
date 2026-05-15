@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/knowledge_test_env.sh
+source "$SCRIPT_DIR/lib/knowledge_test_env.sh"
+ROOT_DIR="$(knowledge_repo_root "$SCRIPT_DIR")"
+
 BASE_URL="${BASE_URL:-http://127.0.0.1:18910}"
 AUTH_TOKEN="${MC_API_TOKEN:-${AUTH_TOKEN:-}}"
-USB_ROOT="${USB_KNOWLEDGE_ROOT:-/media/pi/4A21-0000/knowledge-sources}"
+USB_ROOT="$(knowledge_sources_root "$ROOT_DIR")"
 
 curl_json() {
   local method="$1"

@@ -8,6 +8,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = ROOT / ".venv" / "bin" / "python"
+SHELL_SYNTAX_CHECKS = [
+    ("Mission Control API entrypoint", "sh", ROOT / "mission_control_api" / "docker-entrypoint.sh"),
+    ("OpenClaw CN-IM init", "bash", ROOT / "external" / "OpenClaw-Docker-CN-IM" / "init.sh"),
+    ("knowledge test env helper", "bash", ROOT / "tools" / "lib" / "knowledge_test_env.sh"),
+    ("knowledge multiformat flow", "bash", ROOT / "tools" / "verify_knowledge_multiformat_chunk_flow.sh"),
+    ("knowledge OCR flow", "bash", ROOT / "tools" / "verify_knowledge_ocr_flow.sh"),
+    (
+        "knowledge dynamic policy rollout flow",
+        "bash",
+        ROOT / "tools" / "verify_knowledge_dynamic_policy_rollout_flow.sh",
+    ),
+    ("knowledge policy audit flow", "bash", ROOT / "tools" / "verify_knowledge_policy_audit_flow.sh"),
+    ("knowledge policy governance flow", "bash", ROOT / "tools" / "verify_knowledge_policy_governance_flow.sh"),
+]
 
 
 def _python_cmd(script: Path, *extra: str) -> list[str]:
@@ -20,13 +34,18 @@ def run_step(label: str, cmd: list[str]) -> None:
     subprocess.run(cmd, cwd=ROOT, check=True)
 
 
+def run_shell_syntax_checks() -> None:
+    for label, shell, path in SHELL_SYNTAX_CHECKS:
+        run_step(f"Check shell syntax: {label}", [shell, "-n", str(path.relative_to(ROOT))])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare and verify an OpenClaw release upgrade")
     parser.add_argument(
         "--level",
         choices=["full", "light"],
         default="full",
-        help="Preparation depth: full keeps compile checks, light only syncs and validates generated artifacts",
+        help="Preparation depth: full keeps compile checks, light skips Python compile and smoke checks",
     )
     parser.add_argument("--skip-smoke", action="store_true", help="Skip /chat smoke verification")
     parser.add_argument("--smoke-base-url", default="http://localhost:18920", help="Mission Control gateway base URL")
@@ -36,6 +55,7 @@ def main() -> int:
     run_step("Sync release contract defaults", _python_cmd(ROOT / "tools" / "sync_openclaw_release.py"))
     run_step("Generate Panopticon artifacts", _python_cmd(ROOT / "panopticon" / "tools" / "generate_panopticon.py"))
     run_step("Validate Panopticon and release alignment", _python_cmd(ROOT / "panopticon" / "tools" / "validate_panopticon.py"))
+    run_shell_syntax_checks()
 
     if args.level == "full":
         py_compile_cmd = [

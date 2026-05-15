@@ -1,92 +1,112 @@
-# Mission Control Implementation Plan
+# Mission Control Overview
 
-This doc describes a general Mission Control architecture and uses a **10-agent example roster** as a reference. This repository also includes a separate **8-agent personal configuration** ("Personal Panopticon") optimized for one-person workflows:
+This document describes the current Mission Control control plane in this repository and the remaining optional extension path. The active runtime track is the **8-agent Personal Panopticon**: `nox`, `metrics`, `email`, `growth`, `trades`, `health`, `writing`, and `personal`.
 
-- [mission-control-personal-panopticon-zh-hant.md](mission-control-personal-panopticon-zh-hant.md) (Traditional Chinese, complete record)
-- [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md) (Simplified Chinese, engineering playbook)
+For the detailed engineering playbook, see:
 
-Implementation status note:
+- [mission-control-playbook-zh-cn.md](mission-control-playbook-zh-cn.md)
+- [mission-control-personal-panopticon-zh-hant.md](mission-control-personal-panopticon-zh-hant.md)
+- [../panopticon/README.md](../panopticon/README.md)
 
-- The Dash UI prototype exists in [../MissionControl/app.py](../MissionControl/app.py) and currently uses mocked data.
-- API/Redis Streams/WebSocket/Convex/vector store integration are described as target components and may require additional implementation work.
+## Current Status
 
-## Goals
+Mission Control is no longer a mocked UI-only prototype. The repository currently includes a runnable control plane with:
 
-Build a multi-agent "Mission Control" system on top of OpenClaw where each agent runs in an isolated container, shares a central task system, and reports real-time activity. The system prioritizes cost control, auditability, and collaboration.
+- Dash UI in [../MissionControl/app.py](../MissionControl/app.py)
+- FastAPI API in [../mission_control_api/app/main.py](../mission_control_api/app/main.py)
+- PostgreSQL persistence for tasks, comments, events, skills mappings, and knowledge data
+- Redis Streams for realtime event fanout
+- WebSocket feed at `/ws/events`
+- same-origin Chat proxy through the Mission Control Gateway at `/chat/<agent>/`
+- observability endpoints for readiness, event/task metrics, and container health
+- skills inventory, runtime config, drift detection, and mapping APIs
+- knowledge source import, chunking, validation policy, resolve, audit, and feedback APIs
+- voice command adapter for prefixed ASR commands
+- Panopticon generation, validation, backup, upgrade, rollback, and health-check scripts
 
-## Architecture Overview
+The generated compose stack is defined by [../panopticon/agents.manifest.yaml](../panopticon/agents.manifest.yaml) and [../panopticon/docker-compose.panopticon.yml](../panopticon/docker-compose.panopticon.yml). The compose file is generated and should not be treated as the long-term source of truth.
 
-- **Control Plane**: Mission Control web app + API + realtime transport.
-- **Data Plane**: 10 OpenClaw agents, each in a dedicated container.
-- **Async Bus**: Redis Streams for task assignment and event fanout.
-- **Task Store**: Convex for realtime board, comments, and activity feed.
-- **Memory**: Vector store (pgvector or Qdrant) for semantic recall.
+## Architecture
 
-## Component Breakdown
+- **Control Plane**: Dash UI, FastAPI API, gateway, Postgres, Redis.
+- **Data Plane**: one isolated OpenClaw container per enabled agent.
+- **Realtime Transport**: Redis Streams plus `/ws/events`; the UI uses WebSocket events as the primary invalidation signal and polling as a fallback.
+- **Task Store**: PostgreSQL tables for tasks, comments, and append-only events.
+- **Knowledge Store**: PostgreSQL-backed knowledge sources, units, validation policies, resolve audits, feedback, lifecycle events, and optional embeddings.
+- **Gateway**: same-origin entry point for the dashboard and per-agent chat.
 
-### 1) Agents (OpenClaw containers)
+## Primary User Paths
 
-- One container per agent role (Jarvis, Shuri, Fury, Vision, Loki, Quill, Wanda, Pepper, Friday, Wong).
-- Each container has its own config and secrets and a scoped toolset.
-- Agents expose REST endpoints on port 26216 for task execution and health.
+1. Open Mission Control at `http://127.0.0.1:18920/` or the configured LAN gateway URL.
+2. Review the agent roster, task queue, observability cards, and live feed.
+3. Open `/chat/<agent>/` through the same-origin gateway for an individual agent session.
+4. Create, claim, update, review, or hand off tasks through the API or voice command adapter.
+5. Review skills inventory, mapping drift, runtime config, and restart hints before applying changes.
+6. Import and resolve knowledge units with validation policy and audit trails.
 
-### 2) Mission Control Web
+## Runtime Components
 
-- **UI**: Kanban board + live activity feed + agent roster.
-- **Backend**: Task state machine, assignment logic, audit log.
-- **Realtime**: WebSocket channel for live events and status updates.
+### Mission Control UI
 
-### 3) Task Model (Core Schema)
+The Dash UI renders the agent roster, mission queue, live feed, observability cards, skills/config panels, embedded chat modal, and voice overlay. It now uses WebSocket event invalidation for board/feed/roster refreshes and keeps polling as a fallback when WebSocket is unavailable.
 
-- **Task**: title, status, assignee, priority, tags, created_at, due_at.
-- **Run**: task_id, agent_id, status, logs, started_at, ended_at.
-- **Comment**: task_id, author, body, created_at.
-- **Artifact**: task_id, type, uri, summary, embeddings.
-- **Event**: append-only action log for auditability.
+### Mission Control API
 
-### 4) Communication Flow
+The FastAPI service provides tasks, comments, events, feed, observability, agent catalog, agent control forwarding, chat proxy compatibility, skills governance, voice command parsing, and knowledge APIs. `/ready` checks Redis and Postgres; `/v1/observability/container-health` probes compose, port, and HTTP signals with bounded concurrency.
 
-- **REST**: Mission Control assigns tasks to agents; agents report artifacts and run status.
-- **WebSocket**: Agents push live status/logs to Mission Control; UI receives realtime updates.
-- **Redis Streams**: Guarantees task delivery and replays on failure.
+### Mission Control Gateway
 
-## Heartbeat and Cost Control
+The gateway is the preferred browser entry point. It keeps the dashboard and chat under the same origin, which avoids most CORS and token-injection problems. LAN access still requires exact Origin allowlisting in each agent's OpenClaw gateway config.
 
-- Each agent runs a lightweight heartbeat every 13-17 minutes (jittered).
-- Heartbeat checks for queued tasks without invoking full LLM.
-- Only when a task is found does the agent load full context and run inference.
+### Agents
 
-## Security and Isolation
+The current roster is the 8-agent Personal Panopticon. Each agent has its own home directory, workspace, environment file, gateway port, bridge port, token, and skills boundary.
 
-- Per-agent secrets and tool permissions.
-- Read/write restrictions on mounted workspaces.
-- All actions recorded in the Event log.
+## Security Model
 
-## Step-by-Step Build Plan
+- `MC_AUTH_TOKEN` enables bearer-token auth for Mission Control API and WebSocket access.
+- Agent gateway tokens are generated and rotated through Panopticon tooling.
+- Direct agent links are disabled by default; same-origin `/chat/<agent>/` is preferred.
+- The optional `mission-control-agent-controller` is high risk because it mounts `docker.sock`; it is disabled by default and requires explicit risk acceptance plus a long random token.
+- High-risk personal, health, trading, and infrastructure actions should go through review gates.
 
-1. **Spin up 2-3 agents** to validate task assignment and reporting.
-2. **Stand up Mission Control UI** with mocked data (Dash or Next.js).
-3. **Implement task state machine** (Queued -> Assigned -> InProgress -> Review -> Done).
-4. **Integrate Redis Streams** for assignment and recovery.
-5. **Enable WebSocket live updates** from agent wrappers.
-6. **Expand to 10 agents** and add memory/vector search.
-7. **Add notifications** (Slack/Discord/Feishu) and audit dashboards.
+## Observability and Health
 
-## Risks and Mitigations
+Mission Control exposes lightweight and deeper health surfaces:
 
-- **API limitations**: If OpenClaw lacks needed REST endpoints, use a wrapper skill to POST results to Mission Control.
-- **Log volume**: Stream logs with backpressure; drop non-critical logs on overload.
-- **Task duplication**: Enforce lock + idempotency for task claims.
+- `/health`: process liveness.
+- `/ready`: Redis and Postgres readiness.
+- `/v1/observability/summary`: recent request/error/event/task/heartbeat metrics.
+- `/v1/observability/container-health`: compose dependency checks plus bounded-concurrency port and HTTP probes.
+- `/v1/feed-lite` and `/ws/events`: dashboard feed and realtime UI invalidation.
+
+Operational scripts such as [../panopticon/tools/check_panopticon_services.sh](../panopticon/tools/check_panopticon_services.sh) and [../panopticon/tools/check_agent_endpoints.sh](../panopticon/tools/check_agent_endpoints.sh) are the recommended smoke checks after changes.
+
+## Optional Extension Path
+
+The earlier 10-agent architecture remains useful as a design reference, but it is not the current default stack. Potential future extensions include:
+
+- expanding the roster beyond the 8 personal agents
+- adding stronger task assignment queues and consumer-group recovery semantics
+- adding richer memory retrieval, embedding backends, or Qdrant integration
+- adding Slack, Discord, Feishu, or mobile notifications
+- adding stricter role-based access control for multi-user operation
+- moving UI smoke checks into a browser-based regression suite
+
+Convex is not required for the current implementation. The current task and event store is PostgreSQL plus Redis Streams.
 
 ## Verification Checklist
 
-- Tasks can be created, assigned, run, and reviewed end-to-end.
-- Heartbeat does not trigger LLM calls when idle.
-- Realtime feed updates within 1s of agent events.
-- Agent isolation prevents cross-agent access.
+- `python -m pytest mission_control_api/tests`
+- `bash panopticon/tools/check_panopticon_services.sh`
+- `bash panopticon/tools/check_agent_endpoints.sh`
+- open `http://127.0.0.1:18920/`
+- open `http://127.0.0.1:18920/chat/nox/`
+- for LAN access, verify `http://<gateway-lan-ip>:18920/chat/<agent>/` and exact Origin allowlisting
 
-## Next Steps
+## Known Boundaries
 
-- Confirm preferred vector store (pgvector or Qdrant).
-- Decide initial backend stack for Mission Control API.
-- Define 10 agent prompt profiles and tool permissions.
+- The dashboard and API are optimized for a trusted local or LAN deployment unless stronger auth, HTTPS, or private networking is added.
+- WebSocket live updates improve perceived latency but are not the durable source of truth; PostgreSQL and Redis-backed events remain authoritative.
+- Voice command execution intentionally requires prefixes by default to reduce accidental control-plane actions.
+- Agent controller operations should remain disabled unless remote container control is explicitly needed.
