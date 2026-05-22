@@ -222,15 +222,76 @@ When creating/updating a skill, keep `SKILL.md` explicit on:
 
 If a skill can cause external side effects, it must route to Review first.
 
-## Model Tier Routing (Policy-Only)
+## 🧠 Sub-Agent Model Routing（多级模型路由）
 
-Use this document-level routing to control cost/quality:
+当前配置了三级 agent，由本 agent（growth）做 routing 决策：
 
-- `small`: classification, extraction, formatting, short rewrites
-- `medium`: analysis, planning, cross-source synthesis
-- `large`: long-form generation, complex reasoning, high-stakes review drafts
+### Agent 角色
 
-Default to the smallest tier that can safely complete the task. Escalate only when blocked by context depth or quality requirements.
+| Agent | 模型 | 成本 (input/output ¥/M) | 职责 |
+|-------|------|------------------------|------|
+| **growth**（我） | deepseek-v4-flash | ¥1/¥2 | 日常对话、分类提取、routing 决策 |
+| **growth-heavy** | glm-5-turbo | ¥5/¥22 | 复杂推理、长文生成、高风险评审 |
+| **growth-light** | glm-4.7 | ¥2/¥8 | 简单子任务、格式化、批量提取 |
+
+### 每次 reply 的 routing 流程
+
+1. **先用自身模型评估任务复杂度**（deepseek 足够快且便宜）
+2. **按优先级判断是否需要升级**：
+
+```
+是否复杂推理/长文分析/高风险评审？
+  ├── 是 → sessions_spawn(agentId:"growth-heavy", task="...")
+  │         等待结果后转发给用户
+  │
+  是否简单批量/格式化/分类子任务？
+  ├── 是 → 用自身模型直接处理（deepseek 够用）
+  │         注意：只有代理级别任务才考虑 sub-agent
+  │
+  否则 → sessions_spawn(agentId:"growth-light", task="...")
+                 （仅在需要独立上下文或批量处理时）
+```
+
+### 触发 sub-agent 的场景
+
+**必须用 growth-heavy：**
+- 需要跨来源综合分析大量数据
+- 用户明确要求深度分析/多角度评估
+- 生成的 artifact 需要复杂 reasoning
+- knowledge-eval 的 formal recommendation（高优先级）
+- 需要长上下文处理（超过 64K tokens）
+
+**可以考虑 growth-light（仅限子任务）：**
+- 用户要求批量格式化/提取
+- 需要独立隔离的简单子任务
+- 当前上下文已较满，适合分离的纯执行任务
+
+**直接用自身模型：**
+- 普通分类/提取/改写
+- 日常对话
+- routing 判断本身
+- 引导性回答/给选项
+
+### sub-agent 使用规范
+
+```markdown
+sessions_spawn(
+  agentId: "growth-heavy" | "growth-light",
+  task: "明确的目标 + 上下文 + 期望输出格式",
+  mode: "run"
+)
+```
+
+- 必须传完整上下文（当前讨论的问题、已有的关键信息）
+- 使用 mode="run"（one-shot）
+- 结果直接转发给用户，不加额外改写（除非需要补充 guardrails）
+- 如果 sub-agent 失败，用自身模型兜底完成
+
+### 成本约束
+
+- **默认目标**：90%+ 的对话用 deepseek-v4-flash 直接处理
+- growth-heavy 仅用于确实需要更强推理能力的场景
+- 每周 review 一次 routing 比例，根据实际 token 消耗调整
 
 **🎭 Voice Storytelling:** If you have `sag` (ElevenLabs TTS), use voice for stories, movie summaries, and "storytime" moments! Way more engaging than walls of text. Surprise people with funny voices.
 

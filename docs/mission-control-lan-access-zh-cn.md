@@ -57,7 +57,37 @@ ip -brief addr
 - `http://192.168.8.128:18920`
 - `http://raspberrypi.local:18920`
 
-### 步骤 2：把精确 Origin 写进 agent 的 `allowedOrigins`
+### 步骤 2：自动同步精确 Origin
+
+推荐先用仓库工具把当前网关主机的 LAN IP、主机名和 `.local` 入口同步到所有 agent：
+
+```bash
+python panopticon/tools/sync_mission_control_lan_origins.py
+```
+
+如果你还会通过其他固定地址访问，可以显式追加：
+
+```bash
+python panopticon/tools/sync_mission_control_lan_origins.py \
+  --origin http://192.168.1.3:18920 \
+  --origin http://raspberrypi.local:18920
+```
+
+同步后重建 agent 容器让 OpenClaw 重新读取配置：
+
+```bash
+docker compose -f panopticon/docker-compose.panopticon.yml up -d --force-recreate \
+  openclaw-nox openclaw-metrics openclaw-email openclaw-growth \
+  openclaw-trades openclaw-health openclaw-writing openclaw-personal
+```
+
+也可以先跑巡检，确认网关端口、容器健康和白名单是否一致：
+
+```bash
+bash panopticon/tools/check_mission_control_lan_access.sh
+```
+
+### 步骤 3：手工确认 `allowedOrigins`
 
 以 nox 为例，编辑 [../panopticon/agent-homes/nox/openclaw.json](../panopticon/agent-homes/nox/openclaw.json)，在 `gateway.controlUi.allowedOrigins` 中加入实际入口：
 
@@ -86,7 +116,7 @@ ip -brief addr
 - 不要误以为放开 `localhost` 就等于放开局域网 IP
 - 不要依赖 `/chat/<agent>/chat`
 
-### 步骤 3：重建对应 agent 容器
+### 步骤 4：重建对应 agent 容器
 
 修改配置后，重建对应 agent 容器让 OpenClaw 重新加载配置：
 
@@ -96,7 +126,7 @@ docker compose -f panopticon/docker-compose.panopticon.yml up -d --force-recreat
 
 如果你改的是其他 agent，就把 `openclaw-nox` 替换成对应服务名。
 
-### 步骤 4：从局域网客户端验证标准入口
+### 步骤 5：从局域网客户端验证标准入口
 
 在局域网另一台机器上，直接访问：
 

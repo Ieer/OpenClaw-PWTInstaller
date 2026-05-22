@@ -25,6 +25,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r panopticon/tools/requirements.txt
 
+      - name: Release defaults drift check
+        run: |
+          python tools/sync_openclaw_release.py --check
+
       - name: Manifest validation
         run: |
           python panopticon/tools/validate_panopticon.py

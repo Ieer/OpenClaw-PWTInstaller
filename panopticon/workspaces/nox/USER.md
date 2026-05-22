@@ -26,10 +26,19 @@
 
 ## PPT 任务偏好
 
-- 没有特别指定位置时：**本地保存到 U 盘**（`/mnt/usb/`）+ **备份到百度网盘 `/apps/bypy/tmp/` 目录**
+- 没有特别指定位置时：**本地保存到 U 盘**（`/mnt/usb/PWT`）+ **备份到百度网盘 `/apps/bypy/openclaw/report/` 目录**
 - 网盘备份目的：方便线上查看及下载
 - PPT 产出要求：必须可编辑（不生成图片式 PPT）
 - 版面要求：饱满（覆盖率 >95%），字体完整显示不截断
+
+## 网盘自动归档规则
+
+- **报告类文件**（pptx/ppt/pdf/html）→ `/apps/bypy/openclaw/report/`
+- **数据类文件**（xlsx/xls/csv/json）→ `/apps/bypy/openclaw/data/`
+- **技能/文档**（md/txt/yaml）→ `/apps/bypy/openclaw/skills/`
+- **压缩包**（zip/tar/gz）→ `/apps/bypy/openclaw/archive/`
+- **临时/其他** → `/apps/bypy/openclaw/temp/`
+- 定时扫描：每天 22:00（北京时间），自动扫描 `exports/` 和 `outbox/` 新文件并上传
 
 ## 工作方式（落盘 + 可恢复）
 

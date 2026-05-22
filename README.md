@@ -56,6 +56,7 @@
 git clone https://github.com/Ieer/OpenClaw-PWTInstaller.git
 cd OpenClaw-PWTInstaller
 chmod +x install.sh config-menu.sh
+./install.sh --preflight
 ./install.sh
 ```
 
@@ -73,7 +74,7 @@ openclaw dashboard --no-open
 git clone https://github.com/Ieer/OpenClaw-PWTInstaller.git
 cd OpenClaw-PWTInstaller
 
-python -m pip install -r panopticon/tools/requirements.txt
+python3 -m pip install -r panopticon/tools/requirements.txt
 # 首次运行时，脚本会自动补齐缺失的本地 env 覆盖文件并轮换 token。
 # 它还会生成 Compose、做校验并重启相关服务。
 # 先编辑这些本地文件里的真实值：
@@ -83,6 +84,8 @@ python -m pip install -r panopticon/tools/requirements.txt
 # - panopticon/env/nox.env, metrics.env, email.env, growth.env, trades.env, health.env, writing.env, personal.env
 bash panopticon/tools/rotate_gateway_tokens.sh
 ```
+
+`rotate_gateway_tokens.sh` 会优先使用仓库 `.venv/bin/python`，其次使用 `python3`/`python`；如果缺少 PyYAML，会提示对应的 `pip install -r panopticon/tools/requirements.txt` 修复命令。
 
 启动后主要入口：
 

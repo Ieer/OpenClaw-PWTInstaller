@@ -36,7 +36,7 @@ class Settings(BaseModel):
     enable_direct_agent_links: bool = False
     chat_upstream_port: int = 26216
     chat_force_loopback_headers: bool = True
-    chat_inject_script_enabled: bool = True
+    chat_inject_script_enabled: bool = False
     chat_clear_device_auth_storage: bool = True
     chat_inject_gateway_settings: bool = True
     chat_dom_avatar_rewrite: bool = True
@@ -122,7 +122,7 @@ def load_settings() -> Settings:
         ),
         chat_upstream_port=int((os.getenv("MC_CHAT_UPSTREAM_PORT") or "26216").strip()),
         chat_force_loopback_headers=_env_flag("MC_CHAT_PROXY_FORCE_LOOPBACK_HEADERS", True),
-        chat_inject_script_enabled=_env_flag("MC_CHAT_COMPAT_INJECT_SCRIPT_ENABLED", True),
+        chat_inject_script_enabled=_env_flag("MC_CHAT_COMPAT_INJECT_SCRIPT_ENABLED", False),
         chat_clear_device_auth_storage=_env_flag("MC_CHAT_COMPAT_CLEAR_DEVICE_AUTH_STORAGE", True),
         chat_inject_gateway_settings=_env_flag("MC_CHAT_COMPAT_INJECT_GATEWAY_SETTINGS", True),
         chat_dom_avatar_rewrite=_env_flag("MC_CHAT_COMPAT_DOM_AVATAR_REWRITE", True),

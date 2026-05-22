@@ -1650,6 +1650,11 @@ def _build_chat_inject_script(
     return "".join(parts)
 
 
+def _build_chat_base_path_script(agent: str) -> str:
+    base_path = f"/chat/{agent}"
+    return f'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="{base_path}";'
+
+
 def _normalize_control_ui_origin(origin: str | None) -> str | None:
     if not origin:
         return None
@@ -7597,7 +7602,7 @@ def create_app() -> FastAPI:
             if is_html:
                 content = await resp.aread()
                 text = content.decode("utf-8", errors="replace")
-                
+
                 if settings.chat_inject_script_enabled:
                     inject_script = _build_chat_inject_script(
                         agent,
@@ -7606,21 +7611,23 @@ def create_app() -> FastAPI:
                         inject_gateway_settings=settings.chat_inject_gateway_settings,
                         dom_avatar_rewrite=settings.chat_dom_avatar_rewrite,
                     )
+                else:
+                    inject_script = _build_chat_base_path_script(agent)
 
-                    if 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' in text:
-                        text = text.replace('window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";', inject_script)
+                if 'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";' in text:
+                    text = text.replace('window.__OPENCLAW_CONTROL_UI_BASE_PATH__="";', inject_script)
+                else:
+                    injected = f"<script>{inject_script}</script>"
+                    if '<script type="module"' in text:
+                        text = text.replace('<script type="module"', f"{injected}<script type=\"module\"", 1)
+                    elif "</head>" in text:
+                        text = text.replace("</head>", f"{injected}</head>", 1)
+                    elif "<body>" in text:
+                        text = text.replace("<body>", f"<body>{injected}", 1)
                     else:
-                        injected = f"<script>{inject_script}</script>"
-                        if '<script type="module"' in text:
-                            text = text.replace('<script type="module"', f"{injected}<script type=\"module\"", 1)
-                        elif "</head>" in text:
-                            text = text.replace("</head>", f"{injected}</head>", 1)
-                        elif "<body>" in text:
-                            text = text.replace("<body>", f"<body>{injected}", 1)
-                        else:
-                            text = f"{injected}{text}"
-                    if settings.chat_dom_avatar_rewrite:
-                        text = _rewrite_inline_assistant_avatar_vars(text, agent)
+                        text = f"{injected}{text}"
+                if settings.chat_dom_avatar_rewrite:
+                    text = _rewrite_inline_assistant_avatar_vars(text, agent)
                 await resp.aclose()
                 
                 return HTMLResponse(content=text, status_code=resp.status_code)

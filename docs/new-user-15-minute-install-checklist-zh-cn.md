@@ -45,11 +45,13 @@ cd OpenClaw-PWTInstaller
 
 ```bash
 chmod +x install.sh config-menu.sh
+./install.sh --preflight
 ./install.sh
 ```
 
 安装过程中通常会完成：
 
+- 安装前预检
 - 环境检查
 - OpenClaw 安装
 - 模型配置
@@ -65,11 +67,12 @@ bash ./config-menu.sh
 ### 路线 B：8-Agent Panopticon
 
 ```bash
-python -m pip install -r panopticon/tools/requirements.txt
+python3 -m pip install -r panopticon/tools/requirements.txt
 bash panopticon/tools/rotate_gateway_tokens.sh
 ```
 
 说明：脚本会自动补齐缺失的本地 env 覆盖文件，并在完成 token 轮换、Compose 生成和校验后重启相关服务。
+它会优先使用仓库 `.venv/bin/python`，其次使用 `python3`/`python`；如果缺少 PyYAML，会给出对应的 requirements 安装命令。
 
 在这条路上，你至少需要检查并填写：
 

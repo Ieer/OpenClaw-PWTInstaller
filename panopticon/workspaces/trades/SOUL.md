@@ -42,6 +42,7 @@ _You're not a chatbot. You're becoming someone._
 - 结论必须区分：事实（可验证）/推断（基于假设）/建议（需人决策）。
 - 每次阶段性同步用 4 行状态：已完成 / 进行中 / 阻塞 / 下一步。
 - 根目录不是工作台：除核心文档与固定目录外，不把脚本、图片、导出件、缓存、临时件直接放在 workspace 根目录。
+- U 盘（虾盘）数据边界：8 个 Agent 涉及 U 盘数据的读写/交付，只能使用 `/mnt/usb/PWT` 及其子目录，不使用其它 U 盘挂载路径；未特别说明子目录时，先按 `docs/`、`media/`、`exports/`、`outbox/`、`staging/`、`archive/`、`artifacts/`、`sources/`、`state/` 归类再落盘，并保留可审计输出。
 - 先归类再落盘：文档进 `docs/`，媒体进 `media/`，最终交付进 `exports/` 或 `outbox/`，临时件进 `staging/`，历史产物进 `archive/`，过程证据仍进 `artifacts/`。
 - 不确定落点时先放 `staging/<日期或任务名>/`；清理候选先放 `.trash/` 或 `archive/`，不要直接删除。
 

@@ -17,6 +17,22 @@ COMPOSE_FILE="${REPO_ROOT}/panopticon/docker-compose.panopticon.yml"
 
 AGENTS=(nox metrics email growth trades health writing personal)
 
+select_python() {
+  if [[ -x "$REPO_ROOT/.venv/bin/python" ]]; then
+    printf '%s\n' "$REPO_ROOT/.venv/bin/python"
+    return 0
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    command -v python3
+    return 0
+  fi
+  if command -v python >/dev/null 2>&1; then
+    command -v python
+    return 0
+  fi
+  return 1
+}
+
 cd "$REPO_ROOT"
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -29,10 +45,21 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v python >/dev/null 2>&1; then
-  echo "python not found" >&2
+if ! PYTHON_BIN="$(select_python)"; then
+  echo "python not found; install Python 3.11+ first" >&2
   exit 1
 fi
+
+if ! "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1
+import yaml
+PY
+then
+  echo "Python dependency check failed: PyYAML is missing for $PYTHON_BIN" >&2
+  echo "Run: $PYTHON_BIN -m pip install -r panopticon/tools/requirements.txt" >&2
+  exit 1
+fi
+
+echo "Using Python: $PYTHON_BIN"
 
 echo "[1/7] Ensuring local env overrides exist"
 if [[ -f "panopticon/.env.example" && ! -f "panopticon/.env" ]]; then
@@ -47,7 +74,7 @@ for example in panopticon/env/*.env.example; do
 done
 
 echo "[2/7] Generating tokens + writing local env overrides (gitignored)"
-python - <<'PY'
+"$PYTHON_BIN" - <<'PY'
 import json
 import secrets
 from pathlib import Path
@@ -137,11 +164,11 @@ print('ok')
 PY
 
 echo "[3/7] Regenerating compose artifacts"
-python panopticon/tools/generate_panopticon.py --prune
+"$PYTHON_BIN" panopticon/tools/generate_panopticon.py --prune
 
 echo "[4/7] Validating panopticon manifest, generated artifacts, and skills template"
-python panopticon/tools/validate_panopticon.py
-python panopticon/tools/validate_skills_template.py
+"$PYTHON_BIN" panopticon/tools/validate_panopticon.py
+"$PYTHON_BIN" panopticon/tools/validate_skills_template.py
 
 echo "[5/7] Force-recreating services to load new env"
 SERVICES=(mission-control-api mission-control-ui mission-control-gateway mc-heartbeat)
