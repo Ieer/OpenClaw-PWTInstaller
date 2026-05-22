@@ -3,7 +3,7 @@ FROM node:22-slim
 
 # When set to 1, fail the build if plugin installation fails.
 ARG STRICT_PLUGIN_INSTALL=0
-ARG OPENCLAW_VERSION=2026.5.12
+ARG OPENCLAW_VERSION=2026.5.20
 ARG FEISHU_PLUGIN_NPM_SPEC=@m1heng-clawd/feishu@0.1.18
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 

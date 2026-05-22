@@ -9,8 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = ROOT / ".venv" / "bin" / "python"
 SHELL_SYNTAX_CHECKS = [
+    ("single-agent installer", "bash", ROOT / "install.sh"),
+    ("configuration menu", "bash", ROOT / "config-menu.sh"),
     ("Mission Control API entrypoint", "sh", ROOT / "mission_control_api" / "docker-entrypoint.sh"),
     ("OpenClaw CN-IM init", "bash", ROOT / "external" / "OpenClaw-Docker-CN-IM" / "init.sh"),
+    ("Panopticon token rotation", "bash", ROOT / "panopticon" / "tools" / "rotate_gateway_tokens.sh"),
+    ("Panopticon service health check", "bash", ROOT / "panopticon" / "tools" / "check_panopticon_services.sh"),
     ("knowledge test env helper", "bash", ROOT / "tools" / "lib" / "knowledge_test_env.sh"),
     ("knowledge multiformat flow", "bash", ROOT / "tools" / "verify_knowledge_multiformat_chunk_flow.sh"),
     ("knowledge OCR flow", "bash", ROOT / "tools" / "verify_knowledge_ocr_flow.sh"),
@@ -53,6 +57,7 @@ def main() -> int:
     args = parser.parse_args()
 
     run_step("Sync release contract defaults", _python_cmd(ROOT / "tools" / "sync_openclaw_release.py"))
+    run_step("Check release contract defaults", _python_cmd(ROOT / "tools" / "sync_openclaw_release.py", "--check"))
     run_step("Generate Panopticon artifacts", _python_cmd(ROOT / "panopticon" / "tools" / "generate_panopticon.py"))
     run_step("Validate Panopticon and release alignment", _python_cmd(ROOT / "panopticon" / "tools" / "validate_panopticon.py"))
     run_shell_syntax_checks()

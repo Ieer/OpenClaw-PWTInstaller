@@ -194,7 +194,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.12"
+        OPENCLAW_VERSION: "2026.5.20"
         BUILDKIT_INLINE_CACHE: "1"
       cache_from:
         - openclaw-docker-cn-im:local
@@ -237,7 +237,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.12"
+        OPENCLAW_VERSION: "2026.5.20"
         BUILDKIT_INLINE_CACHE: "1"
       cache_from:
         - openclaw-docker-cn-im:local
@@ -280,7 +280,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.12"
+        OPENCLAW_VERSION: "2026.5.20"
         BUILDKIT_INLINE_CACHE: "1"
       cache_from:
         - openclaw-docker-cn-im:local
@@ -323,7 +323,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.12"
+        OPENCLAW_VERSION: "2026.5.20"
         BUILDKIT_INLINE_CACHE: "1"
       cache_from:
         - openclaw-docker-cn-im:local
@@ -366,7 +366,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.12"
+        OPENCLAW_VERSION: "2026.5.20"
         BUILDKIT_INLINE_CACHE: "1"
       cache_from:
         - openclaw-docker-cn-im:local
@@ -409,7 +409,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.12"
+        OPENCLAW_VERSION: "2026.5.20"
         BUILDKIT_INLINE_CACHE: "1"
       cache_from:
         - openclaw-docker-cn-im:local
@@ -452,7 +452,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.12"
+        OPENCLAW_VERSION: "2026.5.20"
         BUILDKIT_INLINE_CACHE: "1"
       cache_from:
         - openclaw-docker-cn-im:local
@@ -495,7 +495,7 @@ services:
       context: ../external/OpenClaw-Docker-CN-IM
       dockerfile: Dockerfile
       args:
-        OPENCLAW_VERSION: "2026.5.12"
+        OPENCLAW_VERSION: "2026.5.20"
         BUILDKIT_INLINE_CACHE: "1"
       cache_from:
         - openclaw-docker-cn-im:local

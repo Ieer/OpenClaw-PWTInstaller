@@ -39,10 +39,12 @@ GRAY='\033[0;90m'
 NC='\033[0m' # 无颜色
 
 # ================================ 配置变量 ================================
-OPENCLAW_VERSION_DEFAULT="2026.5.12"
-OPENCLAW_VERSION="$OPENCLAW_VERSION_DEFAULT"
+OPENCLAW_VERSION_DEFAULT="2026.5.20"
+OPENCLAW_VERSION="${OPENCLAW_VERSION:-}"
+OPENCLAW_VERSION_SOURCE="unresolved"
 CONFIG_DIR="$HOME/.openclaw"
 MIN_NODE_VERSION=22
+PREFLIGHT_MIN_FREE_MB="${PREFLIGHT_MIN_FREE_MB:-1024}"
 GITHUB_REPO="Ieer/OpenClaw-PWTInstaller"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/$GITHUB_REPO/main"
 OPENCLAW_RELEASE_MANIFEST_URL="$GITHUB_RAW_URL/openclaw-release.yaml"
@@ -111,22 +113,58 @@ spinner() {
     printf "    \b\b\b\b"
 }
 
-resolve_release_value() {
-    local key="$1"
-    local fallback="$2"
+resolve_openclaw_version() {
+    if [ -n "$OPENCLAW_VERSION" ]; then
+        OPENCLAW_VERSION_SOURCE="environment override"
+        log_info "目标 OpenClaw 版本: $OPENCLAW_VERSION ($OPENCLAW_VERSION_SOURCE)"
+        return 0
+    fi
 
     if ! command -v curl &> /dev/null; then
-        echo "$fallback"
-        return
+        OPENCLAW_VERSION="$OPENCLAW_VERSION_DEFAULT"
+        OPENCLAW_VERSION_SOURCE="script fallback: curl unavailable"
+        log_warn "无法读取远端 release manifest：curl 不可用，回退到脚本默认版本 $OPENCLAW_VERSION_DEFAULT"
+        log_info "目标 OpenClaw 版本: $OPENCLAW_VERSION ($OPENCLAW_VERSION_SOURCE)"
+        return 0
     fi
 
-    local value
-    value=$(curl -fsSL "$OPENCLAW_RELEASE_MANIFEST_URL" 2>/dev/null | awk -F': ' -v wanted="$key" '$1 == wanted {print $2; exit}')
-    if [ -n "$value" ]; then
-        echo "$value"
-    else
-        echo "$fallback"
+    local manifest_text=""
+    if ! manifest_text=$(curl -fsSL "$OPENCLAW_RELEASE_MANIFEST_URL" 2>/dev/null); then
+        OPENCLAW_VERSION="$OPENCLAW_VERSION_DEFAULT"
+        OPENCLAW_VERSION_SOURCE="script fallback: manifest unavailable"
+        log_warn "无法读取远端 release manifest，回退到脚本默认版本 $OPENCLAW_VERSION_DEFAULT"
+        log_warn "Manifest URL: $OPENCLAW_RELEASE_MANIFEST_URL"
+        log_info "目标 OpenClaw 版本: $OPENCLAW_VERSION ($OPENCLAW_VERSION_SOURCE)"
+        return 0
     fi
+
+    local resolved_version=""
+    resolved_version=$(printf '%s\n' "$manifest_text" | awk -F': ' '$1 == "openclaw_version" {print $2; exit}')
+    if [ -n "$resolved_version" ]; then
+        OPENCLAW_VERSION="$resolved_version"
+        OPENCLAW_VERSION_SOURCE="remote manifest"
+    else
+        OPENCLAW_VERSION="$OPENCLAW_VERSION_DEFAULT"
+        OPENCLAW_VERSION_SOURCE="script fallback: manifest missing openclaw_version"
+        log_warn "远端 release manifest 未包含 openclaw_version，回退到脚本默认版本 $OPENCLAW_VERSION_DEFAULT"
+    fi
+
+    log_info "目标 OpenClaw 版本: $OPENCLAW_VERSION ($OPENCLAW_VERSION_SOURCE)"
+}
+
+show_usage() {
+    cat << EOF
+OpenClaw installer
+
+Usage:
+  ./install.sh              运行交互式安装
+  ./install.sh --preflight  只做环境预检，不安装、不写配置
+  ./install.sh --help       显示帮助
+
+Environment:
+  OPENCLAW_VERSION          覆盖 openclaw-release.yaml 中的目标版本
+  PREFLIGHT_MIN_FREE_MB     预检磁盘空间阈值，默认 1024
+EOF
 }
 
 # 从 TTY 读取用户输入（支持 curl | bash 模式）
@@ -287,8 +325,6 @@ install_git() {
 
 install_dependencies() {
     log_step "检查并安装依赖..."
-
-    OPENCLAW_VERSION="${OPENCLAW_VERSION:-$(resolve_release_value openclaw_version "$OPENCLAW_VERSION_DEFAULT")}"
     
     # 安装基础依赖
     case "$OS" in
@@ -304,9 +340,137 @@ install_dependencies() {
             brew install curl wget jq
             ;;
     esac
+
+    resolve_openclaw_version
     
     install_git
     install_nodejs
+}
+
+preflight_failures=0
+preflight_warnings=0
+
+preflight_ok() {
+    log_info "[preflight] $1"
+}
+
+preflight_warn() {
+    preflight_warnings=$((preflight_warnings + 1))
+    log_warn "[preflight] $1"
+}
+
+preflight_fail() {
+    preflight_failures=$((preflight_failures + 1))
+    log_error "[preflight] $1"
+}
+
+check_package_manager_preflight() {
+    case "$OS" in
+        ubuntu|debian|centos|rhel|fedora|arch|manjaro)
+            if [ -n "$PACKAGE_MANAGER" ]; then
+                preflight_ok "包管理器可用: $PACKAGE_MANAGER"
+            else
+                preflight_fail "未找到支持的包管理器，请先安装 curl、wget、jq、git、Node.js $MIN_NODE_VERSION+"
+            fi
+            ;;
+        macos)
+            if command -v brew &> /dev/null; then
+                preflight_ok "Homebrew 可用"
+            else
+                preflight_warn "Homebrew 未安装；交互式安装流程会尝试安装 Homebrew"
+            fi
+            ;;
+    esac
+}
+
+check_node_preflight() {
+    if ! command -v node &> /dev/null; then
+        preflight_warn "Node.js 未安装；交互式安装流程会尝试安装 Node.js $MIN_NODE_VERSION"
+        return 0
+    fi
+
+    local node_major=""
+    node_major=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+    if [[ "$node_major" =~ ^[0-9]+$ ]] && [ "$node_major" -ge "$MIN_NODE_VERSION" ]; then
+        preflight_ok "Node.js 版本满足要求: $(node -v)"
+    else
+        preflight_warn "Node.js 版本过低: $(node -v)，需要 v$MIN_NODE_VERSION+；交互式安装流程会尝试升级"
+    fi
+}
+
+check_npm_registry_preflight() {
+    if ! command -v npm &> /dev/null; then
+        preflight_warn "npm 不可用；Node.js 安装完成后再检查 npm registry"
+        return 0
+    fi
+
+    if ! command -v curl &> /dev/null; then
+        preflight_warn "curl 不可用，跳过 npm registry 连通性检查"
+        return 0
+    fi
+
+    local registry_url=""
+    registry_url=$(npm config get registry 2>/dev/null || echo "https://registry.npmjs.org/")
+    registry_url="${registry_url%/}"
+    if curl -fsSL --max-time 10 "$registry_url/-/ping" >/dev/null 2>&1 || \
+       curl -fsSL --max-time 10 "$registry_url" >/dev/null 2>&1; then
+        preflight_ok "npm registry 可达: $registry_url"
+    else
+        preflight_warn "npm registry 暂不可达: $registry_url；安装 openclaw@$OPENCLAW_VERSION 时可能失败"
+    fi
+}
+
+check_disk_space_preflight() {
+    if ! [[ "$PREFLIGHT_MIN_FREE_MB" =~ ^[0-9]+$ ]]; then
+        preflight_warn "PREFLIGHT_MIN_FREE_MB 不是有效数字，使用默认值 1024MB"
+        PREFLIGHT_MIN_FREE_MB=1024
+    fi
+
+    local available_kb=""
+    available_kb=$(df -Pk "$HOME" 2>/dev/null | awk 'NR == 2 {print $4}')
+    if ! [[ "$available_kb" =~ ^[0-9]+$ ]]; then
+        preflight_warn "无法读取 $HOME 可用磁盘空间"
+        return 0
+    fi
+
+    local min_free_kb=$((PREFLIGHT_MIN_FREE_MB * 1024))
+    local available_mb=$((available_kb / 1024))
+    if [ "$available_kb" -lt "$min_free_kb" ]; then
+        preflight_fail "可用磁盘空间 ${available_mb}MB，低于预检阈值 ${PREFLIGHT_MIN_FREE_MB}MB"
+    else
+        preflight_ok "可用磁盘空间 ${available_mb}MB，满足预检阈值 ${PREFLIGHT_MIN_FREE_MB}MB"
+    fi
+}
+
+run_preflight() {
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}           OpenClaw 安装预检${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    detect_os
+    if [[ $EUID -eq 0 ]]; then
+        preflight_warn "当前以 root 用户运行；正式安装建议使用普通用户"
+    fi
+
+    check_package_manager_preflight
+    resolve_openclaw_version
+    check_node_preflight
+    check_npm_registry_preflight
+    check_disk_space_preflight
+
+    echo ""
+    if [ "$preflight_failures" -gt 0 ]; then
+        log_error "预检失败: ${preflight_failures} 个错误，${preflight_warnings} 个警告"
+        return 1
+    fi
+
+    if [ "$preflight_warnings" -gt 0 ]; then
+        log_warn "预检通过，但有 ${preflight_warnings} 个警告；交互式安装流程可能会尝试自动修复部分依赖"
+    else
+        log_info "预检通过"
+    fi
 }
 
 # ================================ OpenClaw 安装 ================================
@@ -321,7 +485,7 @@ create_directories() {
 
 install_openclaw() {
     log_step "安装 OpenClaw..."
-    log_info "目标 OpenClaw 版本: $OPENCLAW_VERSION"
+    log_info "目标 OpenClaw 版本: $OPENCLAW_VERSION ($OPENCLAW_VERSION_SOURCE)"
     
     # 检查是否已安装
     if check_command openclaw; then
@@ -1596,6 +1760,25 @@ run_config_menu() {
 # ================================ 主函数 ================================
 
 main() {
+    case "${1:-}" in
+        --preflight)
+            print_banner
+            run_preflight
+            return $?
+            ;;
+        -h|--help)
+            show_usage
+            return 0
+            ;;
+        "")
+            ;;
+        *)
+            log_error "未知参数: $1"
+            show_usage
+            return 1
+            ;;
+    esac
+
     print_banner
     
     echo -e "${YELLOW}⚠️  警告: OpenClaw 需要完全的计算机权限${NC}"
