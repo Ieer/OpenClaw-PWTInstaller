@@ -5,6 +5,9 @@
 Thumbs.db
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
 # ------------------------------
 # Environment / Secrets
@@ -13,6 +16,7 @@ Thumbs.db
 .env.*
 !.env.example
 !.env.*.example
+.envrc
 *.pem
 *.key
 *.p12
@@ -26,20 +30,31 @@ Thumbs.db
 logs/
 tmp/
 temp/
+.tmp/
 
 # ------------------------------
 # Python
 # ------------------------------
 __pycache__/
 *.py[cod]
+*$py.class
 *.so
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
+.hypothesis/
+.tox/
+.nox/
 .venv/
 venv/
+/env/
+/ENV/
+*.egg-info/
+.eggs/
 
 # ------------------------------
 # Node
@@ -49,6 +64,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+.npm/
+.pnpm-store/
+coverage/
 
 # ------------------------------
 # Build / Cache
@@ -56,6 +74,7 @@ pnpm-debug.log*
 dist/
 build/
 .cache/
+*.tsbuildinfo
 
 # ------------------------------
 # Database / Local data
@@ -63,6 +82,9 @@ build/
 *.db
 *.sqlite
 *.sqlite3
+*.db-*
+*.sqlite-*
+*.sqlite3-*
 data/
 
 # ------------------------------
@@ -71,6 +93,7 @@ data/
 tmp.txt
 README-mo.md
 .release-state/
+docker-compose.override.yml
 
 # ------------------------------
 # Panopticon runtime data
@@ -91,8 +114,10 @@ panopticon/workspaces/*/ppt-output/
 panopticon/workspaces/*/state/
 panopticon/workspaces/*/sources/
 panopticon/workspaces/*/node_modules/
+panopticon/workspaces/*/.npmrc
 panopticon/workspaces/*/thumbnails/
 panopticon/workspaces/*/components/
+panopticon/workspaces/*/media/
 panopticon/workspaces/*/HEARTBEAT.md
 panopticon/workspaces/*/DREAMS.md
 panopticon/workspaces/*/**/DREAMS.md
@@ -100,24 +125,13 @@ panopticon/workspaces/*/**/MEMORY.md
 panopticon/workspaces/*/.trash/
 panopticon/workspaces/*/staging/
 panopticon/workspaces/*/archive/
-panopticon/workspaces/*/archive/baidu-backup/
-panopticon/workspaces/*/skills/pycaret-automl/
+panopticon/workspaces/*/skills/
 panopticon/workspaces/*/exports/ppt-output/
 panopticon/workspaces/*/exports/*.pptx
-panopticon/workspaces/*/media/thumbnails/
 panopticon/workspaces/*/runtime-assets/*venv/
 panopticon/workspaces/*/runtime-assets/*.traineddata
 panopticon/workspaces/*/memory/
-panopticon/workspaces/*/memory/dreaming/
 panopticon/workspaces/*/*.pptx
-panopticon/workspaces/*/memory/.dreams/
-panopticon/workspaces/*/memory/*.md
-panopticon/workspaces/*/memory/heartbeat-state.json
-panopticon/workspaces/*/memory/20??-??-??.md
-panopticon/workspaces/*/memory/*-daily-pulse.md
-panopticon/workspaces/*/memory/*-weekly.md
-panopticon/workspaces/*/memory/daily_heartbeat_*.md
-panopticon/workspaces/*/memory/draft-pipeline-*.md
 
 # Panopticon local env overrides (contain secrets; do not commit)
 panopticon/env/*.env
