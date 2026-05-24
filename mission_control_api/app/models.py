@@ -59,6 +59,12 @@ events = sa.Table(
 sa.Index("idx_events_created_at_desc", events.c.created_at.desc())
 sa.Index("idx_events_type_created_at_desc", events.c.type, events.c.created_at.desc())
 sa.Index(
+    "idx_events_task_id_created_at_desc",
+    events.c.task_id,
+    events.c.created_at.desc(),
+    postgresql_where=events.c.task_id.is_not(None),
+)
+sa.Index(
     "idx_events_heartbeat_agent_created_at_desc",
     events.c.agent,
     events.c.created_at.desc(),

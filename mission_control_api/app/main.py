@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, Response
 import httpx
 import asyncio
@@ -7095,6 +7095,80 @@ def create_app() -> FastAPI:
             assignee=body.assignee,
             known_agents=_known_agent_slugs(settings),
         )
+
+    async def _get_task_row_or_404(session, task_id: UUID):
+        row = (
+            await session.execute(
+                sa.select(
+                    tasks.c.id,
+                    tasks.c.title,
+                    tasks.c.status,
+                    tasks.c.assignee,
+                    tasks.c.tags,
+                    tasks.c.created_at,
+                    tasks.c.updated_at,
+                ).where(tasks.c.id == task_id)
+            )
+        ).first()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"task not found: {task_id}")
+        return row
+
+    @app.get("/v1/tasks/{task_id}", response_model=TaskOut)
+    async def get_task(
+        task_id: UUID,
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> TaskOut:
+        row = await _get_task_row_or_404(session, task_id)
+        return TaskOut(**row._asdict())
+
+    @app.get("/v1/tasks/{task_id}/comments", response_model=list[CommentOut])
+    async def get_task_comments(
+        task_id: UUID,
+        limit: int = Query(default=50, ge=1, le=200),
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> list[CommentOut]:
+        await _get_task_row_or_404(session, task_id)
+        stmt = (
+            sa.select(
+                comments.c.id,
+                comments.c.task_id,
+                comments.c.author,
+                comments.c.body,
+                comments.c.created_at,
+            )
+            .where(comments.c.task_id == task_id)
+            .order_by(comments.c.created_at.desc())
+            .limit(limit)
+        )
+        rows = (await session.execute(stmt)).all()
+        return [CommentOut(**row._asdict()) for row in reversed(rows)]
+
+    @app.get("/v1/tasks/{task_id}/events", response_model=list[EventOut])
+    async def get_task_events(
+        task_id: UUID,
+        limit: int = Query(default=50, ge=1, le=200),
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ) -> list[EventOut]:
+        await _get_task_row_or_404(session, task_id)
+        stmt = (
+            sa.select(
+                events.c.id,
+                events.c.type,
+                events.c.agent,
+                events.c.task_id,
+                events.c.payload,
+                events.c.created_at,
+            )
+            .where(events.c.task_id == task_id)
+            .order_by(events.c.created_at.desc())
+            .limit(limit)
+        )
+        rows = (await session.execute(stmt)).all()
+        return [EventOut(**row._asdict()) for row in rows]
 
     @app.post("/v1/tasks/{task_id}/claim", response_model=TaskOut)
     async def claim_task(

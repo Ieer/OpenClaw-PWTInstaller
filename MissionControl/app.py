@@ -560,6 +560,30 @@ def api_post_json(path: str, body: dict, *, timeout: float = 3.0):
     return resp.json()
 
 
+def _format_api_error(exc: Exception) -> str:
+    if isinstance(exc, requests.HTTPError):
+        response = exc.response
+        status = response.status_code if response is not None else "error"
+        detail = ""
+        if response is not None:
+            try:
+                body = response.json()
+            except ValueError:
+                body = response.text[:300]
+            if isinstance(body, dict):
+                detail_obj = body.get("detail") or body.get("message") or body
+                if isinstance(detail_obj, dict) and isinstance(detail_obj.get("errors"), list):
+                    detail = "; ".join(str(item) for item in detail_obj.get("errors") or [])
+                elif isinstance(detail_obj, list):
+                    detail = "; ".join(str(item) for item in detail_obj)
+                else:
+                    detail = str(detail_obj)
+            else:
+                detail = str(body)
+        return f"HTTP {status}: {detail or exc}"
+    return str(exc)
+
+
 _AGENT_CATALOG_CACHE = {
     "generated_at": 0.0,
     "data": [],
@@ -693,6 +717,118 @@ def _safe_agent_slug(value: str | None) -> str:
     return slug
 
 
+def _default_task_ui() -> dict:
+    return {
+        "selected_task_id": "",
+        "selected_task_status": "",
+        "drawer_open": False,
+        "drawer_mode": "view",
+        "drawer_message": "",
+        "drawer_message_tone": "neutral",
+        "pending_action": "",
+        "message": "",
+        "message_tone": "neutral",
+        "last_click_nonce": 0,
+    }
+
+
+def _default_create_task_ui() -> dict:
+    return {
+        "open": False,
+        "submitting": False,
+        "route_preview": None,
+        "message": "",
+        "message_tone": "neutral",
+        "revision": 0,
+    }
+
+
+def _default_task_refresh_signal() -> dict:
+    return {
+        "revision": 0,
+        "reason": "",
+        "task_id": "",
+        "last_success_epoch": 0.0,
+    }
+
+
+def _default_task_detail_state() -> dict:
+    return {
+        "task_id": "",
+        "loading": False,
+        "task": None,
+        "comments": [],
+        "events": [],
+        "error": "",
+        "fetched_at": "",
+        "revision": 0,
+    }
+
+
+def _bump_task_refresh_signal(task_refresh_signal, *, reason: str, task_id: str) -> dict:
+    refresh_state = _default_task_refresh_signal()
+    if isinstance(task_refresh_signal, dict):
+        refresh_state.update(task_refresh_signal)
+    refresh_state["revision"] = int(refresh_state.get("revision") or 0) + 1
+    refresh_state["reason"] = str(reason or "task.detail.refresh")
+    refresh_state["task_id"] = str(task_id or "").strip()
+    refresh_state["last_success_epoch"] = time.time()
+    return refresh_state
+
+
+def _short_task_id(task_id: str | None) -> str:
+    text = str(task_id or "").strip()
+    return text[:8] if text else "-"
+
+
+def _agent_dropdown_options() -> list[dict]:
+    options: list[dict] = []
+    for item in _get_agent_catalog():
+        if not item.get("enabled", True):
+            continue
+        slug = str(item.get("slug") or "").strip()
+        if not slug:
+            continue
+        label = str(item.get("label") or _slug_label(slug)).strip() or _slug_label(slug)
+        display = slug if label.lower() == slug.lower() else f"{label} ({slug})"
+        options.append({"label": display, "value": slug})
+    return options
+
+
+def _render_route_preview(preview):
+    if not isinstance(preview, dict) or not preview:
+        return html.Div("No route preview yet.", className="create-task-preview-empty")
+
+    suggested = str(preview.get("suggested_assignee") or "unassigned")
+    try:
+        confidence = float(preview.get("confidence") or 0.0) * 100.0
+    except (TypeError, ValueError):
+        confidence = 0.0
+    matched_rules = preview.get("matched_rules") if isinstance(preview.get("matched_rules"), list) else []
+    reason = str(preview.get("reason") or "").strip()
+
+    return html.Div(
+        className="create-task-preview-card",
+        children=[
+            html.Div(
+                className="create-task-preview-head",
+                children=[
+                    html.Span("Suggested agent", className="create-task-preview-label"),
+                    html.Span(suggested, className="create-task-preview-agent"),
+                ],
+            ),
+            html.Div(f"Confidence {confidence:.0f}%", className="create-task-preview-line"),
+            html.Div(reason or "No routing rule matched.", className="create-task-preview-line"),
+            html.Div(
+                className="card-tags create-task-preview-tags",
+                children=[html.Span(str(rule), className="tag") for rule in matched_rules[:8]],
+            )
+            if matched_rules
+            else html.Div("No matched rules", className="create-task-preview-muted"),
+        ],
+    )
+
+
 def _stat_class_high_bad(value: float, warn: float, critical: float) -> str:
     if value >= critical:
         return "stat stat-critical"
@@ -802,13 +938,21 @@ def _convert_board(board: dict) -> list[dict]:
     for col in board.get("columns", []) or []:
         status = str(col.get("title") or "").strip() or "INBOX"
         cards = []
-        for t in col.get("cards", []) or []:
-            updated = _parse_iso(t.get("updated_at")) or _parse_iso(t.get("created_at"))
+        for idx, t in enumerate(col.get("cards", []) or []):
+            task_id = str(t.get("id") or f"{status.lower()}-{idx}").strip()
+            created_raw = t.get("created_at")
+            updated_raw = t.get("updated_at")
+            updated = _parse_iso(updated_raw) or _parse_iso(created_raw)
             cards.append(
                 {
+                    "id": task_id,
+                    "short_id": _short_task_id(task_id),
+                    "status": status,
                     "title": t.get("title") or "(untitled)",
-                    "tags": t.get("tags") or [],
+                    "tags": [str(tag) for tag in (t.get("tags") or []) if str(tag or "").strip()],
                     "assignee": t.get("assignee") or "-",
+                    "created_at": created_raw,
+                    "updated_at": updated_raw,
                     "age": _human_age(updated),
                     "tone": _tone_for_status(status),
                 }
@@ -913,6 +1057,10 @@ def _convert_feed(feed: list[dict]) -> list[dict]:
 
         out.append(
             {
+                "id": str(evt.get("id") or ""),
+                "type": str(evt_type or "event"),
+                "task_id": task_id,
+                "created_at": evt.get("created_at") or "",
                 "agent": agent,
                 "action": action,
                 "age": _human_age(created),
@@ -1000,10 +1148,24 @@ def agent_card(agent):
 
 
 def task_card(card):
-    tone_class = f"card tone-{card['tone']}"
+    task_id = str(card.get("id") or "").strip()
+    status = str(card.get("status") or "").strip() or "INBOX"
+    tone_class = f"card task-card tone-{card['tone']}"
     return html.Div(
+        id={"type": "task-card", "task_id": task_id, "status": status},
         className=tone_class,
+        n_clicks=0,
+        role="button",
+        tabIndex=0,
+        **{"aria-label": f"Select task {_short_task_id(task_id)}: {card.get('title') or '(untitled)'}"},
         children=[
+            html.Div(
+                className="card-kicker",
+                children=[
+                    html.Span(f"#{card.get('short_id') or _short_task_id(task_id)}", className="card-id"),
+                    html.Span(status, className="card-status"),
+                ],
+            ),
             html.Div(card["title"], className="card-title"),
             html.Div(
                 className="card-meta",
@@ -1054,6 +1216,238 @@ def feed_item(item):
             html.Div(item["age"], className="feed-age"),
         ],
     )
+
+
+def _find_task_snapshot(columns: list[dict] | None, task_id: str) -> dict | None:
+    needle = str(task_id or "").strip()
+    if not needle:
+        return None
+    for column_data in columns or []:
+        if not isinstance(column_data, dict):
+            continue
+        for card in column_data.get("cards") or []:
+            if isinstance(card, dict) and str(card.get("id") or "").strip() == needle:
+                return card
+    return None
+
+
+def _format_task_timestamp(value: str | None) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "-"
+    parsed = _parse_iso(text)
+    if not parsed:
+        return text
+    return parsed.astimezone().strftime("%Y-%m-%d %H:%M")
+
+
+def _task_detail_meta(label: str, value: str | None):
+    return html.Div(
+        className="task-detail-meta-item",
+        children=[
+            html.Div(label, className="task-detail-meta-label"),
+            html.Div(str(value or "-").strip() or "-", className="task-detail-meta-value"),
+        ],
+    )
+
+
+def _render_task_detail_empty(title: str, message: str):
+    return html.Div(
+        className="task-detail-empty",
+        children=[
+            html.Div(title, className="task-detail-empty-title"),
+            html.Div(message, className="task-detail-empty-message"),
+        ],
+    )
+
+
+def _render_task_detail_notice(message: str | None, tone: str | None):
+    text = str(message or "").strip()
+    if not text:
+        return None
+    safe_tone = str(tone or "neutral").strip().lower()
+    if safe_tone not in {"ok", "warn", "error", "neutral"}:
+        safe_tone = "neutral"
+    return html.Div(text, className=f"task-detail-notice {safe_tone}", role="status", **{"aria-live": "polite"})
+
+
+def _normalize_detail_task(task: dict | None) -> dict | None:
+    if not isinstance(task, dict):
+        return None
+
+    task_id = str(task.get("id") or "").strip()
+    status = str(task.get("status") or "unknown").strip() or "unknown"
+    updated_raw = task.get("updated_at") or task.get("created_at")
+    updated = _parse_iso(updated_raw)
+    return {
+        "id": task_id,
+        "short_id": _short_task_id(task_id),
+        "status": status,
+        "title": task.get("title") or "(untitled)",
+        "tags": [str(tag) for tag in (task.get("tags") or []) if str(tag or "").strip()],
+        "assignee": task.get("assignee") or "-",
+        "created_at": task.get("created_at") or "",
+        "updated_at": task.get("updated_at") or "",
+        "age": _human_age(updated),
+        "tone": _tone_for_status(status),
+    }
+
+
+def _render_task_comment_rows(comments: list[dict] | None):
+    rows = []
+    for item in comments or []:
+        if not isinstance(item, dict):
+            continue
+        author = str(item.get("author") or "-").strip() or "-"
+        created = _format_task_timestamp(item.get("created_at"))
+        body = str(item.get("body") or "").strip()
+        rows.append(
+            html.Div(
+                className="task-detail-comment-item",
+                children=[
+                    html.Div(
+                        className="task-detail-comment-top",
+                        children=[
+                            html.Span(author, className="task-detail-comment-author"),
+                            html.Span(created, className="task-detail-comment-time"),
+                        ],
+                    ),
+                    html.Div(body or "-", className="task-detail-comment-body"),
+                ],
+            )
+        )
+        if len(rows) >= 20:
+            break
+    return rows
+
+
+def _render_task_activity_rows(feed_items: list[dict] | None, task_id: str):
+    rows = []
+    for item in feed_items or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("task_id") or "").strip() != task_id:
+            continue
+        event_type = str(item.get("type") or "event").strip() or "event"
+        age = str(item.get("age") or "").strip()
+        created = _format_task_timestamp(item.get("created_at"))
+        time_text = age if created == "-" else f"{age} · {created}" if age else created
+        rows.append(
+            html.Div(
+                className="task-detail-activity-item",
+                children=[
+                    html.Div(
+                        className="task-detail-activity-top",
+                        children=[
+                            html.Span(event_type, className="task-detail-activity-type"),
+                            html.Span(time_text, className="task-detail-activity-age"),
+                        ],
+                    ),
+                    html.Div(str(item.get("action") or "event"), className="task-detail-activity-action"),
+                    html.Div(str(item.get("agent") or "-"), className="task-detail-activity-agent"),
+                ],
+            )
+        )
+        if len(rows) >= 10:
+            break
+    return rows
+
+
+def _render_task_detail_content(
+    task: dict,
+    comments: list[dict] | None,
+    events: list[dict] | None,
+    drawer_message: str | None = "",
+    drawer_message_tone: str | None = "neutral",
+):
+    detail_task = _normalize_detail_task(task) or task
+    task_id = str(detail_task.get("id") or "").strip()
+    status = str(detail_task.get("status") or "unknown").strip() or "unknown"
+    tags = [str(tag).strip() for tag in (detail_task.get("tags") or []) if str(tag or "").strip()]
+    activity_rows = _render_task_activity_rows(_convert_feed(events if isinstance(events, list) else []), task_id)
+    comment_rows = _render_task_comment_rows(comments if isinstance(comments, list) else [])
+    notice = _render_task_detail_notice(drawer_message, drawer_message_tone)
+
+    return html.Div(
+        className="task-detail-body",
+        children=[
+            notice,
+            html.Div(
+                className="task-detail-summary",
+                children=[
+                    html.Span(status, className=f"task-detail-status tone-{_tone_for_status(status)}"),
+                    html.Div(str(detail_task.get("title") or "(untitled)"), className="task-detail-heading"),
+                ],
+            ),
+            html.Div(
+                className="task-detail-meta-grid",
+                children=[
+                    _task_detail_meta("Assignee", str(detail_task.get("assignee") or "-")),
+                    _task_detail_meta("Created", _format_task_timestamp(detail_task.get("created_at"))),
+                    _task_detail_meta("Updated", _format_task_timestamp(detail_task.get("updated_at"))),
+                    _task_detail_meta("Age", str(detail_task.get("age") or "-")),
+                ],
+            ),
+            html.Div(
+                className="task-detail-section",
+                children=[
+                    html.Div("Tags", className="task-detail-section-title"),
+                    html.Div(
+                        className="task-detail-tag-list",
+                        children=[html.Span(tag, className="tag task-detail-tag") for tag in tags]
+                        or [html.Span("No tags", className="task-detail-muted")],
+                    ),
+                ],
+            ),
+            html.Div(
+                className="task-detail-section",
+                children=[
+                    html.Div("Comments", className="task-detail-section-title"),
+                    html.Div(
+                        className="task-detail-comment-list",
+                        children=comment_rows
+                        or [_render_task_detail_empty("No comments", "No comment is currently attached to this task.")],
+                    ),
+                ],
+            ),
+            html.Div(
+                className="task-detail-section",
+                children=[
+                    html.Div("Task Events", className="task-detail-section-title"),
+                    html.Div(
+                        className="task-detail-activity-list",
+                        children=activity_rows
+                        or [_render_task_detail_empty("No task events", "No event is currently attached to this task.")],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+def _task_detail_can_claim(task: dict | None) -> bool:
+    if not isinstance(task, dict):
+        return False
+    status = str(task.get("status") or "").strip().upper()
+    return bool(status) and status != "DONE"
+
+
+def _task_detail_can_complete(task: dict | None, *, force: bool = False) -> bool:
+    if not isinstance(task, dict):
+        return False
+    status = str(task.get("status") or "").strip().upper()
+    if not status or status == "DONE":
+        return False
+    return bool(force) or status in {"IN PROGRESS", "REVIEW"}
+
+
+def _task_detail_can_review(task: dict | None, *, force: bool = False) -> bool:
+    if not isinstance(task, dict):
+        return False
+    status = str(task.get("status") or "").strip().upper()
+    if not status or status == "DONE":
+        return False
+    return bool(force) or status == "REVIEW"
 
 
 app = Dash(__name__, update_title=None)
@@ -1192,6 +1586,12 @@ app.layout = html.Div(
             },
         ),
         dcc.Store(id="sync-state", data=_sync_state_default()),
+        dcc.Store(id="task-ui", data=_default_task_ui()),
+        dcc.Store(id="create-task-ui", data=_default_create_task_ui()),
+        dcc.Store(id="task-refresh-signal", data=_default_task_refresh_signal()),
+        dcc.Store(id="task-detail-store", data=_default_task_detail_state()),
+        dcc.Store(id="board-data-store", data=[]),
+        dcc.Store(id="feed-data-store", data=[]),
         dcc.Store(
             id="skills-ui",
             data={
@@ -1349,11 +1749,18 @@ app.layout = html.Div(
                                 html.Div(
                                     className="panel-filters",
                                     children=[
+                                        html.Button("New Task", id="open-create-task", className="filter-chip task-create-chip"),
                                         html.Button("All", id="board-filter-all", className="filter-chip active"),
                                         html.Button("Tasks", id="board-filter-tasks", className="filter-chip"),
                                     ],
                                 ),
                             ],
+                        ),
+                        html.Div(
+                            id="task-action-notice",
+                            className="task-action-notice",
+                            role="status",
+                            **{"aria-live": "polite"},
                         ),
                         html.Div(id="board", className="board"),
                     ],
@@ -1380,6 +1787,323 @@ app.layout = html.Div(
                         html.Div(id="feed", className="feed"),
                     ],
                 ),
+            ],
+        ),
+        html.Div(id="task-detail-backdrop", className="task-detail-backdrop", n_clicks=0),
+        html.Div(
+            id="task-detail-drawer",
+            className="task-detail-drawer",
+            role="dialog",
+            **{"aria-modal": "true", "aria-labelledby": "task-detail-title"},
+            children=[
+                html.Div(
+                    className="task-detail-header",
+                    children=[
+                        html.Div(
+                            className="task-detail-header-text",
+                            children=[
+                                html.Div("Task Detail", id="task-detail-title", className="task-detail-title"),
+                                html.Div("", id="task-detail-subtitle", className="task-detail-subtitle"),
+                            ],
+                        ),
+                        html.Div(
+                            className="task-detail-header-actions",
+                            children=[
+                                html.Button("Refresh", id="refresh-task-detail", className="ghost-button task-detail-refresh", disabled=True),
+                                html.Button("Close", id="close-task-detail", className="ghost-button task-detail-close"),
+                                html.Button(
+                                    "",
+                                    id="task-detail-esc-close",
+                                    className="task-detail-esc-close",
+                                    n_clicks=0,
+                                    tabIndex=-1,
+                                    **{"aria-hidden": "true"},
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+                html.Div(id="task-detail-content", className="task-detail-content"),
+                html.Div(
+                    id="task-operation-pending",
+                    className="task-operation-pending",
+                ),
+                html.Div(
+                    id="task-comment-panel",
+                    className="task-detail-comment-composer is-hidden",
+                    children=[
+                        html.Div("Comment", className="task-detail-section-title"),
+                        html.Div(
+                            className="task-detail-comment-form",
+                            children=[
+                                dcc.Input(
+                                    id="task-comment-author",
+                                    className="task-detail-input",
+                                    type="text",
+                                    placeholder="Author",
+                                    value="",
+                                    debounce=True,
+                                    disabled=True,
+                                ),
+                                dcc.Textarea(
+                                    id="task-comment-body",
+                                    className="task-detail-textarea",
+                                    placeholder="Comment",
+                                    value="",
+                                    disabled=True,
+                                ),
+                                html.Button("Add Comment", id="add-task-comment", className="ghost-button task-detail-action-button", disabled=True),
+                            ],
+                        ),
+                    ],
+                ),
+                html.Div(
+                    id="task-detail-actions",
+                    className="task-detail-actions",
+                    children=[
+                        html.Div(
+                            id="task-claim-panel",
+                            className="task-detail-action-panel task-detail-flow-panel is-primary",
+                            children=[
+                                html.Div("Claim", className="task-detail-section-title"),
+                                html.Div(
+                                    className="task-detail-action-row",
+                                    children=[
+                                        dcc.Dropdown(
+                                            id="task-claim-agent",
+                                            className="task-detail-select",
+                                            options=[],
+                                            value=None,
+                                            placeholder="Agent",
+                                            clearable=False,
+                                        ),
+                                        html.Details(
+                                            className="task-detail-advanced",
+                                            children=[
+                                                html.Summary("Advanced"),
+                                                dcc.Checklist(
+                                                    id="task-claim-force",
+                                                    className="task-detail-checklist",
+                                                    options=[{"label": "Force", "value": "force"}],
+                                                    value=[],
+                                                ),
+                                            ],
+                                        ),
+                                        html.Button("Claim", id="claim-task", className="ghost-button primary-action task-detail-action-button", disabled=True),
+                                    ],
+                                ),
+                            ],
+                        ),
+                        html.Div(
+                            id="task-complete-panel",
+                            className="task-detail-action-panel task-detail-flow-panel is-hidden",
+                            children=[
+                                html.Div("Complete", className="task-detail-section-title"),
+                                html.Div(
+                                    className="task-detail-action-row",
+                                    children=[
+                                        dcc.Dropdown(
+                                            id="task-complete-agent",
+                                            className="task-detail-select",
+                                            options=[],
+                                            value=None,
+                                            placeholder="Agent",
+                                            clearable=False,
+                                        ),
+                                        dcc.Checklist(
+                                            id="task-complete-review-gate",
+                                            className="task-detail-checklist",
+                                            options=[{"label": "Request review", "value": "review_gate"}],
+                                            value=[],
+                                        ),
+                                        html.Details(
+                                            className="task-detail-advanced",
+                                            children=[
+                                                html.Summary("Advanced"),
+                                                dcc.Checklist(
+                                                    id="task-complete-force",
+                                                    className="task-detail-checklist",
+                                                    options=[{"label": "Force", "value": "force"}],
+                                                    value=[],
+                                                ),
+                                            ],
+                                        ),
+                                        html.Button("Complete", id="complete-task", className="ghost-button primary-action task-detail-action-button", disabled=True),
+                                    ],
+                                ),
+                                html.Details(
+                                    className="task-detail-details",
+                                    children=[
+                                        html.Summary("Add details"),
+                                        html.Div(
+                                            className="task-detail-operation-form",
+                                            children=[
+                                                dcc.Textarea(
+                                                    id="task-complete-summary",
+                                                    className="task-detail-textarea",
+                                                    placeholder="Summary",
+                                                    value="",
+                                                    disabled=True,
+                                                ),
+                                                dcc.Textarea(
+                                                    id="task-complete-artifacts",
+                                                    className="task-detail-textarea",
+                                                    placeholder="Artifact refs",
+                                                    value="",
+                                                    disabled=True,
+                                                ),
+                                            ],
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
+                        html.Div(
+                            id="task-review-panel",
+                            className="task-detail-action-panel task-detail-flow-panel is-hidden",
+                            children=[
+                                html.Div("Review", className="task-detail-section-title"),
+                                html.Div(
+                                    className="task-detail-action-row",
+                                    children=[
+                                        dcc.Dropdown(
+                                            id="task-reviewer-agent",
+                                            className="task-detail-select",
+                                            options=[],
+                                            value=None,
+                                            placeholder="Reviewer",
+                                            clearable=False,
+                                        ),
+                                        dcc.Dropdown(
+                                            id="task-review-decision",
+                                            className="task-detail-select",
+                                            options=[
+                                                {"label": "Approve", "value": "approve"},
+                                                {"label": "Request changes", "value": "request_changes"},
+                                            ],
+                                            value="approve",
+                                            clearable=False,
+                                        ),
+                                        html.Details(
+                                            className="task-detail-advanced",
+                                            children=[
+                                                html.Summary("Advanced"),
+                                                dcc.Checklist(
+                                                    id="task-review-force",
+                                                    className="task-detail-checklist",
+                                                    options=[{"label": "Force", "value": "force"}],
+                                                    value=[],
+                                                ),
+                                            ],
+                                        ),
+                                        html.Button("Submit Review", id="submit-task-review", className="ghost-button primary-action task-detail-action-button", disabled=True),
+                                    ],
+                                ),
+                                html.Details(
+                                    className="task-detail-details",
+                                    children=[
+                                        html.Summary("Add details"),
+                                        html.Div(
+                                            className="task-detail-operation-form",
+                                            children=[
+                                                dcc.Textarea(
+                                                    id="task-review-notes",
+                                                    className="task-detail-textarea",
+                                                    placeholder="Notes",
+                                                    value="",
+                                                    disabled=True,
+                                                ),
+                                                dcc.Textarea(
+                                                    id="task-review-artifacts",
+                                                    className="task-detail-textarea",
+                                                    placeholder="Artifact refs",
+                                                    value="",
+                                                    disabled=True,
+                                                ),
+                                            ],
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        html.Div(
+            id="create-task-modal",
+            className="create-task-modal",
+            role="dialog",
+            **{"aria-modal": "true", "aria-labelledby": "create-task-modal-title"},
+            children=[
+                html.Div(
+                    className="create-task-modal-card",
+                    children=[
+                        html.Div(
+                            className="create-task-modal-header",
+                            children=[
+                                html.Div(
+                                    children=[
+                                        html.Div("New Task", id="create-task-modal-title", className="create-task-title"),
+                                        html.Div("Create an INBOX task and preview routing.", className="create-task-subtitle"),
+                                    ]
+                                ),
+                                html.Button("Close", id="close-create-task", className="ghost-button"),
+                            ],
+                        ),
+                        html.Div(id="create-task-notice", className="create-task-notice", role="status", **{"aria-live": "polite"}),
+                        html.Div(
+                            className="create-task-form",
+                            children=[
+                                html.Div(
+                                    className="create-task-field create-task-field-wide",
+                                    children=[
+                                        html.Div("Title", className="create-task-label"),
+                                        dcc.Input(
+                                            id="create-task-title",
+                                            type="text",
+                                            placeholder="Summarize the desired result",
+                                            className="create-task-input",
+                                        ),
+                                    ],
+                                ),
+                                html.Div(
+                                    className="create-task-field",
+                                    children=[
+                                        html.Div("Assignee", className="create-task-label"),
+                                        dcc.Dropdown(
+                                            id="create-task-assignee",
+                                            options=[],
+                                            value=None,
+                                            clearable=True,
+                                            placeholder="Auto or choose agent",
+                                            className="create-task-select",
+                                        ),
+                                    ],
+                                ),
+                                html.Div(
+                                    className="create-task-field",
+                                    children=[
+                                        html.Div("Tags", className="create-task-label"),
+                                        dcc.Textarea(
+                                            id="create-task-tags",
+                                            placeholder="weekly-review, reporting",
+                                            className="create-task-textarea",
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
+                        html.Div(id="create-task-preview", className="create-task-preview"),
+                        html.Div(
+                            className="create-task-actions",
+                            children=[
+                                html.Button("Preview Route", id="preview-create-task-route", className="ghost-button"),
+                                html.Button("Create Task", id="submit-create-task", className="ghost-button primary-action"),
+                            ],
+                        ),
+                    ],
+                )
             ],
         ),
         html.Div(
@@ -1854,6 +2578,900 @@ def update_ui_state(
     if (url_search or "") == expected:
         return new_state, no_update
     return new_state, expected
+
+
+@app.callback(
+    Output("task-ui", "data", allow_duplicate=True),
+    Input({"type": "task-card", "task_id": ALL, "status": ALL}, "n_clicks"),
+    State("task-ui", "data"),
+    prevent_initial_call=True,
+)
+def select_task_card(_clicks, task_ui):
+    trigger = ctx.triggered_id
+    if not isinstance(trigger, dict):
+        return no_update
+
+    triggered = ctx.triggered[0] if ctx.triggered else {}
+    try:
+        click_count = int(triggered.get("value") or 0)
+    except (TypeError, ValueError):
+        return no_update
+    if click_count <= 0:
+        return no_update
+
+    task_id = str(trigger.get("task_id") or "").strip()
+    if not task_id:
+        return no_update
+
+    state = _default_task_ui()
+    if isinstance(task_ui, dict):
+        state.update(task_ui)
+    status = str(trigger.get("status") or "").strip()
+    state["selected_task_id"] = task_id
+    state["selected_task_status"] = status
+    state["drawer_open"] = True
+    state["drawer_mode"] = "view"
+    state["drawer_message"] = ""
+    state["drawer_message_tone"] = "neutral"
+    state["pending_action"] = "inspect"
+    state["message"] = f"Selected task #{_short_task_id(task_id)} ({status or 'unknown'})."
+    state["message_tone"] = "neutral"
+    state["last_click_nonce"] = int(state.get("last_click_nonce") or 0) + 1
+    return state
+
+
+@app.callback(
+    Output("task-ui", "data", allow_duplicate=True),
+    Input("close-task-detail", "n_clicks"),
+    Input("task-detail-backdrop", "n_clicks"),
+    Input("task-detail-esc-close", "n_clicks"),
+    State("task-ui", "data"),
+    prevent_initial_call=True,
+)
+def close_task_detail_drawer(_close_clicks, _backdrop_clicks, _esc_clicks, task_ui):
+    if ctx.triggered_id not in {"close-task-detail", "task-detail-backdrop", "task-detail-esc-close"}:
+        return no_update
+
+    state = _default_task_ui()
+    if isinstance(task_ui, dict):
+        state.update(task_ui)
+    state["drawer_open"] = False
+    state["drawer_mode"] = "view"
+    state["drawer_message"] = ""
+    state["drawer_message_tone"] = "neutral"
+    return state
+
+
+@app.callback(
+    Output("task-refresh-signal", "data", allow_duplicate=True),
+    Output("task-ui", "data", allow_duplicate=True),
+    Input("refresh-task-detail", "n_clicks"),
+    State("task-ui", "data"),
+    State("task-refresh-signal", "data"),
+    prevent_initial_call=True,
+)
+def refresh_task_detail(_clicks, task_ui, task_refresh_signal):
+    if ctx.triggered_id != "refresh-task-detail":
+        return no_update, no_update
+
+    state = _default_task_ui()
+    if isinstance(task_ui, dict):
+        state.update(task_ui)
+    task_id = str(state.get("selected_task_id") or "").strip()
+    if not task_id:
+        return no_update, no_update
+
+    refresh_state = _bump_task_refresh_signal(task_refresh_signal, reason="task.detail.refresh", task_id=task_id)
+
+    state["drawer_open"] = True
+    state["drawer_mode"] = "view"
+    state["drawer_message"] = f"Refreshing task #{_short_task_id(task_id)}."
+    state["drawer_message_tone"] = "neutral"
+    state["message"] = f"Refreshing task #{_short_task_id(task_id)}."
+    state["message_tone"] = "neutral"
+    return refresh_state, state
+
+
+@app.callback(
+    Output("task-detail-store", "data"),
+    Input("task-ui", "data"),
+    Input("task-refresh-signal", "data"),
+    State("task-detail-store", "data"),
+    prevent_initial_call=False,
+)
+def load_task_detail(task_ui, task_refresh_signal, task_detail_store):
+    ui_state = _default_task_ui()
+    if isinstance(task_ui, dict):
+        ui_state.update(task_ui)
+
+    selected_task_id = str(ui_state.get("selected_task_id") or "").strip()
+    if not ui_state.get("drawer_open") or not selected_task_id:
+        return no_update
+
+    if ctx.triggered_id == "task-refresh-signal":
+        signal = _default_task_refresh_signal()
+        if isinstance(task_refresh_signal, dict):
+            signal.update(task_refresh_signal)
+        signal_task_id = str(signal.get("task_id") or "").strip()
+        if signal_task_id and signal_task_id != selected_task_id:
+            return no_update
+
+    previous = _default_task_detail_state()
+    if isinstance(task_detail_store, dict):
+        previous.update(task_detail_store)
+
+    next_state = _default_task_detail_state()
+    next_state["task_id"] = selected_task_id
+    next_state["revision"] = int(previous.get("revision") or 0) + 1
+
+    try:
+        task = api_get_json(f"/v1/tasks/{selected_task_id}", timeout=4.0)
+        comments = api_get_json(f"/v1/tasks/{selected_task_id}/comments?limit=50", timeout=4.0)
+        events = api_get_json(f"/v1/tasks/{selected_task_id}/events?limit=50", timeout=6.0)
+    except Exception as exc:
+        if str(previous.get("task_id") or "").strip() == selected_task_id:
+            next_state["task"] = previous.get("task") if isinstance(previous.get("task"), dict) else None
+            next_state["comments"] = previous.get("comments") if isinstance(previous.get("comments"), list) else []
+            next_state["events"] = previous.get("events") if isinstance(previous.get("events"), list) else []
+            next_state["fetched_at"] = str(previous.get("fetched_at") or "")
+        next_state["error"] = _format_api_error(exc)
+        return next_state
+
+    next_state["task"] = task if isinstance(task, dict) else None
+    next_state["comments"] = comments if isinstance(comments, list) else []
+    next_state["events"] = events if isinstance(events, list) else []
+    next_state["fetched_at"] = datetime.now(timezone.utc).isoformat()
+    return next_state
+
+
+@app.callback(
+    Output("task-detail-actions", "className"),
+    Output("task-claim-panel", "className"),
+    Output("task-comment-panel", "className"),
+    Output("task-complete-panel", "className"),
+    Output("task-review-panel", "className"),
+    Output("task-claim-agent", "options"),
+    Output("task-claim-agent", "value"),
+    Output("task-claim-force", "value"),
+    Output("task-complete-agent", "options"),
+    Output("task-complete-agent", "value"),
+    Output("task-complete-review-gate", "value"),
+    Output("task-complete-force", "value"),
+    Output("task-complete-summary", "disabled"),
+    Output("task-complete-artifacts", "disabled"),
+    Output("task-reviewer-agent", "options"),
+    Output("task-reviewer-agent", "value"),
+    Output("task-review-force", "value"),
+    Output("task-review-notes", "disabled"),
+    Output("task-review-artifacts", "disabled"),
+    Output("task-comment-author", "disabled"),
+    Output("task-comment-body", "disabled"),
+    Output("add-task-comment", "disabled"),
+    Input("task-ui", "data"),
+    Input("task-detail-store", "data"),
+    prevent_initial_call=False,
+)
+def render_task_detail_actions(task_ui, task_detail_store):
+    ui_state = _default_task_ui()
+    if isinstance(task_ui, dict):
+        ui_state.update(task_ui)
+
+    detail_state = _default_task_detail_state()
+    if isinstance(task_detail_store, dict):
+        detail_state.update(task_detail_store)
+
+    selected_task_id = str(ui_state.get("selected_task_id") or "").strip()
+    detail_matches = str(detail_state.get("task_id") or "").strip() == selected_task_id
+    detail_task = detail_state.get("task") if detail_matches and isinstance(detail_state.get("task"), dict) else None
+    is_open = bool(ui_state.get("drawer_open") and selected_task_id)
+    options = _agent_dropdown_options() if is_open else []
+    assignee = str((detail_task or {}).get("assignee") or "").strip()
+    agent_values = {str(option.get("value") or "") for option in options if isinstance(option, dict)}
+    selected_agent = assignee if assignee and assignee in agent_values else None
+    status = str((detail_task or {}).get("status") or "").strip().upper()
+    show_claim = bool(is_open and detail_task and status in {"", "INBOX", "ASSIGNED"} and _task_detail_can_claim(detail_task))
+    show_complete = bool(is_open and detail_task and status == "IN PROGRESS" and _task_detail_can_complete(detail_task))
+    show_review = bool(is_open and detail_task and status == "REVIEW" and _task_detail_can_review(detail_task))
+    flow_panel_base = "task-detail-action-panel task-detail-flow-panel"
+    hidden_flow_panel = f"{flow_panel_base} is-hidden"
+    comment_panel_class = (
+        "task-detail-comment-composer open"
+        if is_open
+        else "task-detail-comment-composer is-hidden"
+    )
+    comment_disabled = not is_open
+    detail_input_disabled = not is_open
+
+    return (
+        "task-detail-actions open" if is_open else "task-detail-actions",
+        f"{flow_panel_base} is-primary" if show_claim else hidden_flow_panel,
+        comment_panel_class,
+        f"{flow_panel_base} is-primary" if show_complete else hidden_flow_panel,
+        f"{flow_panel_base} is-primary" if show_review else hidden_flow_panel,
+        options,
+        selected_agent,
+        [],
+        options,
+        selected_agent,
+        [],
+        [],
+        detail_input_disabled,
+        detail_input_disabled,
+        options,
+        selected_agent,
+        [],
+        detail_input_disabled,
+        detail_input_disabled,
+        comment_disabled,
+        comment_disabled,
+        comment_disabled,
+    )
+
+
+@app.callback(
+    Output("claim-task", "disabled"),
+    Input("task-ui", "data"),
+    Input("task-detail-store", "data"),
+    Input("task-claim-agent", "value"),
+    prevent_initial_call=False,
+)
+def sync_claim_task_button(task_ui, task_detail_store, claim_agent):
+    ui_state = _default_task_ui()
+    if isinstance(task_ui, dict):
+        ui_state.update(task_ui)
+
+    selected_task_id = str(ui_state.get("selected_task_id") or "").strip()
+    if not ui_state.get("drawer_open") or not selected_task_id:
+        return True
+
+    detail_state = _default_task_detail_state()
+    if isinstance(task_detail_store, dict):
+        detail_state.update(task_detail_store)
+
+    detail_matches = str(detail_state.get("task_id") or "").strip() == selected_task_id
+    detail_task = detail_state.get("task") if detail_matches and isinstance(detail_state.get("task"), dict) else None
+    return not (_task_detail_can_claim(detail_task) and bool(_safe_agent_slug(claim_agent)))
+
+
+@app.callback(
+    Output("complete-task", "disabled"),
+    Input("task-ui", "data"),
+    Input("task-detail-store", "data"),
+    Input("task-complete-agent", "value"),
+    Input("task-complete-force", "value"),
+    prevent_initial_call=False,
+)
+def sync_complete_task_button(task_ui, task_detail_store, complete_agent, complete_force):
+    ui_state = _default_task_ui()
+    if isinstance(task_ui, dict):
+        ui_state.update(task_ui)
+
+    selected_task_id = str(ui_state.get("selected_task_id") or "").strip()
+    if not ui_state.get("drawer_open") or not selected_task_id:
+        return True
+
+    detail_state = _default_task_detail_state()
+    if isinstance(task_detail_store, dict):
+        detail_state.update(task_detail_store)
+
+    detail_matches = str(detail_state.get("task_id") or "").strip() == selected_task_id
+    detail_task = detail_state.get("task") if detail_matches and isinstance(detail_state.get("task"), dict) else None
+    force = "force" in (complete_force if isinstance(complete_force, list) else [])
+    return not (_task_detail_can_complete(detail_task, force=force) and bool(_safe_agent_slug(complete_agent)))
+
+
+@app.callback(
+    Output("submit-task-review", "disabled"),
+    Input("task-ui", "data"),
+    Input("task-detail-store", "data"),
+    Input("task-reviewer-agent", "value"),
+    Input("task-review-decision", "value"),
+    Input("task-review-force", "value"),
+    prevent_initial_call=False,
+)
+def sync_review_task_button(task_ui, task_detail_store, reviewer_agent, review_decision, review_force):
+    ui_state = _default_task_ui()
+    if isinstance(task_ui, dict):
+        ui_state.update(task_ui)
+
+    selected_task_id = str(ui_state.get("selected_task_id") or "").strip()
+    if not ui_state.get("drawer_open") or not selected_task_id:
+        return True
+
+    detail_state = _default_task_detail_state()
+    if isinstance(task_detail_store, dict):
+        detail_state.update(task_detail_store)
+
+    decision = str(review_decision or "").strip()
+    detail_matches = str(detail_state.get("task_id") or "").strip() == selected_task_id
+    detail_task = detail_state.get("task") if detail_matches and isinstance(detail_state.get("task"), dict) else None
+    force = "force" in (review_force if isinstance(review_force, list) else [])
+    return not (
+        _task_detail_can_review(detail_task, force=force)
+        and bool(_safe_agent_slug(reviewer_agent))
+        and decision in {"approve", "request_changes"}
+    )
+
+
+@app.callback(
+    Output("task-refresh-signal", "data", allow_duplicate=True),
+    Output("task-ui", "data", allow_duplicate=True),
+    Output("task-comment-body", "value"),
+    Output("task-claim-force", "value", allow_duplicate=True),
+    Output("task-complete-summary", "value"),
+    Output("task-complete-artifacts", "value"),
+    Output("task-complete-review-gate", "value", allow_duplicate=True),
+    Output("task-complete-force", "value", allow_duplicate=True),
+    Output("task-review-notes", "value"),
+    Output("task-review-artifacts", "value"),
+    Output("task-review-force", "value", allow_duplicate=True),
+    Input("claim-task", "n_clicks"),
+    Input("add-task-comment", "n_clicks"),
+    Input("complete-task", "n_clicks"),
+    Input("submit-task-review", "n_clicks"),
+    State("task-ui", "data"),
+    State("task-refresh-signal", "data"),
+    State("task-claim-agent", "value"),
+    State("task-claim-force", "value"),
+    State("task-comment-author", "value"),
+    State("task-comment-body", "value"),
+    State("task-complete-agent", "value"),
+    State("task-complete-summary", "value"),
+    State("task-complete-artifacts", "value"),
+    State("task-complete-review-gate", "value"),
+    State("task-complete-force", "value"),
+    State("task-reviewer-agent", "value"),
+    State("task-review-decision", "value"),
+    State("task-review-notes", "value"),
+    State("task-review-artifacts", "value"),
+    State("task-review-force", "value"),
+    running=[(Output("task-operation-pending", "children"), "Saving changes...", "")],
+    prevent_initial_call=True,
+)
+def submit_task_detail_action(
+    _claim_clicks,
+    _comment_clicks,
+    _complete_clicks,
+    _review_clicks,
+    task_ui,
+    task_refresh_signal,
+    claim_agent,
+    claim_force,
+    comment_author,
+    comment_body,
+    complete_agent,
+    complete_summary,
+    complete_artifacts,
+    complete_review_gate,
+    complete_force,
+    reviewer_agent,
+    review_decision,
+    review_notes,
+    review_artifacts,
+    review_force,
+):
+    trigger = ctx.triggered_id
+    if trigger not in {"claim-task", "add-task-comment", "complete-task", "submit-task-review"}:
+        return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+
+    state = _default_task_ui()
+    if isinstance(task_ui, dict):
+        state.update(task_ui)
+    task_id = str(state.get("selected_task_id") or "").strip()
+    if not state.get("drawer_open") or not task_id:
+        return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+
+    state["drawer_open"] = True
+    state["drawer_mode"] = "view"
+
+    if trigger == "claim-task":
+        agent_slug = _safe_agent_slug(claim_agent)
+        if not agent_slug:
+            state["drawer_message"] = "Select an agent before claiming this task."
+            state["drawer_message_tone"] = "warn"
+            state["message"] = state["drawer_message"]
+            state["message_tone"] = "warn"
+            return no_update, state, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+
+        body = {
+            "agent_slug": agent_slug,
+            "force": "force" in (claim_force if isinstance(claim_force, list) else []),
+        }
+        try:
+            updated = api_post_json(f"/v1/tasks/{task_id}/claim", body, timeout=5.0)
+        except Exception as exc:
+            state["drawer_message"] = f"Claim failed: {_format_api_error(exc)}"
+            state["drawer_message_tone"] = "error"
+            state["message"] = state["drawer_message"]
+            state["message_tone"] = "error"
+            return no_update, state, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+
+        status = str(updated.get("status") or "IN PROGRESS") if isinstance(updated, dict) else "IN PROGRESS"
+        state["selected_task_status"] = status
+        state["pending_action"] = "claimed"
+        state["drawer_message"] = f"Claimed task #{_short_task_id(task_id)} as {agent_slug}."
+        state["drawer_message_tone"] = "ok"
+        state["message"] = state["drawer_message"]
+        state["message_tone"] = "ok"
+        return (
+            _bump_task_refresh_signal(task_refresh_signal, reason="task.claimed", task_id=task_id),
+            state,
+            no_update,
+            [],
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+        )
+
+    if trigger == "complete-task":
+        agent_slug = _safe_agent_slug(complete_agent)
+        if not agent_slug:
+            state["drawer_message"] = "Select an agent before completing this task."
+            state["drawer_message_tone"] = "warn"
+            state["message"] = state["drawer_message"]
+            state["message_tone"] = "warn"
+            return no_update, state, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+
+        review_gate = "review_gate" in (complete_review_gate if isinstance(complete_review_gate, list) else [])
+        body = {
+            "agent_slug": agent_slug,
+            "summary": str(complete_summary or "").strip() or None,
+            "artifact_refs": _parse_text_list(complete_artifacts),
+            "review_gate": review_gate,
+            "force": "force" in (complete_force if isinstance(complete_force, list) else []),
+        }
+        try:
+            updated = api_post_json(f"/v1/tasks/{task_id}/complete", body, timeout=5.0)
+        except Exception as exc:
+            state["drawer_message"] = f"Complete failed: {_format_api_error(exc)}"
+            state["drawer_message_tone"] = "error"
+            state["message"] = state["drawer_message"]
+            state["message_tone"] = "error"
+            return no_update, state, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+
+        status = str(updated.get("status") or ("REVIEW" if review_gate else "DONE")) if isinstance(updated, dict) else ("REVIEW" if review_gate else "DONE")
+        state["selected_task_status"] = status
+        state["pending_action"] = "review_requested" if review_gate else "completed"
+        state["drawer_message"] = (
+            f"Requested review for task #{_short_task_id(task_id)}."
+            if review_gate
+            else f"Completed task #{_short_task_id(task_id)}."
+        )
+        state["drawer_message_tone"] = "ok"
+        state["message"] = state["drawer_message"]
+        state["message_tone"] = "ok"
+        return (
+            _bump_task_refresh_signal(task_refresh_signal, reason="task.review.requested" if review_gate else "task.done", task_id=task_id),
+            state,
+            no_update,
+            no_update,
+            "",
+            "",
+            [],
+            [],
+            no_update,
+            no_update,
+            no_update,
+        )
+
+    if trigger == "submit-task-review":
+        reviewer_slug = _safe_agent_slug(reviewer_agent)
+        decision = str(review_decision or "").strip()
+        if not reviewer_slug:
+            state["drawer_message"] = "Select a reviewer before submitting a review."
+            state["drawer_message_tone"] = "warn"
+            state["message"] = state["drawer_message"]
+            state["message_tone"] = "warn"
+            return no_update, state, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+        if decision not in {"approve", "request_changes"}:
+            state["drawer_message"] = "Select a valid review decision."
+            state["drawer_message_tone"] = "warn"
+            state["message"] = state["drawer_message"]
+            state["message_tone"] = "warn"
+            return no_update, state, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+
+        body = {
+            "reviewer_slug": reviewer_slug,
+            "decision": decision,
+            "notes": str(review_notes or "").strip() or None,
+            "artifact_refs": _parse_text_list(review_artifacts),
+            "force": "force" in (review_force if isinstance(review_force, list) else []),
+        }
+        try:
+            updated = api_post_json(f"/v1/tasks/{task_id}/review", body, timeout=5.0)
+        except Exception as exc:
+            state["drawer_message"] = f"Review failed: {_format_api_error(exc)}"
+            state["drawer_message_tone"] = "error"
+            state["message"] = state["drawer_message"]
+            state["message_tone"] = "error"
+            return no_update, state, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+
+        status = str(updated.get("status") or ("DONE" if decision == "approve" else "IN PROGRESS")) if isinstance(updated, dict) else ("DONE" if decision == "approve" else "IN PROGRESS")
+        state["selected_task_status"] = status
+        state["pending_action"] = "reviewed"
+        state["drawer_message"] = (
+            f"Approved task #{_short_task_id(task_id)}."
+            if decision == "approve"
+            else f"Requested changes for task #{_short_task_id(task_id)}."
+        )
+        state["drawer_message_tone"] = "ok"
+        state["message"] = state["drawer_message"]
+        state["message_tone"] = "ok"
+        return (
+            _bump_task_refresh_signal(task_refresh_signal, reason="task.review.approved" if decision == "approve" else "task.review.changes_requested", task_id=task_id),
+            state,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            "",
+            "",
+            [],
+        )
+
+    author = str(comment_author or "").strip()
+    body_text = str(comment_body or "").strip()
+    if not author:
+        state["drawer_message"] = "Author is required before adding a comment."
+        state["drawer_message_tone"] = "warn"
+        state["message"] = state["drawer_message"]
+        state["message_tone"] = "warn"
+        return no_update, state, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+    if not body_text:
+        state["drawer_message"] = "Comment body is required."
+        state["drawer_message_tone"] = "warn"
+        state["message"] = state["drawer_message"]
+        state["message_tone"] = "warn"
+        return no_update, state, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+
+    try:
+        api_post_json(f"/v1/tasks/{task_id}/comments", {"author": author, "body": body_text}, timeout=5.0)
+    except Exception as exc:
+        state["drawer_message"] = f"Comment failed: {_format_api_error(exc)}"
+        state["drawer_message_tone"] = "error"
+        state["message"] = state["drawer_message"]
+        state["message_tone"] = "error"
+        return no_update, state, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+
+    state["pending_action"] = "commented"
+    state["drawer_message"] = f"Added comment to task #{_short_task_id(task_id)}."
+    state["drawer_message_tone"] = "ok"
+    state["message"] = state["drawer_message"]
+    state["message_tone"] = "ok"
+    return (
+        _bump_task_refresh_signal(task_refresh_signal, reason="comment.created", task_id=task_id),
+        state,
+        "",
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+    )
+
+
+@app.callback(
+    Output({"type": "task-card", "task_id": ALL, "status": ALL}, "className"),
+    Input("task-ui", "data"),
+    Input("board-data-store", "data"),
+    State({"type": "task-card", "task_id": ALL, "status": ALL}, "id"),
+    State({"type": "task-card", "task_id": ALL, "status": ALL}, "className"),
+    prevent_initial_call=False,
+)
+def sync_selected_task_card(task_ui, _board_data, card_ids, class_names):
+    state = _default_task_ui()
+    if isinstance(task_ui, dict):
+        state.update(task_ui)
+    selected_task_id = str(state.get("selected_task_id") or "").strip()
+
+    if not isinstance(card_ids, list):
+        return []
+
+    next_classes = []
+    class_names = class_names if isinstance(class_names, list) else []
+    for idx, card_id in enumerate(card_ids):
+        existing = str(class_names[idx] if idx < len(class_names) else "card task-card").strip()
+        parts = [part for part in existing.split() if part != "selected"]
+        if isinstance(card_id, dict) and str(card_id.get("task_id") or "").strip() == selected_task_id:
+            parts.append("selected")
+        next_classes.append(" ".join(parts))
+    return next_classes
+
+
+@app.callback(
+    Output("task-detail-backdrop", "className"),
+    Output("task-detail-drawer", "className"),
+    Output("refresh-task-detail", "className"),
+    Output("refresh-task-detail", "disabled"),
+    Output("task-detail-title", "children"),
+    Output("task-detail-subtitle", "children"),
+    Output("task-detail-content", "children"),
+    Input("task-ui", "data"),
+    Input("board-data-store", "data"),
+    Input("task-detail-store", "data"),
+    prevent_initial_call=False,
+)
+def render_task_detail_drawer(task_ui, board_data, task_detail_store):
+    state = _default_task_ui()
+    if isinstance(task_ui, dict):
+        state.update(task_ui)
+
+    detail_state = _default_task_detail_state()
+    if isinstance(task_detail_store, dict):
+        detail_state.update(task_detail_store)
+
+    if not state.get("drawer_open"):
+        return (
+            "task-detail-backdrop",
+            "task-detail-drawer",
+            "ghost-button task-detail-refresh",
+            True,
+            "Task Detail",
+            "",
+            "",
+        )
+
+    selected_task_id = str(state.get("selected_task_id") or "").strip()
+    if not selected_task_id:
+        return (
+            "task-detail-backdrop",
+            "task-detail-drawer",
+            "ghost-button task-detail-refresh",
+            True,
+            "Task Detail",
+            "",
+            "",
+        )
+
+    snapshot = _find_task_snapshot(board_data if isinstance(board_data, list) else [], selected_task_id)
+    detail_matches = str(detail_state.get("task_id") or "").strip() == selected_task_id
+    detail_task = detail_state.get("task") if detail_matches and isinstance(detail_state.get("task"), dict) else None
+    task = detail_task or snapshot
+    title = f"Task #{_short_task_id(selected_task_id)}"
+    if not task:
+        error = str(detail_state.get("error") or "").strip() if detail_matches else ""
+        return (
+            "task-detail-backdrop open",
+            "task-detail-drawer open",
+            "ghost-button task-detail-refresh task-detail-refresh-urgent",
+            False,
+            title,
+            "Detail unavailable",
+            _render_task_detail_empty(
+                "Task detail unavailable",
+                error or "The selected task is not present in the current board window.",
+            ),
+        )
+
+    subtitle = str(task.get("title") or "(untitled)")
+    comments = detail_state.get("comments") if detail_matches and isinstance(detail_state.get("comments"), list) else []
+    events = detail_state.get("events") if detail_matches and isinstance(detail_state.get("events"), list) else []
+    drawer_message = state.get("drawer_message")
+    drawer_message_tone = state.get("drawer_message_tone")
+    detail_error = str(detail_state.get("error") or "").strip() if detail_matches else ""
+    if detail_error:
+        drawer_message = f"Detail refresh failed: {detail_error}"
+        drawer_message_tone = "error"
+    elif not detail_task:
+        drawer_message = drawer_message or "Loading authoritative task detail."
+        drawer_message_tone = drawer_message_tone or "neutral"
+
+    return (
+        "task-detail-backdrop open",
+        "task-detail-drawer open",
+        "ghost-button task-detail-refresh task-detail-refresh-urgent" if detail_error and not detail_task else "ghost-button task-detail-refresh",
+        False,
+        title,
+        subtitle,
+        _render_task_detail_content(
+            task,
+            comments,
+            events,
+            drawer_message,
+            drawer_message_tone,
+        ),
+    )
+
+
+@app.callback(
+    Output("task-action-notice", "children"),
+    Output("task-action-notice", "className"),
+    Input("task-ui", "data"),
+    prevent_initial_call=False,
+)
+def render_task_action_notice(task_ui):
+    state = _default_task_ui()
+    if isinstance(task_ui, dict):
+        state.update(task_ui)
+
+    message = str(state.get("message") or "").strip()
+    if not message:
+        return "", "task-action-notice"
+
+    tone = str(state.get("message_tone") or "neutral").strip().lower()
+    if tone not in {"ok", "warn", "error", "neutral"}:
+        tone = "neutral"
+    return message, f"task-action-notice {tone}"
+
+
+@app.callback(
+    Output("create-task-ui", "data", allow_duplicate=True),
+    Input("open-create-task", "n_clicks"),
+    Input("close-create-task", "n_clicks"),
+    State("create-task-ui", "data"),
+    prevent_initial_call=True,
+)
+def toggle_create_task_modal(_open_clicks, _close_clicks, create_task_ui):
+    state = _default_create_task_ui()
+    if isinstance(create_task_ui, dict):
+        state.update(create_task_ui)
+
+    trigger = ctx.triggered_id
+    if trigger == "open-create-task":
+        state["open"] = True
+        state["message"] = ""
+        state["message_tone"] = "neutral"
+    elif trigger == "close-create-task":
+        state["open"] = False
+        state["submitting"] = False
+    else:
+        return no_update
+    return state
+
+
+@app.callback(
+    Output("create-task-modal", "className"),
+    Output("create-task-assignee", "options"),
+    Output("create-task-preview", "children"),
+    Output("create-task-notice", "children"),
+    Output("create-task-notice", "className"),
+    Input("create-task-ui", "data"),
+    prevent_initial_call=False,
+)
+def render_create_task_modal(create_task_ui):
+    state = _default_create_task_ui()
+    if isinstance(create_task_ui, dict):
+        state.update(create_task_ui)
+
+    modal_class = "create-task-modal open" if state.get("open") else "create-task-modal"
+    options = _agent_dropdown_options() if state.get("open") else []
+    preview = _render_route_preview(state.get("route_preview"))
+
+    message = str(state.get("message") or "").strip()
+    tone = str(state.get("message_tone") or "neutral").strip().lower()
+    if tone not in {"ok", "warn", "error", "neutral"}:
+        tone = "neutral"
+    notice_class = f"create-task-notice {tone}" if message else "create-task-notice"
+    return modal_class, options, preview, message, notice_class
+
+
+@app.callback(
+    Output("create-task-ui", "data", allow_duplicate=True),
+    Output("create-task-assignee", "value", allow_duplicate=True),
+    Input("preview-create-task-route", "n_clicks"),
+    State("create-task-title", "value"),
+    State("create-task-assignee", "value"),
+    State("create-task-tags", "value"),
+    State("create-task-ui", "data"),
+    prevent_initial_call=True,
+)
+def preview_create_task_route(_clicks, title, assignee, tags_text, create_task_ui):
+    state = _default_create_task_ui()
+    if isinstance(create_task_ui, dict):
+        state.update(create_task_ui)
+
+    title_text = str(title or "").strip()
+    if not title_text:
+        state["message"] = "Title is required before route preview."
+        state["message_tone"] = "warn"
+        return state, no_update
+
+    tags = _parse_text_list(tags_text)
+    assignee_value = str(assignee or "").strip() or None
+    body = {
+        "title": title_text,
+        "assignee": assignee_value,
+        "tags": tags,
+    }
+    try:
+        preview = api_post_json("/v1/tasks/route-preview", body, timeout=2.5)
+    except Exception as exc:
+        state["message"] = f"Route preview failed: {_format_api_error(exc)}"
+        state["message_tone"] = "error"
+        return state, no_update
+
+    suggested = str(preview.get("suggested_assignee") or "").strip() if isinstance(preview, dict) else ""
+    state["route_preview"] = preview if isinstance(preview, dict) else None
+    if suggested:
+        state["message"] = f"Route preview suggests {suggested}."
+        state["message_tone"] = "ok"
+    else:
+        state["message"] = "Route preview found no confident assignee."
+        state["message_tone"] = "warn"
+
+    next_assignee = suggested if suggested and not assignee_value else no_update
+    return state, next_assignee
+
+
+@app.callback(
+    Output("create-task-ui", "data", allow_duplicate=True),
+    Output("task-refresh-signal", "data"),
+    Output("task-ui", "data", allow_duplicate=True),
+    Output("create-task-title", "value"),
+    Output("create-task-assignee", "value", allow_duplicate=True),
+    Output("create-task-tags", "value"),
+    Input("submit-create-task", "n_clicks"),
+    State("create-task-title", "value"),
+    State("create-task-assignee", "value"),
+    State("create-task-tags", "value"),
+    State("create-task-ui", "data"),
+    State("task-refresh-signal", "data"),
+    State("task-ui", "data"),
+    prevent_initial_call=True,
+)
+def submit_create_task(_clicks, title, assignee, tags_text, create_task_ui, task_refresh_signal, task_ui):
+    create_state = _default_create_task_ui()
+    if isinstance(create_task_ui, dict):
+        create_state.update(create_task_ui)
+
+    title_text = str(title or "").strip()
+    if not title_text:
+        create_state["message"] = "Title is required."
+        create_state["message_tone"] = "warn"
+        return create_state, no_update, no_update, no_update, no_update, no_update
+
+    tags = _parse_text_list(tags_text)
+    assignee_value = str(assignee or "").strip() or None
+    body = {
+        "title": title_text,
+        "status": "INBOX",
+        "assignee": assignee_value,
+        "tags": tags,
+    }
+
+    try:
+        created = api_post_json("/v1/tasks", body, timeout=4.0)
+    except Exception as exc:
+        create_state["message"] = f"Create task failed: {_format_api_error(exc)}"
+        create_state["message_tone"] = "error"
+        create_state["submitting"] = False
+        return create_state, no_update, no_update, no_update, no_update, no_update
+
+    task_id = str(created.get("id") or "") if isinstance(created, dict) else ""
+    previous_create_revision = int(create_state.get("revision") or 0)
+    create_state.update(_default_create_task_ui())
+    create_state["open"] = False
+    create_state["message"] = ""
+    create_state["message_tone"] = "neutral"
+    create_state["revision"] = previous_create_revision + 1
+
+    refresh_state = _default_task_refresh_signal()
+    if isinstance(task_refresh_signal, dict):
+        refresh_state.update(task_refresh_signal)
+    refresh_state["revision"] = int(refresh_state.get("revision") or 0) + 1
+    refresh_state["reason"] = "task.created"
+    refresh_state["task_id"] = task_id
+    refresh_state["last_success_epoch"] = time.time()
+
+    notice_state = _default_task_ui()
+    if isinstance(task_ui, dict):
+        notice_state.update(task_ui)
+    notice_state["selected_task_id"] = task_id
+    notice_state["selected_task_status"] = "INBOX"
+    notice_state["pending_action"] = "created"
+    notice_state["message"] = f"Created task #{_short_task_id(task_id)}."
+    notice_state["message_tone"] = "ok"
+
+    return create_state, refresh_state, notice_state, "", None, ""
 
 
 @app.callback(
@@ -2907,13 +4525,16 @@ def sync_filter_chip_classes(state):
     Output("api-status", "children"),
     Output("api-status", "className"),
     Output("sync-state", "data"),
+    Output("board-data-store", "data"),
+    Output("feed-data-store", "data"),
     Input("refresh", "n_intervals"),
     Input("ws-tick", "n_intervals"),
     Input("ui-state", "data"),
+    Input("task-refresh-signal", "data"),
     State("sync-state", "data"),
     prevent_initial_call=False,
 )
-def refresh_data(n_intervals, _ws_tick, state, sync_state):
+def refresh_data(n_intervals, _ws_tick, state, _task_refresh_signal, sync_state):
     _ = n_intervals
     state = state or {}
     sync_state = _normalize_sync_state(sync_state)
@@ -2930,6 +4551,8 @@ def refresh_data(n_intervals, _ws_tick, state, sync_state):
     should_fetch = False
 
     if trigger in {"initial", "ui-state"}:
+        should_fetch = True
+    elif trigger == "task-refresh-signal":
         should_fetch = True
     elif trigger == "ws-tick":
         should_fetch = ws_event_due
@@ -2959,6 +4582,8 @@ def refresh_data(n_intervals, _ws_tick, state, sync_state):
             _format_api_status(bool(last_success), last_success),
             status_class,
             sync_state_output,
+            no_update,
+            no_update,
         )
 
     try:
@@ -3081,6 +4706,8 @@ def refresh_data(n_intervals, _ws_tick, state, sync_state):
             _format_api_status(True, now_text),
             "status-pill status-online",
             next_sync_state,
+            columns,
+            feed,
         )
     except Exception as e:
         next_sync_state = _sync_state_with_ws(sync_state, ws_state, trigger=trigger)
@@ -3104,6 +4731,8 @@ def refresh_data(n_intervals, _ws_tick, state, sync_state):
                 _format_api_status(False, last_success, e),
                 "status-pill status-offline",
                 next_sync_state,
+                no_update,
+                no_update,
             )
         return (
             [html.Div("API unavailable", className="column-empty")],
@@ -3123,6 +4752,8 @@ def refresh_data(n_intervals, _ws_tick, state, sync_state):
             _format_api_status(False, last_success, e),
             "status-pill status-offline",
             next_sync_state,
+            [],
+            [],
         )
 
 _ensure_ws_thread_started()
