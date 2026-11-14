@@ -1,0 +1,21 @@
+# 环境与凭据
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# 测试与缓存
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 本地演示数据库
+*.db
+*.sqlite
