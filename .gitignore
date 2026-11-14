@@ -130,8 +130,15 @@ panopticon/workspaces/*/exports/ppt-output/
 panopticon/workspaces/*/exports/*.pptx
 panopticon/workspaces/*/runtime-assets/*venv/
 panopticon/workspaces/*/runtime-assets/*.traineddata
+panopticon/workspaces/*/runtime-assets/pylibs/
+panopticon/workspaces/*/runtime-assets/ollama/
+panopticon/workspaces/*/openclaw-workspace-state.json.migrated.*
+panopticon/workspaces/*/HEARTBEAT.md.doctor-archived.*/
+panopticon/workspaces/*/core
 panopticon/workspaces/*/memory/
 panopticon/workspaces/*/*.pptx
+panopticon/mission-control/tls/*.csr
+panopticon/mission-control/tls/*.srl
 
 # Panopticon local env overrides (contain secrets; do not commit)
 panopticon/env/*.env
