@@ -1,0 +1,9 @@
+services:
+  mission-control-gateway:
+    ports:
+      - "${MISSION_CONTROL_HTTPS_PORT:-18921}:443"
+    volumes:
+      - ./nginx/mission-control-https.conf:/etc/nginx/conf.d/https.conf:ro
+      - ./mission-control/tls/ca.crt:/etc/nginx/tls/ca.crt:ro
+      - ./mission-control/tls/server.crt:/etc/nginx/tls/server.crt:ro
+      - ./mission-control/tls/server.key:/etc/nginx/tls/server.key:ro

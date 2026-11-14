@@ -5,9 +5,9 @@
 # 运行: docker run -d --name openclaw -v ~/.openclaw:/root/.openclaw openclaw
 # ============================================================
 
-FROM node:22-alpine
+FROM node:24-alpine
 
-ARG OPENCLAW_VERSION=2026.5.20
+ARG OPENCLAW_VERSION=2026.11.3
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 
 LABEL maintainer="OpenClaw Community"

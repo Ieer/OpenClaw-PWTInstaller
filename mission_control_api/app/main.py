@@ -3,12 +3,16 @@ from __future__ import annotations
 import base64
 import json
 import hashlib
+import ipaddress
 import math
 import mimetypes
 import re
+import threading
 import time
 import urllib.parse
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
@@ -153,12 +157,15 @@ TASK_ROUTE_KEYWORDS: dict[str, set[str]] = {
     "personal": {"personal", "daily", "todo", "schedule", "budget", "travel", "个人", "待办", "日程", "预算", "旅行"},
 }
 
-USAGE_CACHE_TTL_SECONDS = 15.0
 _AGENT_USAGE_CACHE: dict[str, object] = {
     "days": None,
     "generated_at": 0.0,
     "data": [],
+    "refresh_started_at": 0.0,
 }
+_AGENT_USAGE_REFRESH_LOCK = threading.Lock()
+_AGENT_USAGE_FILE_CACHE: OrderedDict[tuple[str, str], tuple[tuple[int, ...], list]] = OrderedDict()
+_AGENT_USAGE_FILE_CACHE_ROWS = 0
 
 ALLOWED_AGENT_CONTROL_ACTIONS = {"start", "stop", "restart"}
 KNOWLEDGE_FEEDBACK_TYPES = {"usage", "conflict", "invalidation", "promotion"}
@@ -1650,9 +1657,57 @@ def _build_chat_inject_script(
     return "".join(parts)
 
 
+def _rewrite_control_ui_html_paths(text: str, agent: str) -> str:
+    replacements: list[tuple[int, int, str]] = []
+    lines = text.splitlines(keepends=True)
+
+    class AssetPathParser(HTMLParser):
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            original = self.get_starttag_text()
+            rewritten = re.sub(r'(\s(?:src|href)\s*=\s*["\'])/(?!/)', rf'\1/chat/{agent}/', original, flags=re.IGNORECASE)
+            if rewritten != original:
+                line, column = self.getpos()
+                offset = sum(len(value) for value in lines[:line - 1]) + column
+                replacements.append((offset, offset + len(original), rewritten))
+
+    parser = AssetPathParser(convert_charrefs=False)
+    parser.feed(text)
+    for start, end, replacement in reversed(replacements):
+        text = text[:start] + replacement + text[end:]
+    return text
+
+
 def _build_chat_base_path_script(agent: str) -> str:
     base_path = f"/chat/{agent}"
     return f'window.__OPENCLAW_CONTROL_UI_BASE_PATH__="{base_path}";'
+
+
+def _chat_client_headers(client_host: str | None, forwarded_for: str | None, trusted_proxies: tuple[str, ...]) -> dict[str, str]:
+    try:
+        client_ip = str(ipaddress.ip_address(client_host or ""))
+    except ValueError:
+        return {}
+    if client_ip in trusted_proxies and forwarded_for:
+        try:
+            client_ip = str(ipaddress.ip_address(forwarded_for.strip()))
+        except ValueError:
+            pass
+    return {"X-Real-IP": client_ip, "X-Forwarded-For": client_ip}
+
+
+async def _send_chat_proxy_request(client: httpx.AsyncClient, request: httpx.Request) -> httpx.Response:
+    retryable = request.method in {"GET", "HEAD"}
+    if retryable:
+        body = await request.aread()
+        if not body:
+            request.headers.pop("transfer-encoding", None)
+    for attempt in range(2 if retryable else 1):
+        try:
+            return await client.send(request, stream=False)
+        except (httpx.ReadError, httpx.RemoteProtocolError):
+            if not retryable or attempt == 1:
+                raise
+    raise RuntimeError("Proxy request exhausted")
 
 
 def _normalize_control_ui_origin(origin: str | None) -> str | None:
@@ -1669,8 +1724,8 @@ def _sanitize_connect_auth(
     message: str,
     token: str | None,
     *,
-    strip_stale_device_fields: bool = True,
-    force_token_in_connect: bool = True,
+    strip_stale_device_fields: bool = False,
+    force_token_in_connect: bool = False,
 ) -> str:
     try:
         req = json.loads(message)
@@ -1685,6 +1740,8 @@ def _sanitize_connect_auth(
         return message
 
     params = req["params"]
+    if isinstance(params.get("device"), dict) and not strip_stale_device_fields:
+        return message
 
     stale_device_keys = {
         "device",
@@ -3202,7 +3259,50 @@ def _iter_agent_usage_lines(agent_dir: Path):
                     yield file_path, "cron"
 
 
+def _read_agent_usage_file(file_path: Path, source_type: str) -> list:
+    global _AGENT_USAGE_FILE_CACHE_ROWS
+    cache_key = (str(file_path), source_type)
+
+    def fingerprint() -> tuple[int, ...]:
+        stat = file_path.stat()
+        return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+
+    before = fingerprint()
+    cached = _AGENT_USAGE_FILE_CACHE.get(cache_key)
+    if cached is not None and cached[0] == before:
+        _AGENT_USAGE_FILE_CACHE.move_to_end(cache_key)
+        return cached[1]
+
+    parsed = []
+    parser = _line_usage_from_session_event if source_type == "session" else _line_usage_from_cron_event
+    with file_path.open("r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            if not raw_line.strip():
+                continue
+            try:
+                obj = json.loads(raw_line)
+            except json.JSONDecodeError:
+                continue
+            event_dt, usage = parser(obj)
+            if usage is not None:
+                parsed.append((event_dt.timestamp() if event_dt is not None else None, usage))
+
+    removed = _AGENT_USAGE_FILE_CACHE.pop(cache_key, None)
+    if removed is not None:
+        _AGENT_USAGE_FILE_CACHE_ROWS -= len(removed[1])
+    if (
+        fingerprint() == before
+        and len(_AGENT_USAGE_FILE_CACHE) < 16_384
+        and _AGENT_USAGE_FILE_CACHE_ROWS + len(parsed) <= 50_000
+    ):
+        _AGENT_USAGE_FILE_CACHE[cache_key] = (before, parsed)
+        _AGENT_USAGE_FILE_CACHE_ROWS += len(parsed)
+    return parsed
+
+
 def _collect_agent_usage_snapshot(settings: Settings, days: int) -> list[AgentUsageSnapshotOut]:
+    global _AGENT_USAGE_FILE_CACHE_ROWS
+    _AGENT_USAGE_FILE_CACHE_ROWS = sum(len(entry[1]) for entry in _AGENT_USAGE_FILE_CACHE.values())
     root = Path(settings.agent_homes_dir)
     if not root.exists() or not root.is_dir():
         return []
@@ -3212,6 +3312,7 @@ def _collect_agent_usage_snapshot(settings: Settings, days: int) -> list[AgentUs
     day_24h_epoch = time.time() - 24 * 60 * 60
 
     out: list[AgentUsageSnapshotOut] = []
+    seen_files: set[tuple[str, str]] = set()
 
     for agent_dir in sorted(path for path in root.iterdir() if path.is_dir()):
         aggregate = {
@@ -3233,41 +3334,25 @@ def _collect_agent_usage_snapshot(settings: Settings, days: int) -> list[AgentUs
         }
 
         for file_path, source_type in _iter_agent_usage_lines(agent_dir):
+            seen_files.add((str(file_path), source_type))
             try:
-                with file_path.open("r", encoding="utf-8") as handle:
-                    for raw_line in handle:
-                        line = raw_line.strip()
-                        if not line:
-                            continue
-                        try:
-                            obj = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-
-                        if source_type == "session":
-                            event_dt, usage = _line_usage_from_session_event(obj)
-                        else:
-                            event_dt, usage = _line_usage_from_cron_event(obj)
-
-                        if usage is None:
-                            continue
-
-                        include_24h = False
-                        include_window = True
-                        if event_dt is not None:
-                            event_epoch = event_dt.timestamp()
-                            include_window = event_epoch >= window_start_epoch
-                            include_24h = event_epoch >= day_24h_epoch
-
-                        if include_window:
-                            _accumulate_usage(aggregate, usage, window_key="window")
-                        if include_24h:
-                            _accumulate_usage(aggregate, usage, window_key="24h")
+                for event_epoch, usage in _read_agent_usage_file(file_path, source_type):
+                    if event_epoch is None or event_epoch >= window_start_epoch:
+                        _accumulate_usage(aggregate, usage, window_key="window")
+                    if event_epoch is not None and event_epoch >= day_24h_epoch:
+                        _accumulate_usage(aggregate, usage, window_key="24h")
             except OSError:
+                removed = _AGENT_USAGE_FILE_CACHE.pop((str(file_path), source_type), None)
+                if removed is not None:
+                    _AGENT_USAGE_FILE_CACHE_ROWS -= len(removed[1])
                 continue
 
         out.append(AgentUsageSnapshotOut(**aggregate))
 
+    for cache_key in list(_AGENT_USAGE_FILE_CACHE):
+        if cache_key not in seen_files:
+            removed = _AGENT_USAGE_FILE_CACHE.pop(cache_key)
+            _AGENT_USAGE_FILE_CACHE_ROWS -= len(removed[1])
     return out
 
 
@@ -3282,15 +3367,64 @@ def _get_agent_usage_snapshot(settings: Settings, days: int) -> list[AgentUsageS
     if (
         cached_days == clamped_days
         and isinstance(cached_data, list)
-        and now_ts - cached_at <= USAGE_CACHE_TTL_SECONDS
+        and now_ts - cached_at <= settings.agent_usage_cache_ttl_seconds
     ):
         return cached_data  # type: ignore[return-value]
 
     fresh = _collect_agent_usage_snapshot(settings, clamped_days)
     _AGENT_USAGE_CACHE["days"] = clamped_days
-    _AGENT_USAGE_CACHE["generated_at"] = now_ts
+    _AGENT_USAGE_CACHE["generated_at"] = time.time()
     _AGENT_USAGE_CACHE["data"] = fresh
     return fresh
+
+
+def _cached_agent_usage_snapshot(days: int, *, max_age_seconds: float | None = None) -> list[AgentUsageSnapshotOut] | None:
+    clamped_days = max(1, min(int(days), 90))
+    cached_days = _AGENT_USAGE_CACHE.get("days")
+    cached_at = _safe_float(_AGENT_USAGE_CACHE.get("generated_at"))
+    cached_data = _AGENT_USAGE_CACHE.get("data")
+    if cached_days != clamped_days or not isinstance(cached_data, list):
+        return None
+    if max_age_seconds is not None and time.time() - cached_at > max_age_seconds:
+        return None
+    return cached_data  # type: ignore[return-value]
+
+
+async def _get_agent_usage_snapshot_nonblocking(settings: Settings, days: int) -> list[AgentUsageSnapshotOut]:
+    clamped_days = max(1, min(int(days), 90))
+    cached = _cached_agent_usage_snapshot(clamped_days, max_age_seconds=settings.agent_usage_cache_ttl_seconds)
+    if cached is not None:
+        return cached
+
+    stale = _cached_agent_usage_snapshot(clamped_days)
+    timeout_seconds = max(0.1, min(float(settings.agent_usage_snapshot_timeout_seconds or 2.5), 30.0))
+    if not _AGENT_USAGE_REFRESH_LOCK.acquire(blocking=False):
+        return stale or []
+
+    finished = threading.Event()
+    _AGENT_USAGE_CACHE["refresh_started_at"] = time.time()
+
+    def refresh_snapshot() -> None:
+        try:
+            _get_agent_usage_snapshot(settings, clamped_days)
+        except Exception:
+            pass
+        finally:
+            _AGENT_USAGE_CACHE["refresh_started_at"] = 0.0
+            _AGENT_USAGE_REFRESH_LOCK.release()
+            finished.set()
+
+    try:
+        threading.Thread(target=refresh_snapshot, daemon=True, name="agent-usage-refresh").start()
+    except Exception:
+        _AGENT_USAGE_CACHE["refresh_started_at"] = 0.0
+        _AGENT_USAGE_REFRESH_LOCK.release()
+        return stale or []
+
+    if stale is not None:
+        return stale
+    await asyncio.to_thread(finished.wait, timeout_seconds)
+    return _cached_agent_usage_snapshot(clamped_days) or []
 
 
 def create_app() -> FastAPI:
@@ -4237,7 +4371,7 @@ def create_app() -> FastAPI:
         days: int = 7,
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
     ) -> list[AgentUsageSnapshotOut]:
-        return _get_agent_usage_snapshot(settings, days)
+        return await _get_agent_usage_snapshot_nonblocking(settings, days)
 
     @app.get("/v1/agents/catalog", response_model=list[AgentCatalogItemOut])
     async def get_agent_catalog(
@@ -7629,9 +7763,13 @@ def create_app() -> FastAPI:
         async with httpx.AsyncClient(timeout=3600.0) as client:
             headers = dict(request.headers.items())
             headers.pop("host", None)
-            if settings.chat_force_loopback_headers:
-                headers["x-real-ip"] = "127.0.0.1"
-                headers["x-forwarded-for"] = "127.0.0.1"
+            for header in ("x-real-ip", "x-forwarded-for", "forwarded"):
+                headers.pop(header, None)
+            headers.update(_chat_client_headers(
+                request.client.host if request.client else None,
+                request.headers.get("x-forwarded-for"),
+                settings.chat_trusted_proxy_ips,
+            ))
             
             token = settings.agent_token_map.get(agent)
             if token:
@@ -7645,7 +7783,7 @@ def create_app() -> FastAPI:
             )
             
             try:
-                resp = await client.send(req, stream=True)
+                resp = await _send_chat_proxy_request(client, req)
             except Exception as e:
                 if not upgrade:
                     elapsed = max(0.0, time.perf_counter() - started)
@@ -7676,6 +7814,7 @@ def create_app() -> FastAPI:
             if is_html:
                 content = await resp.aread()
                 text = content.decode("utf-8", errors="replace")
+                text = _rewrite_control_ui_html_paths(text, agent)
 
                 if settings.chat_inject_script_enabled:
                     inject_script = _build_chat_inject_script(
@@ -7730,7 +7869,7 @@ def create_app() -> FastAPI:
 
             r = Response(content=content, status_code=resp.status_code)
             for k, v in resp.headers.items():
-                if k.lower() not in ("content-length", "transfer-encoding", "connection"):
+                if k.lower() not in ("content-length", "content-encoding", "transfer-encoding", "connection"):
                     r.headers[k] = v
 
             if not upgrade:
@@ -7803,9 +7942,11 @@ def create_app() -> FastAPI:
         headers = {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        if settings.chat_force_loopback_headers:
-            headers["X-Real-IP"] = "127.0.0.1"
-            headers["X-Forwarded-For"] = "127.0.0.1"
+        headers.update(_chat_client_headers(
+            websocket.client.host if websocket.client else None,
+            websocket.headers.get("x-forwarded-for"),
+            settings.chat_trusted_proxy_ips,
+        ))
         upstream_origin = _normalize_control_ui_origin(websocket.headers.get("origin"))
             
         try:

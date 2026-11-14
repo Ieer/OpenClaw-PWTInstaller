@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import fcntl
 import fnmatch
 import hashlib
 import json
@@ -14,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -73,6 +75,7 @@ RESTIC_EXCLUDE_PATTERNS = [
     ".DS_Store",
 ]
 
+DEFAULT_GZIP_LEVEL = 6
 SENSITIVE_KEY_HINTS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "AUTH")
 
 
@@ -636,7 +639,7 @@ def add_to_tar(tar: tarfile.TarFile, source: Path, arcname: str, root_for_exclud
         tar.add(source, arcname=arcname, recursive=False, filter=filter_member)
 
 
-def create_full_tar(ctx: BackupContext, entries: list[FileEntry], *, dry_run: bool) -> Path:
+def create_full_tar(ctx: BackupContext, entries: list[FileEntry], *, dry_run: bool, gzip_level: int = DEFAULT_GZIP_LEVEL) -> Path:
     payload_path = ctx.run_dir / "payload.tar.gz"
     metadata_dir = ctx.staging_dir / "__backup_metadata"
     metadata_dir.mkdir(parents=True, exist_ok=True)
@@ -653,10 +656,10 @@ def create_full_tar(ctx: BackupContext, entries: list[FileEntry], *, dry_run: bo
     write_json(metadata_dir / "entries.json", {"entries": entries_manifest})
 
     if dry_run:
-        print(f"[DRY-RUN] would create tar archive: {payload_path}")
+        print(f"[DRY-RUN] would create tar archive: {payload_path} (gzip level {gzip_level})")
         return payload_path
 
-    with tarfile.open(payload_path, "w:gz") as tar:
+    with tarfile.open(payload_path, "w:gz", compresslevel=gzip_level) as tar:
         add_to_tar(tar, metadata_dir, "__backup_metadata")
         for entry in entries:
             add_to_tar(tar, entry.path, entry.arcname, entry.path.parent)
@@ -705,12 +708,17 @@ def verify_tar(payload_path: Path) -> tuple[bool, list[str]]:
         return False, [f"missing payload: {payload_path}"]
     try:
         with tarfile.open(payload_path, "r:gz") as tar:
-            names = tar.getnames()
             required = ["__backup_metadata/fingerprint.json", "__backup_metadata/entries.json"]
-            missing = [name for name in required if name not in names]
+            remaining = set(required)
+            entry_count = 0
+            while (member := tar.next()) is not None:
+                entry_count += 1
+                remaining.discard(member.name)
+                tar.members.clear()
+            missing = [name for name in required if name in remaining]
             if missing:
                 return False, [f"payload missing metadata: {', '.join(missing)}"]
-            return True, [f"payload entries: {len(names)}"]
+            return True, [f"payload entries: {entry_count}"]
     except tarfile.TarError as exc:
         return False, [f"invalid tar payload: {exc}"]
 
@@ -830,6 +838,7 @@ def cmd_weekly_full(args: argparse.Namespace) -> int:
         "run_id": ctx.run_id,
         "started_at": now_iso(),
         "backup_root": str(ctx.backup_root),
+        "compression": {"format": "gzip", "level": args.gzip_level},
         "entries": [dataclasses.asdict(entry) | {"path": str(entry.path)} for entry in entries],
         "commands": [],
         "warnings": [],
@@ -846,7 +855,7 @@ def cmd_weekly_full(args: argparse.Namespace) -> int:
         if not args.no_stop:
             commands.append(compose_down(ctx, dry_run=args.dry_run))
             stopped = True
-        payload_path = create_full_tar(ctx, entries, dry_run=args.dry_run)
+        payload_path = create_full_tar(ctx, entries, dry_run=args.dry_run, gzip_level=args.gzip_level)
     finally:
         if stopped and args.restart_after:
             commands.append(compose_up(ctx, dry_run=args.dry_run))
@@ -858,6 +867,7 @@ def cmd_weekly_full(args: argparse.Namespace) -> int:
         "generated_at": now_iso(),
         "payload": str(payload_path),
         "payload_sha256": checksums.get(payload_path.name),
+        "compression": {"format": "gzip", "level": args.gzip_level},
         "postgres_dump_included": bool(dump_path),
         "fingerprint": fingerprint(ctx),
         "entries": [
@@ -952,6 +962,9 @@ Description=OpenClaw Panopticon daily incremental backup
 
 [Service]
 Type=oneshot
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
 WorkingDirectory={REPO_ROOT}
 {environment_lines}ExecStart={python_exe} {script_path} {' '.join(backup_args)} daily-incremental --restic-check
 """
@@ -971,6 +984,9 @@ Description=OpenClaw Panopticon weekly full backup
 
 [Service]
 Type=oneshot
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
 WorkingDirectory={REPO_ROOT}
 {environment_lines}ExecStart={python_exe} {script_path} {' '.join(backup_args)} weekly-full --yes --restart-after
 """
@@ -1026,6 +1042,7 @@ def build_parser() -> argparse.ArgumentParser:
     weekly.add_argument("--no-stop", action="store_true", help="不停止服务创建 warm full，不推荐作为迁移级备份")
     weekly.add_argument("--restart-after", action="store_true", help="停服备份后自动 docker compose up -d")
     weekly.add_argument("--include-redis-data", action="store_true", help="把 redis-data 纳入全量 tar，默认不含")
+    weekly.add_argument("--gzip-level", type=int, choices=range(10), default=DEFAULT_GZIP_LEVEL, help="gzip 压缩级别 0-9，默认 6；较低级别减少 CPU 开销但可能增加包体积，设为 9 恢复原压缩级别")
     weekly.set_defaults(func=cmd_weekly_full)
 
     verify = subparsers.add_parser("verify", help="校验全量备份集或 restic repo")
@@ -1046,10 +1063,24 @@ def build_parser() -> argparse.ArgumentParser:
     return base
 
 
+@contextmanager
+def backup_run_lock(panopticon_dir: Path):
+    panopticon_dir.mkdir(parents=True, exist_ok=True)
+    with (panopticon_dir / ".backup.lock").open("a") as lock_file:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError("another backup maintenance task is running; retry later") from exc
+        yield
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command in {"daily-incremental", "weekly-full", "prune", "verify"}:
+            with backup_run_lock(Path(args.panopticon_dir).expanduser().resolve()):
+                return int(args.func(args))
         return int(args.func(args))
     except KeyboardInterrupt:
         print("[ERROR] interrupted", file=sys.stderr)

@@ -37,6 +37,14 @@ docker compose -f panopticon/docker-compose.panopticon.yml up -d mc-postgres mc-
 curl -fsS http://127.0.0.1:18910/health
 ```
 
+## Chat 代理与设备认证
+
+- OpenClaw 2026.11.3 要求可信代理提供真实客户端来源。nginx 的 `/chat/` 路由覆盖 `X-Forwarded-For`，API 不再伪装回环地址。
+- 在本地 Mission Control 环境文件中设置 `MC_CHAT_TRUSTED_PROXY_IPS`，逗号分隔，仅填写直接连接 API 的 nginx 实际 IP；默认空值不信任任何转发头。不要填写整个 Docker 子网。
+- 各 agent 的 `gateway.trustedProxies` 仅信任直接连接它的 API 实际 IP。重建代理容器或 Docker 网络后应核对并同步这两层地址。
+- 浏览器通过 HTTPS 或 localhost 安全上下文生成设备身份，并使用正常配对流程。`MC_CHAT_COMPAT_CLEAR_DEVICE_AUTH_STORAGE`、`MC_CHAT_COMPAT_STRIP_STALE_DEVICE_FIELDS` 和 `MC_CHAT_COMPAT_FORCE_TOKEN_IN_CONNECT` 默认关闭，避免破坏签名及已配对凭据。
+- `MC_CHAT_PROXY_FORCE_LOOPBACK_HEADERS` 已不再控制代理来源，不应依靠旧版回环伪装或退休的设备认证绕过配置。
+
 ## 你最常改的地方
 
 | 路径 | 作用 |
@@ -58,6 +66,14 @@ curl -fsS http://127.0.0.1:18910/health
 - usage 聚合
 - agent catalog
 - chat 代理
+
+### 用量读取与缓存
+
+`GET /v1/usage/agents?days=7` 使用进程内快照，完成重建后默认缓存 60 秒，可通过 `MC_AGENT_USAGE_CACHE_TTL_SECONDS` 调整（最小 1 秒，恢复原频率可设为 15）。过期快照立即返回，后台只允许一轮日志扫描；冷启动等待受 `agent_usage_snapshot_timeout_seconds` 限制，超时返回空列表，后台扫描继续。扫描失败保留旧快照，因此该接口不提供强实时一致性，多 worker 的缓存也不共享。
+
+未变化的日志复用解析结果，文件指纹包含设备、inode、大小、纳秒修改时间及状态变更时间。追加、改写和轮转会重新解析，删除会清理缓存；24 小时和指定天数窗口每轮重新计算。解析缓存最多保留 16384 个文件、50000 条用量记录，只保存用量数据，不缓存会话正文。超出预算的文件仍正常读取，但不进入缓存。
+
+相关回归位于 [tests/test_health_endpoints.py](tests/test_health_endpoints.py)，涵盖后台单次刷新、冷启动超时、文件变更和滑动窗口。
 
 ### 知识系统 API
 

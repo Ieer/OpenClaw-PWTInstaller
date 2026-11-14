@@ -2,6 +2,7 @@ import os
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import parse_qs, urlencode
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -9,7 +10,7 @@ from urllib.parse import urlparse
 import requests
 import websocket
 from dash import ALL, Dash, Input, Output, State, ctx, dcc, html, no_update
-from flask import Response, request
+from flask import Flask, Response, request
 
 APP_TITLE = "Mission Control"
 
@@ -257,6 +258,7 @@ WS_LOCK = threading.Lock()
 WS_STATE = {
     "connected": False,
     "revision": 0,
+    "data_revision": 0,
     "last_error": "",
     "last_event_type": "",
     "last_event_agent": "",
@@ -283,9 +285,11 @@ def _update_ws_state(**kwargs):
         WS_STATE.update(kwargs)
 
 
-def _bump_ws_revision():
+def _bump_ws_revision(*, data_changed: bool = False):
     with WS_LOCK:
         WS_STATE["revision"] = int(WS_STATE.get("revision") or 0) + 1
+        if data_changed:
+            WS_STATE["data_revision"] = int(WS_STATE.get("data_revision") or 0) + 1
 
 
 def _get_ws_state() -> dict:
@@ -293,6 +297,7 @@ def _get_ws_state() -> dict:
         return {
             "connected": bool(WS_STATE.get("connected")),
             "revision": int(WS_STATE.get("revision") or 0),
+            "data_revision": int(WS_STATE.get("data_revision") or 0),
             "last_error": str(WS_STATE.get("last_error") or ""),
             "last_event_type": str(WS_STATE.get("last_event_type") or ""),
             "last_event_agent": str(WS_STATE.get("last_event_agent") or ""),
@@ -337,7 +342,7 @@ def _on_ws_message(raw_msg: str) -> None:
         last_event_created_at=event_created_at,
         last_event_payload=event_payload,
     )
-    _bump_ws_revision()
+    _bump_ws_revision(data_changed=bool(event_type and event_type != "ping"))
 
 
 def _ws_subscriber_loop():
@@ -471,28 +476,32 @@ def _api_headers() -> dict[str, str]:
 
 
 def _format_api_status(is_online: bool, last_success: str = "", error: Exception | None = None) -> str:
-    base = MISSION_CONTROL_API_URL
     ws_info = _get_ws_state()
     ws_suffix = "ws:live" if ws_info.get("connected") else "ws:fallback polling"
     sync_tail = f" · last sync {last_success}" if last_success else ""
     if is_online:
-        return f"Online · {base}{sync_tail} · {ws_suffix}"
+        return f"Online{sync_tail} · {ws_suffix}"
+    snapshot_hint = "showing cached data" if last_success else "no data loaded"
     if not error:
-        return f"Offline · {base}{sync_tail} · {ws_suffix} · retry in 5s"
+        return f"Offline · {snapshot_hint}{sync_tail} · {ws_suffix} · retry in 5s"
     detail = f"{error.__class__.__name__}: {error}".strip()
     if len(detail) > 80:
         detail = detail[:77] + "..."
-    return f"Offline · {base}{sync_tail} · {ws_suffix} · {detail} · retry in 5s"
+    return f"Offline · {snapshot_hint}{sync_tail} · {ws_suffix} · {detail} · retry in 5s"
 
 
 def _sync_state_default() -> dict:
     return {
         "last_success": "",
         "last_success_epoch": 0.0,
+        "last_attempt_epoch": 0.0,
         "last_ws_revision": 0,
+        "last_data_revision": 0,
         "last_event_id": "",
         "last_event_type": "",
         "last_trigger": "initial",
+        "api_online": None,
+        "ws_connected": None,
     }
 
 
@@ -508,6 +517,10 @@ def _normalize_sync_state(value) -> dict:
         state["last_ws_revision"] = int(state.get("last_ws_revision") or 0)
     except (TypeError, ValueError):
         state["last_ws_revision"] = 0
+    try:
+        state["last_data_revision"] = int(state.get("last_data_revision") or 0)
+    except (TypeError, ValueError):
+        state["last_data_revision"] = 0
     state["last_success"] = str(state.get("last_success") or "")
     state["last_event_id"] = str(state.get("last_event_id") or "")
     state["last_event_type"] = str(state.get("last_event_type") or "")
@@ -515,9 +528,11 @@ def _normalize_sync_state(value) -> dict:
     return state
 
 
-def _sync_state_with_ws(sync_state: dict, ws_state: dict, *, trigger: str | None = None) -> dict:
+def _sync_state_with_ws(sync_state: dict, ws_state: dict, *, trigger: str | None = None, data_refreshed: bool = False) -> dict:
     next_state = _normalize_sync_state(sync_state)
     next_state["last_ws_revision"] = int(ws_state.get("revision") or 0)
+    if data_refreshed:
+        next_state["last_data_revision"] = int(ws_state.get("data_revision") or 0)
     event_id = str(ws_state.get("last_event_id") or "")
     event_type = str(ws_state.get("last_event_type") or "")
     if event_id:
@@ -530,6 +545,8 @@ def _sync_state_with_ws(sync_state: dict, ws_state: dict, *, trigger: str | None
 
 
 def _should_refresh_from_ws(sync_state: dict, ws_state: dict) -> bool:
+    if "data_revision" in ws_state:
+        return int(ws_state.get("data_revision") or 0) != int(sync_state.get("last_data_revision") or 0)
     event_type = str(ws_state.get("last_event_type") or "")
     if not event_type or event_type == "ping":
         return False
@@ -544,6 +561,40 @@ def api_get_json(path: str, *, timeout: float = 3.0):
     resp = requests.get(url, headers=_api_headers(), timeout=timeout)
     resp.raise_for_status()
     return resp.json()
+
+
+_DASHBOARD_READ_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="dashboard-read")
+MISSION_CONTROL_AUX_CACHE_SECONDS = max(0.0, _env_float("MISSION_CONTROL_AUX_CACHE_SECONDS", 15.0))
+MISSION_CONTROL_EVENT_COALESCE_SECONDS = max(0.0, _env_float("MISSION_CONTROL_EVENT_COALESCE_SECONDS", 2.0))
+_DASHBOARD_AUX_CACHE = {}
+_DASHBOARD_AUX_LOCKS = {
+    path: threading.Lock()
+    for path in (
+        "/v1/usage/agents?days=7",
+        "/v1/observability/summary?window_minutes=5",
+        "/v1/observability/container-health",
+    )
+}
+
+
+def _optional_dashboard_json(path: str):
+    try:
+        return api_get_json(path, timeout=2.0)
+    except Exception:
+        return None
+
+
+def _cached_dashboard_json(path: str):
+    lock = _DASHBOARD_AUX_LOCKS.get(path)
+    if lock is None or MISSION_CONTROL_AUX_CACHE_SECONDS <= 0:
+        return _optional_dashboard_json(path)
+    with lock:
+        cached = _DASHBOARD_AUX_CACHE.get(path)
+        if cached is not None and time.monotonic() - cached[0] < MISSION_CONTROL_AUX_CACHE_SECONDS:
+            return cached[1]
+        data = _optional_dashboard_json(path)
+        _DASHBOARD_AUX_CACHE[path] = (time.monotonic(), data)
+        return data
 
 
 def api_patch_json(path: str, body: dict, *, timeout: float = 5.0):
@@ -729,6 +780,7 @@ def _default_task_ui() -> dict:
         "message": "",
         "message_tone": "neutral",
         "last_click_nonce": 0,
+        "last_click_timestamp": 0,
     }
 
 
@@ -737,6 +789,8 @@ def _default_create_task_ui() -> dict:
         "open": False,
         "submitting": False,
         "route_preview": None,
+        "route_inputs": None,
+        "route_auto_assignee": None,
         "message": "",
         "message_tone": "neutral",
         "revision": 0,
@@ -1070,11 +1124,20 @@ def _convert_feed(feed: list[dict]) -> list[dict]:
     return out
 
 
-def _filter_board(columns: list[dict], selected: str) -> list[dict]:
-    key = (selected or "all").lower()
-    if key in {"all", "tasks"}:
+def _filter_board(columns: list[dict], selected: str, query: str | None = None) -> list[dict]:
+    search = (query or "").strip().casefold()
+    if not search:
         return columns
-    return columns
+    filtered = []
+    for item in columns:
+        cards = [card for card in item.get("cards", [])
+                 if any(search in str(value or "").casefold() for value in (
+                     card.get("title"), card.get("id"), card.get("short_id"),
+                     f"#{card.get('short_id') or ''}", card.get("assignee"),
+                 ))]
+        filtered.append({**item, "cards": cards, "count": len(cards),
+                         "total_count": item.get("count", len(item.get("cards", [])))})
+    return filtered
 
 
 def _filter_feed(feed_items: list[dict], selected: str) -> list[dict]:
@@ -1114,21 +1177,31 @@ def _parse_filters_from_search(search: str | None) -> tuple[str, str]:
     return board_filter, feed_filter
 
 
-def _build_search(board_filter: str, feed_filter: str) -> str:
+def _build_search(board_filter: str, feed_filter: str, query: str = "") -> str:
     board = _sanitize_board_filter(board_filter)
     feed = _sanitize_feed_filter(feed_filter)
-    if board == "all" and feed == "all":
+    if board == "all" and feed == "all" and not query.strip():
         return ""
-    query = urlencode({"board": board, "feed": feed})
-    return f"?{query}"
+    params = {"board": board, "feed": feed}
+    if query.strip():
+        params["q"] = query
+    return f"?{urlencode(params)}"
 
 
 def agent_card(agent):
-    status = str(agent.get("status") or "IDLE").lower()
+    status = str(agent.get("status") or "unknown").strip().lower()
+    if status not in {"recent", "idle"}:
+        status = "unknown"
+    status_label, status_hint = {
+        "recent": ("Recently active", "Board or feed activity within the last 30 minutes; not a connection check."),
+        "idle": ("Idle", "No board or feed activity observed within the last 30 minutes; not necessarily offline."),
+        "unknown": ("Unknown", "Activity status is unavailable; connection status is unknown."),
+    }[status]
     return html.Div(
         className="agent-card",
         children=[
-            html.Div(className=f"agent-avatar status-{status}", children=agent["name"][0]),
+            html.Div(className=f"agent-avatar status-{status}", children=agent["name"][0],
+                     **{"aria-hidden": "true"}),
             html.Div(
                 className="agent-meta",
                 children=[
@@ -1140,6 +1213,8 @@ def agent_card(agent):
                         ],
                     ),
                     html.Div(agent["role"], className="agent-role"),
+                    html.Span(status_label, className=f"agent-status status-{status}",
+                              title=status_hint, **{"aria-label": f"{status_label}. {status_hint}"}),
                     html.Div(agent.get("usage_text") or "Usage 24h 0 · 7d 0 · Cost $0.0000", className="agent-usage"),
                 ],
             ),
@@ -1195,13 +1270,18 @@ def column(column_data):
                 className="column-header",
                 children=[
                     html.Span(column_data["title"], className="column-title"),
-                    html.Span(str(column_data["count"]), className="column-count"),
+                    html.Span(
+                        f"{column_data['count']} / {column_data['total_count']}"
+                        if "total_count" in column_data else str(column_data["count"]),
+                        className="column-count",
+                    ),
                 ],
             ),
             html.Div(
                 className="column-cards",
                 children=[task_card(card) for card in column_data["cards"]]
-                or [html.Div("No cards", className="column-empty")],
+                or [html.Div("No matching tasks" if "total_count" in column_data else "No cards",
+                             className="column-empty")],
             ),
         ],
     )
@@ -1450,12 +1530,16 @@ def _task_detail_can_review(task: dict | None, *, force: bool = False) -> bool:
     return bool(force) or status == "REVIEW"
 
 
-app = Dash(__name__, update_title=None)
+ui_server = Flask(__name__)
+ui_server.config.update(COMPRESS_ALGORITHM=["gzip"], COMPRESS_LEVEL=4)
+app = Dash(__name__, server=ui_server, update_title=None, compress=True)
 
 
 @app.server.after_request
 def add_dash_runtime_cache_headers(response):
-    if request.path == "/" or request.path.startswith("/_dash-"):
+    if request.path == "/" or (
+        request.path.startswith("/_dash-") and not request.path.startswith("/_dash-component-suites/")
+    ):
         response.headers["Cache-Control"] = "no-store, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
@@ -1583,6 +1667,7 @@ app.layout = html.Div(
             data={
                 "board_filter": "all",
                 "feed_filter": "all",
+                "task_query": "",
             },
         ),
         dcc.Store(id="sync-state", data=_sync_state_default()),
@@ -1590,6 +1675,8 @@ app.layout = html.Div(
         dcc.Store(id="create-task-ui", data=_default_create_task_ui()),
         dcc.Store(id="task-refresh-signal", data=_default_task_refresh_signal()),
         dcc.Store(id="task-detail-store", data=_default_task_detail_state()),
+        dcc.Store(id="task-drafts", data={"task_id": "", "drafts": {}}),
+        dcc.Store(id="skills-data-store", data=None),
         dcc.Store(id="board-data-store", data=[]),
         dcc.Store(id="feed-data-store", data=[]),
         dcc.Store(
@@ -1676,9 +1763,11 @@ app.layout = html.Div(
                                 ),
                                 html.Button("Chat", id="open-chat", className="ghost-button"),
                                 html.Button("Skills", id="open-skills", className="ghost-button"),
-                                html.Button("Clear Filters", id="clear-filters", className="ghost-button"),
-                                html.Div("Overlay n/a", id="voice-latency-pill", className="status-pill status-unknown"),
-                                html.Div("-", id="api-status", className="status-pill status-unknown"),
+                                html.Div("Overlay: no samples" if MISSION_CONTROL_VOICE_OVERLAY_ENABLED else "Overlay disabled",
+                                         id="voice-latency-pill", className="status-pill status-unknown"),
+                                html.Div("Connecting...", id="api-status", className="status-pill status-unknown",
+                                         title=f"API: {MISSION_CONTROL_API_URL}", role="status",
+                                         **{"aria-live": "polite", "aria-atomic": "true"}),
                                 html.Button("Settings", id="open-settings", className="ghost-button"),
                             ],
                         ),
@@ -1725,6 +1814,7 @@ app.layout = html.Div(
         ),
         html.Div(
             className="main",
+            role="main",
             children=[
                 html.Div(
                     className="panel left",
@@ -1732,11 +1822,12 @@ app.layout = html.Div(
                         html.Div(
                             className="panel-title",
                             children=[
-                                html.Span("Agents"),
+                                html.H2("Agents", className="panel-heading"),
                                 html.Span("-", id="agents-count", className="panel-count"),
                             ],
                         ),
-                        html.Div(id="agents", className="agent-list"),
+                        html.Div(id="agents", className="agent-list",
+                                 children=[html.Div("Loading agents...", className="column-empty")]),
                     ],
                 ),
                 html.Div(
@@ -1745,15 +1836,32 @@ app.layout = html.Div(
                         html.Div(
                             className="panel-title",
                             children=[
-                                html.Span("Mission Queue"),
+                                html.H2("Mission Queue", className="panel-heading"),
                                 html.Div(
                                     className="panel-filters",
                                     children=[
                                         html.Button("New Task", id="open-create-task", className="filter-chip task-create-chip"),
-                                        html.Button("All", id="board-filter-all", className="filter-chip active"),
-                                        html.Button("Tasks", id="board-filter-tasks", className="filter-chip"),
+                                        html.Button("All", id="board-filter-all", className="filter-chip active", **{"aria-pressed": "true"}),
+                                        html.Button("Tasks", id="board-filter-tasks", className="filter-chip", **{"aria-pressed": "false"}),
                                     ],
                                 ),
+                            ],
+                        ),
+                        html.Div(
+                            className="task-search-toolbar",
+                            children=[
+                                html.Div(
+                                    className="task-search-field",
+                                    children=[
+                                        html.Label("Search loaded tasks", htmlFor="task-search", className="task-search-label"),
+                                        dcc.Input(id="task-search", type="search", value="", debounce=0.35,
+                                                  placeholder="Title, ID or assignee", className="task-search-input"),
+                                    ],
+                                ),
+                                html.Button("Clear Filters", id="clear-filters", className="ghost-button",
+                                            disabled=True),
+                                html.Div("Tasks not loaded", id="task-search-summary", className="task-search-summary",
+                                         role="status", **{"aria-live": "polite", "aria-atomic": "true"}),
                             ],
                         ),
                         html.Div(
@@ -1762,7 +1870,8 @@ app.layout = html.Div(
                             role="status",
                             **{"aria-live": "polite"},
                         ),
-                        html.Div(id="board", className="board"),
+                        html.Div(id="board", className="board",
+                                 children=[html.Div("Loading tasks...", className="column-empty")]),
                     ],
                 ),
                 html.Div(
@@ -1771,28 +1880,30 @@ app.layout = html.Div(
                         html.Div(
                             className="panel-title",
                             children=[
-                                html.Span("Live Feed"),
+                                html.H2("Live Feed", className="panel-heading"),
                                 html.Div(
                                     className="panel-filters",
                                     children=[
-                                        html.Button("All", id="feed-filter-all", className="filter-chip active"),
-                                        html.Button("Tasks", id="feed-filter-tasks", className="filter-chip"),
-                                        html.Button("Comments", id="feed-filter-comments", className="filter-chip"),
-                                        html.Button("Chat", id="feed-filter-chat", className="filter-chip"),
-                                        html.Button("System", id="feed-filter-system", className="filter-chip"),
+                                        html.Button("All", id="feed-filter-all", className="filter-chip active", **{"aria-pressed": "true"}),
+                                        html.Button("Tasks", id="feed-filter-tasks", className="filter-chip", **{"aria-pressed": "false"}),
+                                        html.Button("Comments", id="feed-filter-comments", className="filter-chip", **{"aria-pressed": "false"}),
+                                        html.Button("Chat", id="feed-filter-chat", className="filter-chip", **{"aria-pressed": "false"}),
+                                        html.Button("System", id="feed-filter-system", className="filter-chip", **{"aria-pressed": "false"}),
                                     ],
                                 ),
                             ],
                         ),
-                        html.Div(id="feed", className="feed"),
+                        html.Div(id="feed", className="feed",
+                                 children=[html.Div("Loading activity...", className="column-empty")]),
                     ],
                 ),
             ],
         ),
         html.Div(id="task-detail-backdrop", className="task-detail-backdrop", n_clicks=0),
-        html.Div(
+        html.Fieldset(
             id="task-detail-drawer",
             className="task-detail-drawer",
+            style={"margin": 0, "minWidth": 0},
             role="dialog",
             **{"aria-modal": "true", "aria-labelledby": "task-detail-title"},
             children=[
@@ -1836,21 +1947,33 @@ app.layout = html.Div(
                         html.Div(
                             className="task-detail-comment-form",
                             children=[
-                                dcc.Input(
-                                    id="task-comment-author",
-                                    className="task-detail-input",
-                                    type="text",
-                                    placeholder="Author",
-                                    value="",
-                                    debounce=True,
-                                    disabled=True,
+                                html.Div(
+                                    className="comment-field",
+                                    children=[
+                                        html.Label("Author", htmlFor="task-comment-author", className="field-label"),
+                                        dcc.Input(
+                                            id="task-comment-author",
+                                            className="task-detail-input",
+                                            type="text",
+                                            placeholder="Author",
+                                            value="",
+                                            debounce=False,
+                                            disabled=True,
+                                        ),
+                                    ],
                                 ),
-                                dcc.Textarea(
-                                    id="task-comment-body",
-                                    className="task-detail-textarea",
-                                    placeholder="Comment",
-                                    value="",
-                                    disabled=True,
+                                html.Div(
+                                    className="comment-field",
+                                    children=[
+                                        html.Label("Comment", htmlFor="task-comment-body", className="field-label"),
+                                        dcc.Textarea(
+                                            id="task-comment-body",
+                                            className="task-detail-textarea",
+                                            placeholder="Comment",
+                                            value="",
+                                            disabled=True,
+                                        ),
+                                    ],
                                 ),
                                 html.Button("Add Comment", id="add-task-comment", className="ghost-button task-detail-action-button", disabled=True),
                             ],
@@ -2036,8 +2159,10 @@ app.layout = html.Div(
             role="dialog",
             **{"aria-modal": "true", "aria-labelledby": "create-task-modal-title"},
             children=[
-                html.Div(
+                html.Fieldset(
+                    id="create-task-form",
                     className="create-task-modal-card",
+                    style={"margin": 0, "minWidth": 0},
                     children=[
                         html.Div(
                             className="create-task-modal-header",
@@ -2058,7 +2183,7 @@ app.layout = html.Div(
                                 html.Div(
                                     className="create-task-field create-task-field-wide",
                                     children=[
-                                        html.Div("Title", className="create-task-label"),
+                                        html.Label("Title", htmlFor="create-task-title", className="create-task-label"),
                                         dcc.Input(
                                             id="create-task-title",
                                             type="text",
@@ -2070,7 +2195,7 @@ app.layout = html.Div(
                                 html.Div(
                                     className="create-task-field",
                                     children=[
-                                        html.Div("Assignee", className="create-task-label"),
+                                        html.Label("Assignee", id="create-task-assignee-label", className="create-task-label"),
                                         dcc.Dropdown(
                                             id="create-task-assignee",
                                             options=[],
@@ -2084,7 +2209,7 @@ app.layout = html.Div(
                                 html.Div(
                                     className="create-task-field",
                                     children=[
-                                        html.Div("Tags", className="create-task-label"),
+                                        html.Label("Tags", htmlFor="create-task-tags", className="create-task-label"),
                                         dcc.Textarea(
                                             id="create-task-tags",
                                             placeholder="weekly-review, reporting",
@@ -2109,6 +2234,8 @@ app.layout = html.Div(
         html.Div(
             id="settings-modal",
             className="settings-modal",
+            role="dialog",
+            **{"aria-modal": "true", "aria-label": "Agent settings"},
             children=[
                 html.Div(
                     className="settings-modal-card",
@@ -2128,7 +2255,7 @@ app.layout = html.Div(
                                 html.Button("Close", id="close-settings", className="ghost-button"),
                             ],
                         ),
-                        html.Div(id="settings-notice", className="settings-notice"),
+                        html.Div(id="settings-notice", className="settings-notice", role="status", **{"aria-live": "polite"}),
                         html.Div(
                             id="settings-overview",
                             className="settings-overview",
@@ -2143,7 +2270,7 @@ app.layout = html.Div(
                                         html.Div(
                                             className="settings-field",
                                             children=[
-                                                html.Div("Warn 24h tokens", className="settings-label"),
+                                                html.Label("Warn 24h tokens", htmlFor="settings-threshold-24h-warn", className="settings-label"),
                                                 dcc.Input(
                                                     id="settings-threshold-24h-warn",
                                                     type="number",
@@ -2157,7 +2284,7 @@ app.layout = html.Div(
                                         html.Div(
                                             className="settings-field",
                                             children=[
-                                                html.Div("Warn 7d tokens", className="settings-label"),
+                                                html.Label("Warn 7d tokens", htmlFor="settings-threshold-7d-warn", className="settings-label"),
                                                 dcc.Input(
                                                     id="settings-threshold-7d-warn",
                                                     type="number",
@@ -2171,7 +2298,7 @@ app.layout = html.Div(
                                         html.Div(
                                             className="settings-field",
                                             children=[
-                                                html.Div("Close Suggest 24h", className="settings-label"),
+                                                html.Label("Close Suggest 24h", htmlFor="settings-threshold-24h-close", className="settings-label"),
                                                 dcc.Input(
                                                     id="settings-threshold-24h-close",
                                                     type="number",
@@ -2185,7 +2312,7 @@ app.layout = html.Div(
                                         html.Div(
                                             className="settings-field",
                                             children=[
-                                                html.Div("Close Suggest 7d", className="settings-label"),
+                                                html.Label("Close Suggest 7d", htmlFor="settings-threshold-7d-close", className="settings-label"),
                                                 dcc.Input(
                                                     id="settings-threshold-7d-close",
                                                     type="number",
@@ -2220,6 +2347,8 @@ app.layout = html.Div(
         html.Div(
             id="skills-modal",
             className="skills-modal",
+            role="dialog",
+            **{"aria-modal": "true", "aria-label": "Skills management"},
             children=[
                 html.Div(
                     className="skills-modal-card",
@@ -2236,7 +2365,13 @@ app.layout = html.Div(
                                         ),
                                     ]
                                 ),
-                                html.Button("Close", id="close-skills", className="ghost-button"),
+                                html.Div(
+                                    className="skills-toolbar",
+                                    children=[
+                                        html.Button("Refresh", id="refresh-skills", className="ghost-button"),
+                                        html.Button("Close", id="close-skills", className="ghost-button"),
+                                    ],
+                                ),
                             ],
                         ),
                         html.Div(
@@ -2404,6 +2539,8 @@ app.layout = html.Div(
         html.Div(
             id="chat-modal",
             className="chat-modal",
+            role="dialog",
+            **{"aria-modal": "true", "aria-label": "Agent chat"},
             children=[
                 html.Div(
                     id="chat-modal-card",
@@ -2512,6 +2649,7 @@ app.layout = html.Div(
 @app.callback(
     Output("ui-state", "data"),
     Output("url", "search"),
+    Output("task-search", "value"),
     Input("url", "search"),
     Input("board-filter-all", "n_clicks"),
     Input("board-filter-tasks", "n_clicks"),
@@ -2521,6 +2659,7 @@ app.layout = html.Div(
     Input("feed-filter-chat", "n_clicks"),
     Input("feed-filter-system", "n_clicks"),
     Input("clear-filters", "n_clicks"),
+    Input("task-search", "value"),
     State("ui-state", "data"),
     prevent_initial_call=False,
 )
@@ -2534,6 +2673,7 @@ def update_ui_state(
     _feed_chat_clicks,
     _feed_system_clicks,
     _clear_clicks,
+    task_query,
     state,
 ):
     state = state or {}
@@ -2541,6 +2681,7 @@ def update_ui_state(
 
     board_filter = (state.get("board_filter") or "all").lower()
     feed_filter = (state.get("feed_filter") or "all").lower()
+    query = str(state.get("task_query") or "")
 
     board_map = {
         "board-filter-all": "all",
@@ -2556,14 +2697,21 @@ def update_ui_state(
 
     if trigger == "url" or trigger is None:
         board_filter, feed_filter = _parse_filters_from_search(url_search)
-        return {
+        query = (parse_qs((url_search or "").lstrip("?")).get("q") or [""])[0]
+        new_state = {
             "board_filter": board_filter,
             "feed_filter": feed_filter,
-        }, no_update
+            "task_query": query,
+        }
+        return (new_state if new_state != state else no_update, no_update,
+                query if query != (task_query or "") else no_update)
 
     if trigger == "clear-filters":
         board_filter = "all"
         feed_filter = "all"
+        query = ""
+    elif trigger == "task-search":
+        query = str(task_query or "")
 
     if trigger in board_map:
         board_filter = board_map[trigger]
@@ -2573,30 +2721,31 @@ def update_ui_state(
     new_state = {
         "board_filter": board_filter,
         "feed_filter": feed_filter,
+        "task_query": query,
     }
-    expected = _build_search(board_filter, feed_filter)
-    if (url_search or "") == expected:
-        return new_state, no_update
-    return new_state, expected
+    expected = _build_search(board_filter, feed_filter, query)
+    return (new_state if new_state != state else no_update,
+            expected if (url_search or "") != expected else no_update,
+            "" if trigger == "clear-filters" and task_query else no_update)
 
 
 @app.callback(
     Output("task-ui", "data", allow_duplicate=True),
-    Input({"type": "task-card", "task_id": ALL, "status": ALL}, "n_clicks"),
+    Input({"type": "task-card", "task_id": ALL, "status": ALL}, "n_clicks_timestamp"),
     State("task-ui", "data"),
     prevent_initial_call=True,
 )
-def select_task_card(_clicks, task_ui):
+def select_task_card(_timestamps, task_ui):
     trigger = ctx.triggered_id
     if not isinstance(trigger, dict):
         return no_update
 
     triggered = ctx.triggered[0] if ctx.triggered else {}
     try:
-        click_count = int(triggered.get("value") or 0)
+        click_timestamp = int(triggered.get("value") or 0)
     except (TypeError, ValueError):
         return no_update
-    if click_count <= 0:
+    if click_timestamp <= 0:
         return no_update
 
     task_id = str(trigger.get("task_id") or "").strip()
@@ -2606,6 +2755,9 @@ def select_task_card(_clicks, task_ui):
     state = _default_task_ui()
     if isinstance(task_ui, dict):
         state.update(task_ui)
+    if click_timestamp <= int(state.get("last_click_timestamp") or 0):
+        return no_update
+    state["last_click_timestamp"] = click_timestamp
     status = str(trigger.get("status") or "").strip()
     state["selected_task_id"] = task_id
     state["selected_task_status"] = status
@@ -2722,6 +2874,54 @@ def load_task_detail(task_ui, task_refresh_signal, task_detail_store):
     next_state["events"] = events if isinstance(events, list) else []
     next_state["fetched_at"] = datetime.now(timezone.utc).isoformat()
     return next_state
+
+
+@app.callback(
+    Output("task-drafts", "data"),
+    Output("task-comment-author", "value", allow_duplicate=True),
+    Output("task-comment-body", "value", allow_duplicate=True),
+    Output("task-complete-summary", "value", allow_duplicate=True),
+    Output("task-complete-artifacts", "value", allow_duplicate=True),
+    Output("task-review-notes", "value", allow_duplicate=True),
+    Output("task-review-artifacts", "value", allow_duplicate=True),
+    Input("task-ui", "data"),
+    Input("task-comment-author", "value"),
+    Input("task-comment-body", "value"),
+    Input("task-complete-summary", "value"),
+    Input("task-complete-artifacts", "value"),
+    Input("task-review-notes", "value"),
+    Input("task-review-artifacts", "value"),
+    State("task-drafts", "data"),
+    prevent_initial_call=True,
+)
+def sync_task_drafts(task_ui, author, comment, summary, complete_artifacts, notes, review_artifacts, task_drafts):
+    selected = str((task_ui or {}).get("selected_task_id") or "").strip()
+    state = task_drafts or {}
+    previous = str(state.get("task_id") or "")
+    drafts = dict(state.get("drafts") or {})
+    values = [str(value or "") for value in (author, comment, summary, complete_artifacts, notes, review_artifacts)]
+    if previous:
+        drafts[previous] = values
+    if selected != previous:
+        restored = drafts.get(selected) or ["", "", "", "", "", ""]
+        return (
+            {"task_id": selected, "drafts": drafts},
+            restored[0],
+            restored[1],
+            restored[2],
+            restored[3],
+            restored[4],
+            restored[5],
+        )
+    return (
+        {"task_id": selected, "drafts": drafts},
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+    )
 
 
 @app.callback(
@@ -2925,7 +3125,10 @@ def sync_review_task_button(task_ui, task_detail_store, reviewer_agent, review_d
     State("task-review-notes", "value"),
     State("task-review-artifacts", "value"),
     State("task-review-force", "value"),
-    running=[(Output("task-operation-pending", "children"), "Saving changes...", "")],
+    running=[
+        (Output("task-operation-pending", "children"), "Saving changes...", ""),
+        (Output("task-detail-drawer", "disabled"), True, False),
+    ],
     prevent_initial_call=True,
 )
 def submit_task_detail_action(
@@ -3358,9 +3561,9 @@ def render_create_task_modal(create_task_ui):
     Output("create-task-ui", "data", allow_duplicate=True),
     Output("create-task-assignee", "value", allow_duplicate=True),
     Input("preview-create-task-route", "n_clicks"),
-    State("create-task-title", "value"),
-    State("create-task-assignee", "value"),
-    State("create-task-tags", "value"),
+    Input("create-task-title", "value"),
+    Input("create-task-assignee", "value"),
+    Input("create-task-tags", "value"),
     State("create-task-ui", "data"),
     prevent_initial_call=True,
 )
@@ -3370,16 +3573,29 @@ def preview_create_task_route(_clicks, title, assignee, tags_text, create_task_u
         state.update(create_task_ui)
 
     title_text = str(title or "").strip()
+    tags = _parse_text_list(tags_text)
+    assignee_value = str(assignee or "").strip() or None
+    inputs = {"title": title_text, "assignee": assignee_value, "tags": tags}
+    auto_assignee = state.get("route_auto_assignee")
+    if ctx.triggered_id != "preview-create-task-route":
+        if not state.get("route_inputs") or state["route_inputs"] == inputs:
+            return no_update, no_update
+        clear_auto = bool(auto_assignee and assignee_value == auto_assignee)
+        state["route_preview"] = None
+        state["route_inputs"] = None
+        state["route_auto_assignee"] = None
+        state["message"] = "Task fields changed. Preview the route again."
+        state["message_tone"] = "warn"
+        return state, None if clear_auto else no_update
+
     if not title_text:
         state["message"] = "Title is required before route preview."
         state["message_tone"] = "warn"
         return state, no_update
 
-    tags = _parse_text_list(tags_text)
-    assignee_value = str(assignee or "").strip() or None
     body = {
         "title": title_text,
-        "assignee": assignee_value,
+        "assignee": None if auto_assignee == assignee_value else assignee_value,
         "tags": tags,
     }
     try:
@@ -3391,6 +3607,9 @@ def preview_create_task_route(_clicks, title, assignee, tags_text, create_task_u
 
     suggested = str(preview.get("suggested_assignee") or "").strip() if isinstance(preview, dict) else ""
     state["route_preview"] = preview if isinstance(preview, dict) else None
+    use_suggestion = bool(suggested and (not assignee_value or assignee_value == auto_assignee))
+    state["route_auto_assignee"] = suggested if use_suggestion else None
+    state["route_inputs"] = {**inputs, "assignee": suggested if use_suggestion else assignee_value}
     if suggested:
         state["message"] = f"Route preview suggests {suggested}."
         state["message_tone"] = "ok"
@@ -3398,7 +3617,7 @@ def preview_create_task_route(_clicks, title, assignee, tags_text, create_task_u
         state["message"] = "Route preview found no confident assignee."
         state["message_tone"] = "warn"
 
-    next_assignee = suggested if suggested and not assignee_value else no_update
+    next_assignee = suggested if use_suggestion else no_update
     return state, next_assignee
 
 
@@ -3416,6 +3635,7 @@ def preview_create_task_route(_clicks, title, assignee, tags_text, create_task_u
     State("create-task-ui", "data"),
     State("task-refresh-signal", "data"),
     State("task-ui", "data"),
+    running=[(Output("create-task-form", "disabled"), True, False)],
     prevent_initial_call=True,
 )
 def submit_create_task(_clicks, title, assignee, tags_text, create_task_ui, task_refresh_signal, task_ui):
@@ -3431,6 +3651,13 @@ def submit_create_task(_clicks, title, assignee, tags_text, create_task_ui, task
 
     tags = _parse_text_list(tags_text)
     assignee_value = str(assignee or "").strip() or None
+    route_inputs = {"title": title_text, "assignee": assignee_value, "tags": tags}
+    if (
+        create_state.get("route_inputs")
+        and create_state["route_inputs"] != route_inputs
+        and create_state.get("route_auto_assignee") == assignee_value
+    ):
+        assignee_value = None
     body = {
         "title": title_text,
         "status": "INBOX",
@@ -3642,10 +3869,12 @@ def render_voice_overlay(voice_ui):
     prevent_initial_call=False,
 )
 def render_voice_latency_pill(metrics):
+    if not MISSION_CONTROL_VOICE_OVERLAY_ENABLED:
+        return "Overlay disabled", "status-pill status-unknown"
     data = metrics if isinstance(metrics, dict) else {}
     count = int(data.get("samples_count") or 0)
     if count <= 0:
-        return "Overlay n/a", "status-pill status-unknown"
+        return "Overlay: no samples", "status-pill status-unknown"
 
     p50 = float(data.get("p50_ms") or 0.0)
     p95 = float(data.get("p95_ms") or 0.0)
@@ -3764,6 +3993,12 @@ def render_settings_modal(_, settings_ui):
     close_24h = _threshold_int(state.get("close_24h"), 240_000)
     close_7d = _threshold_int(state.get("close_7d"), 1_500_000)
 
+    preserve_inputs = ctx.triggered_id == "refresh"
+    warn_24h_output = no_update if preserve_inputs else warn_24h
+    warn_7d_output = no_update if preserve_inputs else warn_7d
+    close_24h_output = no_update if preserve_inputs else close_24h
+    close_7d_output = no_update if preserve_inputs else close_7d
+
     overview = html.Div(
         className="settings-overview-grid",
         children=[
@@ -3778,10 +4013,10 @@ def render_settings_modal(_, settings_ui):
     if not is_open:
         return (
             "settings-modal",
-            warn_24h,
-            warn_7d,
-            close_24h,
-            close_7d,
+            warn_24h_output,
+            warn_7d_output,
+            close_24h_output,
+            close_7d_output,
             overview,
             [html.Div("Open 配置 to load assessment.", className="column-empty")],
             "",
@@ -3794,10 +4029,10 @@ def render_settings_modal(_, settings_ui):
         msg = f"Unable to load usage assessment: {e}"
         return (
             "settings-modal open",
-            warn_24h,
-            warn_7d,
-            close_24h,
-            close_7d,
+            warn_24h_output,
+            warn_7d_output,
+            close_24h_output,
+            close_7d_output,
             overview,
             [html.Div(msg, className="column-empty")],
             msg,
@@ -3911,10 +4146,10 @@ def render_settings_modal(_, settings_ui):
 
     return (
         "settings-modal open",
-        warn_24h,
-        warn_7d,
-        close_24h,
-        close_7d,
+        warn_24h_output,
+        warn_7d_output,
+        close_24h_output,
+        close_7d_output,
         overview,
         items,
         message,
@@ -3926,13 +4161,14 @@ def render_settings_modal(_, settings_ui):
     Output("skills-ui", "data", allow_duplicate=True),
     Input("open-skills", "n_clicks"),
     Input("close-skills", "n_clicks"),
+    Input("refresh-skills", "n_clicks"),
     State("skills-ui", "data"),
     prevent_initial_call=True,
 )
-def toggle_skills_modal(_, __, data):
+def toggle_skills_modal(_, __, ___, data):
     data = data or {"open": False, "revision": 0, "message": "", "message_tone": "neutral", "detail_agent": ""}
     trigger = ctx.triggered_id
-    if trigger == "open-skills":
+    if trigger in {"open-skills", "refresh-skills"}:
         data["open"] = True
         data["message"] = ""
         data["message_tone"] = "neutral"
@@ -3964,6 +4200,12 @@ def update_chat_ui(_, __, ___, ____, selected_agent, data):
     }
     trigger = ctx.triggered_id
 
+    if trigger == "close-chat":
+        data["open"] = False
+        return data
+    if not data.get("open") and trigger != "open-chat":
+        return no_update
+
     agent_catalog = _get_agent_catalog()
     available_slugs = [str(item.get("slug")) for item in agent_catalog if item.get("slug") and item.get("enabled", True)]
     default_slug = data.get("last_agent") or (available_slugs[0] if available_slugs else "")
@@ -3974,9 +4216,6 @@ def update_chat_ui(_, __, ___, ____, selected_agent, data):
         data["last_agent"] = str(data.get("selected_agent") or default_slug)
         data["error_message"] = ""
         data["iframe_status"] = "loading"
-        return data
-    if trigger == "close-chat":
-        data["open"] = False
         return data
     if trigger == "toggle-chat-max":
         current_mode = str(data.get("window_mode") or "floating")
@@ -4130,6 +4369,38 @@ def bulk_select_agents(_, __, options, current):
 
 
 @app.callback(
+    Output("skills-data-store", "data"),
+    Input("skills-ui", "data"),
+    State("skills-data-store", "data"),
+)
+def load_skills_data(skills_ui, previous):
+    state = skills_ui or {}
+    if not state.get("open"):
+        return no_update
+    revision = int(state.get("revision") or 0)
+    if previous and previous.get("revision") == revision:
+        return no_update
+    snapshot = dict(previous or {})
+    try:
+        global_skills = api_get_json("/v1/skills/global")
+        agent_details = api_get_json("/v1/skills/agents")
+        inventory = api_get_json("/v1/skills/inventory")
+        report = api_get_json("/v1/skills/report")
+        snapshot = {
+            "global_skills": global_skills,
+            "agent_details": agent_details,
+            "inventory": inventory,
+            "report": report,
+            "agent_catalog": _get_agent_catalog() if not agent_details else [],
+            "error": "",
+        }
+    except Exception as exc:
+        snapshot["error"] = f"Unable to load skills data: {_format_api_error(exc)}"
+    snapshot["revision"] = revision
+    return snapshot
+
+
+@app.callback(
     Output("skills-modal", "className"),
     Output("skills-global-checklist", "options"),
     Output("skills-global-checklist", "value"),
@@ -4151,11 +4422,12 @@ def bulk_select_agents(_, __, options, current):
     Input("skills-global-search", "value"),
     Input("skills-agent-search", "value"),
     Input("skills-detail-agent", "value"),
+    Input("skills-data-store", "data"),
     State("skills-global-checklist", "value"),
     State("skills-agent-checklist", "value"),
     prevent_initial_call=False,
 )
-def render_skills_modal(skills_ui, global_search, agent_search, selected_detail_agent, selected_skill_slugs, selected_agent_slugs):
+def render_skills_modal(skills_ui, global_search, agent_search, selected_detail_agent, snapshot, selected_skill_slugs, selected_agent_slugs):
     skills_ui = skills_ui or {}
     is_open = bool(skills_ui.get("open"))
 
@@ -4180,32 +4452,35 @@ def render_skills_modal(skills_ui, global_search, agent_search, selected_detail_
             "skills-notice",
         )
 
-    try:
-        global_skills = api_get_json("/v1/skills/global")
-        agent_details = api_get_json("/v1/skills/agents")
-        inventory = api_get_json("/v1/skills/inventory")
-        report = api_get_json("/v1/skills/report")
-    except Exception as e:
-        msg = f"Unable to load skills data: {e}"
+    snapshot = snapshot or {}
+    if "global_skills" not in snapshot:
+        msg = str(snapshot.get("error") or "Loading skills data...")
         return (
             "skills-modal open",
-            [],
-            [],
-            [],
-            [],
-            [],
-            None,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
             [html.Div(msg, className="column-empty")],
             [html.Div(msg, className="column-empty")],
             [html.Div(msg, className="column-empty")],
-            "",
-            "",
-            "",
+            no_update,
+            no_update,
+            no_update,
             [html.Div(msg, className="column-empty")],
             "",
             msg,
-            "skills-notice error",
+            "skills-notice error" if snapshot.get("error") else "skills-notice",
         )
+
+    global_skills = snapshot.get("global_skills") or []
+    agent_details = snapshot.get("agent_details") or []
+    inventory = snapshot.get("inventory") or {}
+    report = snapshot.get("report") or {}
+    if snapshot.get("error"):
+        skills_ui = {**skills_ui, "message": snapshot["error"], "message_tone": "error"}
 
     all_global_options = [
         {
@@ -4232,7 +4507,7 @@ def render_skills_modal(skills_ui, global_search, agent_search, selected_detail_
 
     agent_pool = sorted(detail_by_agent.keys())
     if not agent_pool:
-        agent_pool = [str(item.get("slug")) for item in _get_agent_catalog() if item.get("slug")]
+        agent_pool = [str(item.get("slug")) for item in snapshot.get("agent_catalog") or [] if item.get("slug")]
 
     all_agent_options = [{"label": a, "value": a} for a in agent_pool]
     selected_agent_slugs = [a for a in (selected_agent_slugs or []) if a in set(agent_pool)]
@@ -4374,9 +4649,9 @@ def render_skills_modal(skills_ui, global_search, agent_search, selected_detail_
         overview_children,
         inventory_children,
         detail_children,
-        native_mode_value,
-        allow_bundled_value,
-        extra_dirs_value,
+        no_update if ctx.triggered_id in {"skills-global-search", "skills-agent-search"} else native_mode_value,
+        no_update if ctx.triggered_id in {"skills-global-search", "skills-agent-search"} else allow_bundled_value,
+        no_update if ctx.triggered_id in {"skills-global-search", "skills-agent-search"} else extra_dirs_value,
         report_children,
         selection_summary,
         message,
@@ -4405,6 +4680,21 @@ def render_chat_modal(_, chat_ui):
     is_open = bool(chat_ui.get("open"))
     window_mode = str(chat_ui.get("window_mode") or "floating")
     panel_mode = str(chat_ui.get("panel_mode") or "split")
+
+    if not is_open:
+        return (
+            "chat-modal",
+            "chat-modal-card",
+            "chat-modal-body",
+            no_update,
+            no_update,
+            "about:blank",
+            no_update,
+            "",
+            "chat-notice",
+            "Exit Max" if window_mode == "maximized" else "Maximize",
+            "Split View" if panel_mode == "chat_only" else "Chat Only",
+        )
 
     agent_catalog = _get_agent_catalog()
     options = [
@@ -4452,21 +4742,6 @@ def render_chat_modal(_, chat_ui):
     max_label = "Exit Max" if window_mode == "maximized" else "Maximize"
     panel_label = "Split View" if panel_mode == "chat_only" else "Chat Only"
 
-    if not is_open:
-        return (
-            "chat-modal",
-            "chat-modal-card",
-            "chat-modal-body",
-            options,
-            selected or None,
-            "about:blank",
-            external_url,
-            "",
-            "chat-notice",
-            max_label,
-            panel_label,
-        )
-
     return (
         modal_class,
         " ".join(card_classes),
@@ -4490,8 +4765,19 @@ def render_chat_modal(_, chat_ui):
     Output("feed-filter-comments", "className"),
     Output("feed-filter-chat", "className"),
     Output("feed-filter-system", "className"),
+    Output("board-filter-all", "aria-pressed"),
+    Output("board-filter-tasks", "aria-pressed"),
+    Output("feed-filter-all", "aria-pressed"),
+    Output("feed-filter-tasks", "aria-pressed"),
+    Output("feed-filter-comments", "aria-pressed"),
+    Output("feed-filter-chat", "aria-pressed"),
+    Output("feed-filter-system", "aria-pressed"),
     Input("ui-state", "data"),
 )
+def sync_filter_chip_controls(state):
+    return (*sync_filter_chip_classes(state), *sync_filter_chip_pressed(state))
+
+
 def sync_filter_chip_classes(state):
     state = state or {}
     board_filter = (state.get("board_filter") or "all").lower()
@@ -4504,6 +4790,53 @@ def sync_filter_chip_classes(state):
         _chip_class(feed_filter, "comments"),
         _chip_class(feed_filter, "chat"),
         _chip_class(feed_filter, "system"),
+    )
+
+
+def sync_filter_chip_pressed(state):
+    return tuple("true" if "active" in classes.split() else "false"
+                 for classes in sync_filter_chip_classes(state))
+
+
+@app.callback(
+    Output("clear-filters", "disabled"),
+    Output("task-search-summary", "children"),
+    Input("ui-state", "data"),
+    Input("board-data-store", "data"),
+    State("sync-state", "data"),
+)
+def sync_task_search_controls(state, board_data, sync_state):
+    state = state or {}
+    query = str(state.get("task_query") or "")
+    disabled = (not query.strip() and _sanitize_board_filter(state.get("board_filter")) == "all"
+                and _sanitize_feed_filter(state.get("feed_filter")) == "all")
+    if not (sync_state or {}).get("last_success"):
+        return disabled, "Tasks not loaded"
+    columns = board_data or []
+    loaded = sum(len(item.get("cards", [])) for item in columns)
+    visible = _filter_board(columns, state.get("board_filter"), query)
+    matched = sum(len(item.get("cards", [])) for item in visible)
+    return disabled, f"{matched} / {loaded} loaded tasks"
+
+
+@app.callback(
+    Output("board", "children", allow_duplicate=True),
+    Output("feed", "children", allow_duplicate=True),
+    Input("ui-state", "data"),
+    State("sync-state", "data"),
+    State("board-data-store", "data"),
+    State("feed-data-store", "data"),
+    prevent_initial_call=True,
+)
+def render_local_filters(state, sync_state, board_data, feed_data):
+    if not (sync_state or {}).get("last_success"):
+        return no_update, no_update
+    state = state or {}
+    columns = _filter_board(board_data or [], (state.get("board_filter") or "all").lower(), state.get("task_query"))
+    feed = _filter_feed(feed_data or [], (state.get("feed_filter") or "all").lower())
+    return (
+        [column(item) for item in columns] or [html.Div("No columns", className="column-empty")],
+        [feed_item(item) for item in feed] or [html.Div("No feed", className="column-empty")],
     )
 
 
@@ -4532,6 +4865,10 @@ def sync_filter_chip_classes(state):
     Input("ui-state", "data"),
     Input("task-refresh-signal", "data"),
     State("sync-state", "data"),
+    running=[
+        (Output("ws-tick", "disabled"), True, False),
+        (Output("refresh", "disabled"), True, False),
+    ],
     prevent_initial_call=False,
 )
 def refresh_data(n_intervals, _ws_tick, state, _task_refresh_signal, sync_state):
@@ -4543,10 +4880,15 @@ def refresh_data(n_intervals, _ws_tick, state, _task_refresh_signal, sync_state)
     board_filter = (state.get("board_filter") or "all").lower()
     feed_filter = (state.get("feed_filter") or "all").lower()
 
+    if trigger == "ui-state":
+        return (no_update,) * 19
+
     now_epoch = time.time()
     last_success_epoch = float(sync_state.get("last_success_epoch") or 0.0)
+    last_attempt_epoch = float(sync_state.get("last_attempt_epoch") or 0.0)
     ws_connected = bool(ws_state.get("connected"))
     refresh_due = now_epoch - last_success_epoch >= float(MISSION_CONTROL_WS_LIVE_POLL_SECONDS)
+    retry_due = now_epoch - last_attempt_epoch >= 5.0
     ws_event_due = _should_refresh_from_ws(sync_state, ws_state)
     should_fetch = False
 
@@ -4555,14 +4897,27 @@ def refresh_data(n_intervals, _ws_tick, state, _task_refresh_signal, sync_state)
     elif trigger == "task-refresh-signal":
         should_fetch = True
     elif trigger == "ws-tick":
-        should_fetch = ws_event_due
+        event_refresh_due = (
+            ws_event_due
+            and now_epoch - last_success_epoch >= MISSION_CONTROL_EVENT_COALESCE_SECONDS
+            and (sync_state.get("api_online") is not False or retry_due)
+        )
+        should_fetch = event_refresh_due or (
+            retry_due and (last_success_epoch <= 0.0 or refresh_due or not ws_connected)
+        )
     elif trigger == "refresh":
         should_fetch = not ws_connected or last_success_epoch <= 0.0 or refresh_due
 
     if not should_fetch:
-        next_sync_state = _sync_state_with_ws(sync_state, ws_state, trigger=trigger)
+        next_sync_state = _sync_state_with_ws(sync_state, ws_state)
         last_success = str(next_sync_state.get("last_success") or "")
-        status_class = "status-pill status-online" if last_success else "status-pill status-unknown"
+        api_online = sync_state.get("api_online")
+        status_changed = sync_state.get("ws_connected") != ws_connected or api_online is None
+        if api_online is None:
+            api_online = bool(last_success)
+        next_sync_state["api_online"] = api_online
+        next_sync_state["ws_connected"] = ws_connected
+        status_class = "status-pill status-online" if api_online else "status-pill status-offline"
         sync_state_output = next_sync_state if next_sync_state != sync_state else no_update
         return (
             no_update,
@@ -4579,8 +4934,8 @@ def refresh_data(n_intervals, _ws_tick, state, _task_refresh_signal, sync_state)
             no_update,
             no_update,
             no_update,
-            _format_api_status(bool(last_success), last_success),
-            status_class,
+            _format_api_status(bool(api_online), last_success) if status_changed else no_update,
+            status_class if status_changed else no_update,
             sync_state_output,
             no_update,
             no_update,
@@ -4589,10 +4944,16 @@ def refresh_data(n_intervals, _ws_tick, state, _task_refresh_signal, sync_state)
     try:
         board_json = api_get_json("/v1/boards/default")
         feed_json = api_get_json("/v1/feed-lite?limit=80")
-        agent_catalog = _get_agent_catalog(force_refresh=True)
+        catalog_read = _DASHBOARD_READ_POOL.submit(_get_agent_catalog, force_refresh=True)
+        usage_read = _DASHBOARD_READ_POOL.submit(_cached_dashboard_json, "/v1/usage/agents?days=7")
+        summary_read = _DASHBOARD_READ_POOL.submit(
+            _cached_dashboard_json, "/v1/observability/summary?window_minutes=5"
+        )
+        health_read = _DASHBOARD_READ_POOL.submit(_cached_dashboard_json, "/v1/observability/container-health")
+        agent_catalog = catalog_read.result()
         usage_by_agent = {}
         try:
-            usage_rows = api_get_json("/v1/usage/agents?days=7", timeout=2.0)
+            usage_rows = usage_read.result()
             if isinstance(usage_rows, list):
                 for row in usage_rows:
                     if isinstance(row, dict):
@@ -4606,7 +4967,7 @@ def refresh_data(n_intervals, _ws_tick, state, _task_refresh_signal, sync_state)
         feed = _convert_feed(feed_json)
         agents = _build_agents(board_json, feed_json, usage_by_agent, agent_catalog)
 
-        visible_columns = _filter_board(columns, board_filter)
+        visible_columns = _filter_board(columns, board_filter, state.get("task_query"))
         visible_feed = _filter_feed(feed, feed_filter)
 
         tasks_total = sum(int(c.get("count") or 0) for c in columns)
@@ -4620,7 +4981,7 @@ def refresh_data(n_intervals, _ws_tick, state, _task_refresh_signal, sync_state)
         health_ratio_class = "stat stat-observability-card"
 
         try:
-            obs = api_get_json("/v1/observability/summary?window_minutes=5", timeout=2.0)
+            obs = summary_read.result()
             if isinstance(obs, dict):
                 error_rate = float(obs.get("error_rate") or 0.0) * 100.0
                 event_backlog = int(obs.get("event_backlog_total") or 0)
@@ -4658,7 +5019,7 @@ def refresh_data(n_intervals, _ws_tick, state, _task_refresh_signal, sync_state)
             pass
 
         try:
-            health_summary = api_get_json("/v1/observability/container-health", timeout=2.0)
+            health_summary = health_read.result()
             if isinstance(health_summary, dict):
                 overall_ok = int(health_summary.get("overall_ok") or 0)
                 overall_total = int(health_summary.get("overall_total") or 0)
@@ -4674,9 +5035,12 @@ def refresh_data(n_intervals, _ws_tick, state, _task_refresh_signal, sync_state)
             pass
 
         now_text = datetime.now().strftime("%H:%M:%S")
-        next_sync_state = _sync_state_with_ws(sync_state, ws_state, trigger=trigger)
+        next_sync_state = _sync_state_with_ws(sync_state, ws_state, trigger=trigger, data_refreshed=True)
         next_sync_state["last_success"] = now_text
         next_sync_state["last_success_epoch"] = now_epoch
+        next_sync_state["last_attempt_epoch"] = now_epoch
+        next_sync_state["api_online"] = True
+        next_sync_state["ws_connected"] = ws_connected
 
         agents_children = [agent_card(a) for a in agents] or [
             html.Div("No agents", className="column-empty")
@@ -4711,6 +5075,9 @@ def refresh_data(n_intervals, _ws_tick, state, _task_refresh_signal, sync_state)
         )
     except Exception as e:
         next_sync_state = _sync_state_with_ws(sync_state, ws_state, trigger=trigger)
+        next_sync_state["last_attempt_epoch"] = now_epoch
+        next_sync_state["api_online"] = False
+        next_sync_state["ws_connected"] = ws_connected
         last_success = str(next_sync_state.get("last_success") or "")
         if last_success:
             return (
@@ -4735,9 +5102,9 @@ def refresh_data(n_intervals, _ws_tick, state, _task_refresh_signal, sync_state)
                 no_update,
             )
         return (
-            [html.Div("API unavailable", className="column-empty")],
-            [html.Div("API unavailable", className="column-empty")],
-            [html.Div("API unavailable", className="column-empty")],
+            [html.Div("Unable to load agents. Retrying...", className="column-empty")],
+            [html.Div("Unable to load tasks. Retrying...", className="column-empty")],
+            [html.Div("Unable to load activity. Retrying...", className="column-empty")],
             "-",
             "-",
             "-",

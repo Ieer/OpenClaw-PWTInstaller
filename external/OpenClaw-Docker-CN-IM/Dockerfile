@@ -1,9 +1,9 @@
 # OpenClaw Docker 镜像
-FROM node:22-slim
+FROM node:24-slim
 
 # When set to 1, fail the build if plugin installation fails.
 ARG STRICT_PLUGIN_INSTALL=0
-ARG OPENCLAW_VERSION=2026.5.20
+ARG OPENCLAW_VERSION=2026.11.3
 ARG FEISHU_PLUGIN_NPM_SPEC=@m1heng-clawd/feishu@0.1.18
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 
@@ -167,7 +167,7 @@ RUN find /home/node/.openclaw/extensions -type d -name node_modules -prune -o -e
 
 # 复制初始化脚本
 COPY ./init.sh /usr/local/bin/init.sh
-RUN chmod +x /usr/local/bin/init.sh
+RUN chmod +x /usr/local/bin/init.sh && chown -R node:node /home/node/.npm
 
 # 设置基础环境变量
 ENV HOME=/home/node \

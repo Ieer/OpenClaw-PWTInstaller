@@ -211,6 +211,20 @@ ensure_community_feishu_runtime_output() {
   community_feishu_runtime_ready
 }
 
+secure_community_feishu_plugin_ownership() {
+  local plugin_dir=/home/node/.openclaw/npm/node_modules/@m1heng-clawd/feishu
+  if [ ! -d "$plugin_dir" ]; then
+    return 1
+  fi
+
+  # OpenClaw 2026.6.x blocks external plugin candidates that are writable by the
+  # runtime user. Keep the npm cache tree usable by node, but make plugin code
+  # itself root-owned/read-only so the gateway loader accepts it.
+  chown -R root:root "$plugin_dir" 2>/dev/null || true
+  find "$plugin_dir" -type d -exec chmod 755 {} + 2>/dev/null || true
+  find "$plugin_dir" -type f -exec chmod 644 {} + 2>/dev/null || true
+}
+
 ensure_qqbot_manifest_metadata() {
   local plugin_dir=/home/node/.openclaw/extensions/qqbot
   local manifest_json="$plugin_dir/openclaw.plugin.json"
@@ -361,6 +375,11 @@ restore_cached_qqbot_plugin() {
 }
 
 ensure_feishu_plugin_available() {
+  if find /home/node/.openclaw/npm/projects -maxdepth 5 -path '*/node_modules/@openclaw/feishu/package.json' -type f -print -quit 2>/dev/null | grep -q .; then
+    echo "[ok] official managed Feishu plugin available"
+    return 0
+  fi
+
   if stock_feishu_available; then
     # Stock plugin is preferred when OpenClaw bundles it; remove community copies to avoid duplicate plugin ids.
     rm -rf /home/node/.openclaw/extensions/feishu \
@@ -373,6 +392,7 @@ ensure_feishu_plugin_available() {
     if ! ensure_community_feishu_runtime_output; then
       echo "[warn] community feishu fallback package exists but OpenClaw 2026.5.x runtime compatibility repair failed; Feishu channel may be unavailable"
     fi
+    secure_community_feishu_plugin_ownership || true
     if community_feishu_registered; then
       echo "[ok] community feishu fallback registered (${OPENCLAW_FEISHU_PLUGIN_VERSION})"
       return 0
@@ -392,6 +412,7 @@ ensure_feishu_plugin_available() {
     if ! ensure_community_feishu_runtime_output; then
       echo "[warn] restored community feishu fallback but OpenClaw 2026.5.x runtime compatibility repair failed; Feishu channel may be unavailable"
     fi
+    secure_community_feishu_plugin_ownership || true
     if community_feishu_registered; then
       echo "[ok] restored registered community feishu fallback from image cache (${OPENCLAW_FEISHU_PLUGIN_VERSION})"
       return 0
@@ -451,11 +472,13 @@ fix_openclaw_permissions() {
   # can still opt in to the old deep repair with OPENCLAW_FIX_PERMISSIONS_DEEP=1.
   if [ "${OPENCLAW_FIX_PERMISSIONS_DEEP:-0}" = "1" ]; then
     echo "ℹ️ 执行深度权限修复: $root"
-    chown -R node:node "$root"
+    chown -R node:node "$root" /home/node/.npm 2>/dev/null || true
     return
   fi
 
   chown node:node /home/node "$root" 2>/dev/null || true
+  mkdir -p /home/node/.npm "$root/npm" "$root/plugins" "$root/plugin-runtime-deps"
+  chown -R node:node /home/node/.npm "$root/npm" "$root/plugins" "$root/plugin-runtime-deps" 2>/dev/null || true
 
   find "$root" -maxdepth 1 -type f -exec chown node:node {} + 2>/dev/null || true
   find "$root" -maxdepth 3 -type d -exec chown node:node {} + 2>/dev/null || true
@@ -561,8 +584,7 @@ if [ ! -f /home/node/.openclaw/openclaw.json ]; then
       },
       "workspace": "$WORKSPACE",
       "compaction": {
-        "mode": "safeguard",
-        "reserveTokensFloor": $OPENCLAW_COMPACTION_RESERVE_TOKENS_FLOOR
+        "mode": "safeguard"
       },
       "elevatedDefault": "full",
       "maxConcurrent": 4,
@@ -672,10 +694,7 @@ EOF
     "port": $OPENCLAW_GATEWAY_PORT,
     "mode": "local",
     "bind": "$OPENCLAW_GATEWAY_BIND",
-    "controlUi": {
-      "allowInsecureAuth": true,
-      "dangerouslyDisableDeviceAuth": $OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH
-    },
+    "controlUi": {},
     "auth": {
       "mode": "$OPENCLAW_GATEWAY_AUTH_MODE",
       "token": "$OPENCLAW_GATEWAY_TOKEN",
@@ -849,27 +868,20 @@ gateway_port_raw = os.environ.get('OPENCLAW_GATEWAY_PORT', '').strip() or '26216
 gateway_token = os.environ.get('OPENCLAW_GATEWAY_TOKEN', '').strip()
 gateway_auth_mode = os.environ.get('OPENCLAW_GATEWAY_AUTH_MODE', '').strip() or 'token'
 gateway_password = os.environ.get('OPENCLAW_GATEWAY_PASSWORD', '').strip()
-reserve_tokens_floor_raw = os.environ.get('OPENCLAW_COMPACTION_RESERVE_TOKENS_FLOOR', '').strip() or '32000'
-disable_device_auth_raw = os.environ.get('OPENCLAW_CONTROL_UI_DISABLE_DEVICE_AUTH', '').strip().lower()
-disable_device_auth = disable_device_auth_raw not in {'', '0', 'false', 'no', 'off'}
+api_protocol = os.environ.get('API_PROTOCOL', '').strip() or 'openai-completions'
 
 try:
   gateway_port = int(gateway_port_raw)
 except ValueError:
   gateway_port = 26216
 
-try:
-  reserve_tokens_floor = int(reserve_tokens_floor_raw)
-except ValueError:
-  reserve_tokens_floor = 32000
-
 gateway = data.setdefault('gateway', {})
 gateway['port'] = gateway_port
 gateway['mode'] = gateway.get('mode', 'local')
 gateway['bind'] = gateway_bind
 control_ui = gateway.setdefault('controlUi', {})
-control_ui['allowInsecureAuth'] = True
-control_ui['dangerouslyDisableDeviceAuth'] = disable_device_auth
+control_ui.pop('allowInsecureAuth', None)
+control_ui.pop('dangerouslyDisableDeviceAuth', None)
 
 auth = gateway.setdefault('auth', {})
 auth['mode'] = gateway_auth_mode
@@ -886,7 +898,22 @@ agents = data.setdefault('agents', {})
 defaults = agents.setdefault('defaults', {})
 compaction = defaults.setdefault('compaction', {})
 compaction['mode'] = compaction.get('mode', 'safeguard') or 'safeguard'
-compaction['reserveTokensFloor'] = reserve_tokens_floor
+compaction.pop('reserveTokensFloor', None)
+
+legacy_provider_apis = {
+  'openai-codex-responses': api_protocol,
+}
+models = data.get('models') if isinstance(data.get('models'), dict) else None
+providers = models.get('providers') if isinstance(models, dict) and isinstance(models.get('providers'), dict) else None
+if providers is not None:
+  for provider_name, provider_config in providers.items():
+    if not isinstance(provider_config, dict):
+      continue
+    current_api = provider_config.get('api')
+    replacement_api = legacy_provider_apis.get(str(current_api or '').strip())
+    if replacement_api:
+      provider_config['api'] = replacement_api
+      print(f"ℹ️ 已迁移旧模型协议: models.providers.{provider_name}.api -> {replacement_api}")
 
 # Current OpenClaw schema no longer accepts messages.tts.edge.
 messages = data.get('messages') if isinstance(data.get('messages'), dict) else None
@@ -1040,6 +1067,7 @@ ensure_qqbot_runtime_output
 
 # 确保关键文件和目录权限正确；默认避免深度遍历大型会话/工作区目录。
 fix_openclaw_permissions
+secure_community_feishu_plugin_ownership || true
 
 ensure_openclaw_runtime_bridge
 

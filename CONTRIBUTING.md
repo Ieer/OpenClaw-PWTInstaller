@@ -43,6 +43,26 @@ python panopticon/tools/validate_skills_template.py
 python -m compileall mission_control_api/app mission_control_api/alembic panopticon/tools tools
 ```
 
+### Mission Control UI
+
+在已安装 [MissionControl/requirements.txt](MissionControl/requirements.txt) 依赖的环境中运行：
+
+```bash
+python3 -m unittest discover -s MissionControl/tests -p 'test_ui_callbacks.py' -v
+node --check MissionControl/assets/task_detail.js
+```
+
+回调测试模拟业务 API 和 WebSocket 线程，不会创建任务、提交评论或操作 Agent。
+详情草稿按任务保存在当前页面内存中，刷新页面不会保留；提交期间表单暂时禁用，这不等同于服务端幂等保证。
+
+浏览器回归至少检查：任务卡 Enter/Space、弹窗 Esc 和焦点返回、A/B 任务草稿隔离、阈值输入等待两个刷新周期不被覆盖，以及预览后修改字段不沿用旧自动负责人。
+在桌面和手机短屏检查弹窗、长标题及语音状态文字；用服务端 API 日志或调用计数验证搜索和筛选的请求量，浏览器 Network 只能直接观察 Dash 回调。
+
+局域网性能回归还应检查 gzip 协商、版本指纹脚本的缓存命中，以及页面、布局和回调继续使用 `no-store`。
+定时刷新请求不应携带看板和 Feed 快照；完整快照只在切换筛选时回传。
+模拟没有业务事件的 WS 连接，验证首屏仍能加载、60 秒安全校准仍会执行，首次读取失败后在五秒间隔重试。
+桌面 1280px 和 1440px 应完整显示五列；手机使用纵向状态分组，页面不能横向溢出。
+
 ### 生成产物一致性
 
 ```bash

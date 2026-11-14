@@ -39,11 +39,11 @@ GRAY='\033[0;90m'
 NC='\033[0m' # 无颜色
 
 # ================================ 配置变量 ================================
-OPENCLAW_VERSION_DEFAULT="2026.5.20"
+OPENCLAW_VERSION_DEFAULT="2026.11.3"
 OPENCLAW_VERSION="${OPENCLAW_VERSION:-}"
 OPENCLAW_VERSION_SOURCE="unresolved"
 CONFIG_DIR="$HOME/.openclaw"
-MIN_NODE_VERSION=22
+MIN_NODE_VERSION=24
 PREFLIGHT_MIN_FREE_MB="${PREFLIGHT_MIN_FREE_MB:-1024}"
 GITHUB_REPO="Ieer/OpenClaw-PWTInstaller"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/$GITHUB_REPO/main"
@@ -260,12 +260,19 @@ install_homebrew() {
     fi
 }
 
+node_version_supported() {
+    local node_version="${1#v}"
+    local node_major node_minor node_patch
+    IFS=. read -r node_major node_minor node_patch <<< "$node_version"
+    [[ "$node_major" =~ ^[0-9]+$ && "$node_minor" =~ ^[0-9]+$ && "$node_patch" =~ ^[0-9]+$ ]] || return 1
+    [[ ( "$node_major" -eq 24 && "$node_minor" -ge 16 ) || ( "$node_major" -eq 26 && "$node_minor" -ge 1 ) || "$node_major" -gt 26 ]]
+}
+
 install_nodejs() {
     log_step "检查 Node.js..."
     
     if check_command node; then
-        local node_version=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-        if [ "$node_version" -ge "$MIN_NODE_VERSION" ]; then
+        if node_version_supported "$(node -v)"; then
             log_info "Node.js 版本满足要求: $(node -v)"
             return 0
         else
@@ -278,15 +285,15 @@ install_nodejs() {
     case "$OS" in
         macos)
             install_homebrew
-            brew install node@22
-            brew link --overwrite node@22
+            brew install node@24
+            brew link --overwrite node@24
             ;;
         ubuntu|debian)
-            curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+            curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
             sudo apt-get install -y nodejs
             ;;
         centos|rhel|fedora)
-            curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
+            curl -fsSL https://rpm.nodesource.com/setup_24.x | sudo bash -
             sudo yum install -y nodejs
             ;;
         arch|manjaro)
@@ -389,9 +396,7 @@ check_node_preflight() {
         return 0
     fi
 
-    local node_major=""
-    node_major=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-    if [[ "$node_major" =~ ^[0-9]+$ ]] && [ "$node_major" -ge "$MIN_NODE_VERSION" ]; then
+    if node_version_supported "$(node -v)"; then
         preflight_ok "Node.js 版本满足要求: $(node -v)"
     else
         preflight_warn "Node.js 版本过低: $(node -v)，需要 v$MIN_NODE_VERSION+；交互式安装流程会尝试升级"

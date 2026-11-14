@@ -29,6 +29,8 @@
 python panopticon/tools/backup_panopticon.py --help
 ```
 
+`daily-incremental`、`weekly-full`、`prune` 和 `verify` 共用 `--panopticon-dir` 下的 `.backup.lock`，避免导出、压缩、校验和清理重叠争抢资源。已有任务运行时，新任务报错并返回 1，需稍后重试；不会自动等待或默默跳过。锁随进程退出释放，不应删除锁文件来解除竞争。该保护不改变现有 timer 的执行时间，也不协调独立入库或索引脚本。
+
 先查看当前数据边界：
 
 ```bash
@@ -90,6 +92,8 @@ workspace 根目录清爽化后的分类目录（`docs/`、`media/`、`exports/`
 
 迁移级全量备份需要允许短暂停机：
 
+`weekly-full` 默认使用 gzip 6 级压缩，减少相对于原默认 9 级的压缩 CPU 时间，但包体积可能增大。可通过 `--gzip-level 0..9` 指定，`--gzip-level 9` 恢复原压缩级别；级别写入 `manifest.json` 和 `report.json`。归档格式和恢复方式不变。压缩节省的比例取决于数据，不能直接套用到整次备份耗时。
+
 ```bash
 python panopticon/tools/backup_panopticon.py \
   --backup-root /media/pi/YOUR_USB/openclaw-backups \
@@ -119,6 +123,8 @@ python panopticon/tools/backup_panopticon.py \
 `--no-stop` 只能视为 warm full，不建议作为换机迁移的权威备份。
 
 ## 校验
+
+全量归档校验逐项读取成员，只保留计数和两个必需元数据文件的存在状态，并释放已处理的成员缓存，避免内存随文件数量增长。仍遍历至归档结束，不会找到元数据后提前成功；原有 SHA-256 校验不变。不提取文件，也不改变备份格式或归档创建过程。
 
 校验全量备份集：
 
@@ -170,6 +176,8 @@ export RESTIC_PASSWORD_FILE=$HOME/.config/openclaw-backup/restic-password
 ```
 
 生成 systemd user timer 模板：
+
+新生成的 daily/weekly 服务包含 `Nice=10`、`IOSchedulingClass=best-effort`、`IOSchedulingPriority=7`，降低与交互进程的资源竞争，而非硬限制 CPU。手动执行脚本不会自动调整优先级，磁盘调度器也可能不采用 I/O 优先级。既有 unit 不会自动更新，需先审查重新生成的差异；生成模板不代表已安装或启用定时器。
 
 ```bash
 python panopticon/tools/backup_panopticon.py \

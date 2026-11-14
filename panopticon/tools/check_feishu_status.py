@@ -262,6 +262,29 @@ console.log(JSON.stringify({ appId: feishu.appId || '', appSecret: feishu.appSec
     }
 
 
+def collect_openclaw_plugin_cli_state(container: str) -> dict[str, Any]:
+    result = docker(["exec", "--user", "node", container, "openclaw", "plugins", "list", "--json"], timeout=90)
+    text = result.stdout + result.stderr
+    try:
+        payload = json.loads(result.stdout)
+    except ValueError:
+        payload = {}
+    records = payload.get("plugins", []) if isinstance(payload, dict) else []
+    feishu = next((record for record in records if isinstance(record, dict) and record.get("id") == "feishu"), {}) if isinstance(records, list) else {}
+    feishu_blocked = bool(
+        re.search(r"plugin\s+feishu:\s+blocked|blocked:\s+feishu", text, re.IGNORECASE)
+    ) or feishu.get("status") in {"blocked", "error"}
+    feishu_enabled = bool(feishu.get("enabled") and feishu.get("status") == "loaded")
+    feishu_enabled = feishu_enabled and not feishu_blocked and result.returncode == 0
+    return {
+        "returncode": result.returncode,
+        "feishuEnabled": feishu_enabled,
+        "feishuBlocked": feishu_blocked,
+        "officialFeishu": "/node_modules/@openclaw/feishu/" in str(feishu.get("source") or ""),
+        "feishuVersion": str(feishu.get("version") or ""),
+    }
+
+
 def docker_logs(container: str, *, since: str | None, tail: int) -> tuple[str, str]:
     args = ["logs"]
     source = "all"
@@ -324,6 +347,14 @@ def analyze_config(agent: AgentCheck, state: dict[str, Any], require_configured:
 def analyze_plugin(agent: AgentCheck, state: dict[str, Any], expected_version: str) -> None:
     stock = state.get("stock") if isinstance(state.get("stock"), dict) else {}
     community = state.get("community") if isinstance(state.get("community"), dict) else {}
+    plugin_cli = agent.details.get("pluginCli") if isinstance(agent.details.get("pluginCli"), dict) else {}
+
+    if plugin_cli.get("officialFeishu"):
+        agent.source = f"official:{plugin_cli.get('feishuVersion') or 'unknown'}"
+        agent.plugin = "pass" if plugin_cli.get("feishuEnabled") and not plugin_cli.get("feishuBlocked") else "fail"
+        if agent.plugin == "fail":
+            agent.fail("Official Feishu plugin is not loaded", "Inspect `openclaw plugins list --json` and repair the managed official package.")
+        return
 
     if stock.get("available"):
         agent.source = f"stock:{stock.get('path') or 'feishu'}"
@@ -341,9 +372,18 @@ def analyze_plugin(agent: AgentCheck, state: dict[str, Any], expected_version: s
             f"community Feishu fallback version is {community.get('version') or 'missing'}, expected {expected_version}",
             "Use @m1heng-clawd/feishu@0.1.18 for OpenClaw 2026.5.x.",
         )
-    if not community.get("installPathOk") or not community.get("registryPluginPresent"):
+    if (
+        (not community.get("installPathOk") or not community.get("registryPluginPresent"))
+        and not plugin_cli.get("feishuEnabled")
+    ):
         plugin_ok = False
-        agent.fail("Feishu plugin registry install record is missing or points to the wrong path", "Restore the image plugin cache or rerun init.sh registration repair.")
+        agent.fail(
+            "Feishu plugin registry install record is missing or points to the wrong path",
+            "Restore the image plugin cache, rerun init.sh registration repair, or verify `openclaw plugins list` shows Feishu enabled.",
+        )
+    if plugin_cli.get("feishuBlocked"):
+        plugin_ok = False
+        agent.fail("OpenClaw plugin loader blocks Feishu", "Fix plugin directory ownership and rerun `openclaw plugins list`.")
     if not community.get("hasIndexJs"):
         plugin_ok = False
         agent.fail("community Feishu fallback is missing compiled index.js", "Run the OpenClaw 2026.5.x runtime repair or rebuild the CN-IM image.")
@@ -463,6 +503,7 @@ def check_agent(agent_slug: str, args: argparse.Namespace) -> AgentCheck:
         return check
 
     check.details["state"] = state
+    check.details["pluginCli"] = collect_openclaw_plugin_cli_state(container)
     config_ok = analyze_config(check, state, args.require_configured)
     if check.status == "skip":
         return check

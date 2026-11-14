@@ -36,13 +36,14 @@ class Settings(BaseModel):
     enable_direct_agent_links: bool = False
     chat_upstream_port: int = 26216
     chat_force_loopback_headers: bool = True
+    chat_trusted_proxy_ips: tuple[str, ...] = ()
     chat_inject_script_enabled: bool = False
-    chat_clear_device_auth_storage: bool = True
+    chat_clear_device_auth_storage: bool = False
     chat_inject_gateway_settings: bool = True
     chat_dom_avatar_rewrite: bool = True
     chat_sanitize_connect_auth: bool = True
-    chat_strip_stale_device_fields: bool = True
-    chat_force_token_in_connect: bool = True
+    chat_strip_stale_device_fields: bool = False
+    chat_force_token_in_connect: bool = False
     chat_rewrite_control_ui_config: bool = True
     chat_rewrite_avatar_payloads: bool = True
     chat_history_limit: int = 80
@@ -51,6 +52,8 @@ class Settings(BaseModel):
     agent_controller_auth_token: str | None = None
     agent_controller_timeout_seconds: float = 5.0
     container_health_probe_concurrency: int = 8
+    agent_usage_snapshot_timeout_seconds: float = 2.5
+    agent_usage_cache_ttl_seconds: float = 60.0
     voice_commands_enabled: bool = True
     voice_command_require_prefix: bool = True
     voice_command_prefixes: list[str] = []
@@ -122,13 +125,14 @@ def load_settings() -> Settings:
         ),
         chat_upstream_port=int((os.getenv("MC_CHAT_UPSTREAM_PORT") or "26216").strip()),
         chat_force_loopback_headers=_env_flag("MC_CHAT_PROXY_FORCE_LOOPBACK_HEADERS", True),
+        chat_trusted_proxy_ips=tuple(value.strip() for value in (os.getenv("MC_CHAT_TRUSTED_PROXY_IPS") or "").split(",") if value.strip()),
         chat_inject_script_enabled=_env_flag("MC_CHAT_COMPAT_INJECT_SCRIPT_ENABLED", False),
-        chat_clear_device_auth_storage=_env_flag("MC_CHAT_COMPAT_CLEAR_DEVICE_AUTH_STORAGE", True),
+        chat_clear_device_auth_storage=_env_flag("MC_CHAT_COMPAT_CLEAR_DEVICE_AUTH_STORAGE", False),
         chat_inject_gateway_settings=_env_flag("MC_CHAT_COMPAT_INJECT_GATEWAY_SETTINGS", True),
         chat_dom_avatar_rewrite=_env_flag("MC_CHAT_COMPAT_DOM_AVATAR_REWRITE", True),
         chat_sanitize_connect_auth=_env_flag("MC_CHAT_COMPAT_SANITIZE_CONNECT_AUTH", True),
-        chat_strip_stale_device_fields=_env_flag("MC_CHAT_COMPAT_STRIP_STALE_DEVICE_FIELDS", True),
-        chat_force_token_in_connect=_env_flag("MC_CHAT_COMPAT_FORCE_TOKEN_IN_CONNECT", True),
+        chat_strip_stale_device_fields=_env_flag("MC_CHAT_COMPAT_STRIP_STALE_DEVICE_FIELDS", False),
+        chat_force_token_in_connect=_env_flag("MC_CHAT_COMPAT_FORCE_TOKEN_IN_CONNECT", False),
         chat_rewrite_control_ui_config=_env_flag("MC_CHAT_COMPAT_REWRITE_CONTROL_UI_CONFIG", True),
         chat_rewrite_avatar_payloads=_env_flag("MC_CHAT_COMPAT_REWRITE_AVATAR_PAYLOADS", True),
         chat_history_limit=int((os.getenv("MC_CHAT_COMPAT_HISTORY_LIMIT") or "80").strip()),
@@ -137,6 +141,14 @@ def load_settings() -> Settings:
         agent_controller_auth_token=(os.getenv("MC_AGENT_CONTROLLER_AUTH_TOKEN") or "").strip() or None,
         agent_controller_timeout_seconds=float((os.getenv("MC_AGENT_CONTROLLER_TIMEOUT_SECONDS") or "5.0").strip()),
         container_health_probe_concurrency=max(1, _env_int("MC_CONTAINER_HEALTH_PROBE_CONCURRENCY", 8)),
+        agent_usage_snapshot_timeout_seconds=max(
+            0.1,
+            float((os.getenv("MC_AGENT_USAGE_SNAPSHOT_TIMEOUT_SECONDS") or "2.5").strip()),
+        ),
+        agent_usage_cache_ttl_seconds=max(
+            1.0,
+            float((os.getenv("MC_AGENT_USAGE_CACHE_TTL_SECONDS") or "60").strip()),
+        ),
         voice_commands_enabled=_env_flag("MC_VOICE_COMMANDS_ENABLED", True),
         voice_command_require_prefix=_env_flag("MC_VOICE_COMMAND_REQUIRE_PREFIX", True),
         voice_command_prefixes=[

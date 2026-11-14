@@ -12,6 +12,12 @@ PANOPTICON_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${PANOPTICON_ROOT}/.." && pwd)"
 COMPOSE_FILE="${PANOPTICON_ROOT}/docker-compose.panopticon.yml"
 PORT="${MISSION_CONTROL_GATEWAY_PORT:-18920}"
+SCHEME="${MISSION_CONTROL_SCHEME:-http}"
+CA_CERT="${MISSION_CONTROL_CA_CERT:-}"
+CURL_TLS_ARGS=()
+if [[ -n "${CA_CERT}" ]]; then
+  CURL_TLS_ARGS=(--cacert "${CA_CERT}")
+fi
 LAN_IP="${MISSION_CONTROL_LAN_IP:-}"
 HTTP_TIMEOUT="${HTTP_TIMEOUT:-5}"
 HTTP_RETRIES="${HTTP_RETRIES:-3}"
@@ -66,9 +72,9 @@ check_url() {
   local out code time_total attempt
   for ((attempt = 1; attempt <= HTTP_RETRIES; attempt++)); do
     if [[ -n "${origin}" ]]; then
-      out="$(curl -sS -o /dev/null -w '%{http_code} %{time_total}' --max-time "${HTTP_TIMEOUT}" -H "Origin: ${origin}" "${url}" 2>/dev/null || true)"
+      out="$(curl "${CURL_TLS_ARGS[@]}" -sS -o /dev/null -w '%{http_code} %{time_total}' --max-time "${HTTP_TIMEOUT}" -H "Origin: ${origin}" "${url}" 2>/dev/null || true)"
     else
-      out="$(curl -sS -o /dev/null -w '%{http_code} %{time_total}' --max-time "${HTTP_TIMEOUT}" "${url}" 2>/dev/null || true)"
+      out="$(curl "${CURL_TLS_ARGS[@]}" -sS -o /dev/null -w '%{http_code} %{time_total}' --max-time "${HTTP_TIMEOUT}" "${url}" 2>/dev/null || true)"
     fi
     code="$(awk '{print $1}' <<< "${out}")"
     time_total="$(awk '{print $2}' <<< "${out}")"
@@ -94,7 +100,7 @@ check_ws_upgrade() {
   local origin="$3"
   local code attempt
   for ((attempt = 1; attempt <= HTTP_RETRIES; attempt++)); do
-    code="$(curl -sS -o /dev/null -w '%{http_code}' --http1.1 --max-time "${HTTP_TIMEOUT}" \
+    code="$(curl "${CURL_TLS_ARGS[@]}" -sS -o /dev/null -w '%{http_code}' --http1.1 --max-time "${HTTP_TIMEOUT}" \
       -H 'Connection: Upgrade' \
       -H 'Upgrade: websocket' \
       -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
@@ -117,19 +123,19 @@ check_ws_upgrade() {
   failures=$((failures + 1))
 }
 
-check_url "本机 loopback gateway" "http://127.0.0.1:${PORT}/"
+check_url "本机 loopback gateway" "${SCHEME}://127.0.0.1:${PORT}/"
 if [[ -n "${LAN_IP}" ]]; then
-  check_url "本机经 LAN IP gateway" "http://${LAN_IP}:${PORT}/"
-  LAN_ORIGIN="http://${LAN_IP}:${PORT}"
+  check_url "本机经 LAN IP gateway" "${SCHEME}://${LAN_IP}:${PORT}/"
+  LAN_ORIGIN="${SCHEME}://${LAN_IP}:${PORT}"
   for agent in ${AGENTS}; do
-    check_url "本机经 LAN IP chat/${agent}" "http://${LAN_IP}:${PORT}/chat/${agent}/" "${LAN_ORIGIN}"
-    check_url "本机经 LAN IP chat/${agent} control-ui-config" "http://${LAN_IP}:${PORT}/chat/${agent}/__openclaw/control-ui-config.json" "${LAN_ORIGIN}"
-    check_ws_upgrade "本机经 LAN IP chat/${agent}" "http://${LAN_IP}:${PORT}/chat/${agent}/" "${LAN_ORIGIN}"
+    check_url "本机经 LAN IP chat/${agent}" "${SCHEME}://${LAN_IP}:${PORT}/chat/${agent}/" "${LAN_ORIGIN}"
+    check_url "本机经 LAN IP chat/${agent} control-ui-config" "${SCHEME}://${LAN_IP}:${PORT}/chat/${agent}/control-ui-config.json" "${LAN_ORIGIN}"
+    check_ws_upgrade "本机经 LAN IP chat/${agent}" "${SCHEME}://${LAN_IP}:${PORT}/chat/${agent}/" "${LAN_ORIGIN}"
   done
 fi
 
 echo
-if python3 - "${PANOPTICON_ROOT}" "${PORT}" "${LAN_IP}" <<'PY'
+if python3 - "${PANOPTICON_ROOT}" "${PORT}" "${LAN_IP}" "${SCHEME}" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -137,9 +143,12 @@ from pathlib import Path
 root = Path(sys.argv[1])
 port = sys.argv[2]
 lan_ip = sys.argv[3]
-expected = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
+scheme = sys.argv[4]
+expected = {f"{scheme}://localhost:{port}"}
+if scheme == "http":
+  expected.add(f"http://127.0.0.1:{port}")
 if lan_ip:
-    expected.add(f"http://{lan_ip}:{port}")
+  expected.add(f"{scheme}://{lan_ip}:{port}")
 
 missing_total = 0
 print("-- OpenClaw gateway/controlUi --")
@@ -153,17 +162,17 @@ for path in sorted((root / "agent-homes").glob("*/openclaw.json")):
     problems = []
     if gateway.get("bind") != "lan":
         problems.append(f"gateway.bind={gateway.get('bind')!r}")
-    if control_ui.get("allowInsecureAuth") is not True:
-        problems.append("allowInsecureAuth is not true")
-    if control_ui.get("dangerouslyDisableDeviceAuth") is not True:
-        problems.append("dangerouslyDisableDeviceAuth is not true")
+    if control_ui.get("allowInsecureAuth") is True:
+      problems.append("retired allowInsecureAuth is enabled")
+    if control_ui.get("dangerouslyDisableDeviceAuth") is True:
+      problems.append("device authentication bypass is enabled")
     if missing:
         problems.append(f"missing {', '.join(missing)}")
     if problems:
         missing_total += 1
         print(f"[MISS] {path.parent.name}: {'; '.join(problems)}")
     else:
-        print(f"[OK] {path.parent.name}: bind=lan, controlUi auth disabled, {len(origins)} origins")
+        print(f"[OK] {path.parent.name}: bind=lan, device authentication preserved, {len(origins)} origins")
 
 if missing_total:
     print(f"Missing origin files: {missing_total}")
@@ -181,8 +190,11 @@ fi
 
 echo
 if [[ -n "${LAN_IP}" ]]; then
-  echo "推荐入口: http://${LAN_IP}:${PORT}/"
-  echo "Agent Chat: http://${LAN_IP}:${PORT}/chat/<agent>/"
+  echo "推荐入口: ${SCHEME}://${LAN_IP}:${PORT}/"
+  echo "Agent Chat: ${SCHEME}://${LAN_IP}:${PORT}/chat/<agent>/"
+  if [[ "${SCHEME}" == "http" ]]; then
+    print_warn "LAN HTTP is not a browser secure context. Native device authentication requires trusted HTTPS or a localhost SSH tunnel; HTTP/WS probes alone do not validate login."
+  fi
 fi
 
 if [[ "${failures}" -eq 0 ]]; then

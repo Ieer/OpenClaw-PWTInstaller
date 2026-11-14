@@ -74,10 +74,18 @@ class ChatProxyHelperTests(unittest.TestCase):
             }
         )
 
-        rewritten = json.loads(_sanitize_connect_auth(raw, "fresh-token"))
+        rewritten = json.loads(_sanitize_connect_auth(raw, "fresh-token", strip_stale_device_fields=True, force_token_in_connect=True))
         self.assertEqual(rewritten["params"]["auth"], {"token": "fresh-token"})
         self.assertNotIn("deviceId", rewritten["params"])
         self.assertNotIn("client_id", rewritten["params"])
+
+    def test_connect_auth_preserves_signed_device_identity_by_default(self) -> None:
+        params = {"device": {"id": "paired-device", "signature": "signed"}, "auth": {"token": "signed-token", "deviceToken": "paired-token"}}
+        raw = json.dumps({"type": "req", "method": "connect", "params": params})
+        self.assertEqual(json.loads(_sanitize_connect_auth(raw, "gateway-token"))["params"], params)
+        params.pop("auth")
+        raw = json.dumps({"type": "req", "method": "connect", "params": params})
+        self.assertEqual(_sanitize_connect_auth(raw, "gateway-token"), raw)
 
     def test_control_ui_ws_request_rewrite_caps_expensive_initial_requests(self) -> None:
         settings = Settings(chat_history_limit=5, chat_sessions_include_unknown=False)
