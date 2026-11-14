@@ -82,9 +82,13 @@ python panopticon/tools/backup_panopticon.py \
 - `global-skills/`
 - `templates/`
 - `reports/`
+- `mission-control/execution-worker/`（存在时；含 routes/checkpoints/artifacts，支持 `MC_EXECUTION_WORKER_STATE_PATH`）
+- 主 compose、LAN HTTPS 与 execution worker overlay（存在时）
 - `PANOPTICON_KNOWLEDGE_RAW_SOURCES_PATH` 指向的知识源目录（存在时）
 
 workspace 根目录清爽化后的分类目录（`docs/`、`media/`、`exports/`、`scripts/`、`runtime-assets/`、`staging/`、`archive/`、`.trash/`）会随 `workspaces/` 纳入备份边界。默认排除：浏览器锁文件、socket、pid/lock、缓存、临时目录、`node_modules/`、`venv/`、`.venv/`、`extensions/`。
+
+只读知识/周报路由的角色凭据在 agent-homes，API 摘要 profile 和 worker 投影在 env，随上述目录备份；恢复时应与执行状态和数据库成套恢复。在线 restic 文件快照不保证活跃 SQLite 检查点一致，迁移级恢复点需先停止 worker 再归档，或另行使用 SQLite backup API；目前未自动实现后者。执行 worker 使用独立 compose overlay/profile，默认主 compose 的 down/up 不足以保证它停止或重新启动，冷备前后须显式处理该服务。详见 [多 Agent 迭代](multi-agent-optimization-zh-cn.md)。
 
 ## 周期全量冷备
 

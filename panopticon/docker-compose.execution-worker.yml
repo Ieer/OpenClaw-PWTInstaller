@@ -1,0 +1,52 @@
+services:
+  mission-control-api:
+    environment:
+      MC_KNOWLEDGE_ACCESS_FILE: /run/mc-knowledge-access.json
+    volumes:
+      - type: bind
+        source: ./env/knowledge-access.json
+        target: /run/mc-knowledge-access.json
+        read_only: true
+
+  mission-control-execution-worker:
+    container_name: mission-control-execution-worker
+    profiles: ["execution"]
+    build:
+      context: ./tools
+      dockerfile: Dockerfile.execution-worker
+    image: mission-control-execution-worker:local
+    env_file:
+      - ./env/mission-control.env.example
+      - ./env/mission-control.env
+    environment:
+      MC_API_URL: http://mission-control-api:9090
+      MC_WORKER_STATE_DIR: /data
+      MC_WORKER_ID: weekly-draft-1
+      MC_WORKER_KNOWLEDGE_ENABLED: "1"
+      MC_WORKER_ROUTE_ENABLED: "1"
+    command: ["python", "-m", "panopticon.tools.managed_execution_worker", "--roles-file", "/run/mc-worker-roles.json"]
+    volumes:
+      - type: bind
+        source: ${MC_EXECUTION_WORKER_STATE_PATH:-./mission-control/execution-worker}
+        target: /data
+      - type: bind
+        source: ./env/mission-control-worker.json
+        target: /run/mc-worker-roles.json
+        read_only: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      mission-control-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,time; s=json.load(open('/data/health.json')); assert time.time()-s['updated_at']<30 and time.time()-s['last_api_success']<45"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    stop_grace_period: 45s
+    networks: ["panopticon"]

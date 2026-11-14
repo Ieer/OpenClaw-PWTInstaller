@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from panopticon.tools.validate_skills_template import validate_native_knowledge_metadata
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "scripts" / "knowledge_eval.py"
@@ -25,6 +29,39 @@ summarize_response = knowledge_eval.summarize_response
 
 
 class TestKnowledgeEval(unittest.TestCase):
+    def test_native_artifact_traversal_rejected_before_http(self):
+        wrapper_path = ROOT / "scripts/run_eval_artifact.py"
+        spec = importlib.util.spec_from_file_location("native_artifact", wrapper_path)
+        wrapper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(wrapper)
+        with patch.object(wrapper, "load_config", return_value=EvalConfig(
+                "http://localhost:18910/v1/knowledge/resolve", "role", "nox", "normal", 5)), \
+                patch.object(wrapper, "http_post_json") as http, \
+                patch.object(sys, "argv", ["eval", "--task", "test", "--task-id", "../../outside"]):
+            with self.assertRaises(ValueError):
+                wrapper.main()
+            http.assert_not_called()
+
+    def test_role_credential_does_not_fallback_to_admin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "credential.json"
+            with patch.dict(os.environ, {"KNOWLEDGE_EVAL_CREDENTIAL_FILE": str(path), "EVENT_HTTP_TOKEN": "legacy-admin"}):
+                path.write_text(json.dumps({"token": "role-only", "agent_slug": "metrics",
+                                            "resolve_url": "http://mission-control-api:9090/v1/knowledge/resolve"}))
+                config = knowledge_eval.load_config()
+                self.assertEqual(config.token, "role-only")
+                self.assertEqual(config.default_agent_slug, "metrics")
+                path.write_text("{}")
+                with self.assertRaises(ValueError):
+                    knowledge_eval.load_config()
+
+    def test_native_metadata_starts_at_byte_one(self):
+        path = ROOT / "SKILL.md"
+        self.assertEqual(validate_native_knowledge_metadata(path, path.read_text()), [])
+        for content in ("# SKILL.md\n", "````skill\n---\nname: knowledge-eval\n---\n",
+                        "---\nname: knowledge-eval\n---\n", "---\nname:\t[invalid\n---\n"):
+            self.assertTrue(validate_native_knowledge_metadata(path, content))
+
     def setUp(self) -> None:
         self.config = EvalConfig(
             resolve_url="http://localhost:18910/v1/knowledge/resolve",

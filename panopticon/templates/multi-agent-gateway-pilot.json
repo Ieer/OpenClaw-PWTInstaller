@@ -1,0 +1,32 @@
+{
+  "agents": {
+    "ownership": "explicit",
+    "defaults": {
+      "systemAgent": { "agentId": "metrics" },
+      "maxConcurrent": 2,
+      "subagents": { "maxConcurrent": 1 }
+    },
+    "entries": {
+      "metrics": {
+        "workspace": "/home/node/.openclaw/workspace-metrics",
+        "agentDir": "/home/node/.openclaw/agents/metrics/agent"
+      },
+      "growth": {
+        "workspace": "/home/node/.openclaw/workspace-growth",
+        "agentDir": "/home/node/.openclaw/agents/growth/agent"
+      }
+    }
+  },
+  "gateway": {
+    "mode": "local",
+    "bind": "loopback",
+    "port": 26316,
+    "auth": { "mode": "none" },
+    "controlUi": { "enabled": false }
+  },
+  "plugins": { "enabled": false },
+  "tools": {
+    "allow": ["read"],
+    "agentToAgent": { "enabled": false }
+  }
+}

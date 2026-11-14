@@ -1,5 +1,7 @@
 # Runtime assessment outputs (do not commit by default)
 *.json
+backup-runs/*.dump
+backup-runs/*-worker-private.tar.gz
 
 # Keep documentation and curated samples
 !.gitignore

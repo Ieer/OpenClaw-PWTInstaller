@@ -72,6 +72,69 @@ sa.Index(
 )
 
 
+task_action_requests = sa.Table(
+    "task_action_requests", metadata,
+    sa.Column("scope", sa.Text, primary_key=True),
+    sa.Column("key", sa.Text, primary_key=True),
+    sa.Column("request_hash", sa.Text, nullable=False),
+    sa.Column("response", sa.JSON, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+)
+
+
+execution_jobs = sa.Table(
+    "execution_jobs", metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column("agent_slug", sa.Text, nullable=False),
+    sa.Column("idempotency_key", sa.Text, nullable=False),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("priority", sa.Integer, nullable=False, server_default="100"),
+    sa.Column("provider", sa.Text),
+    sa.Column("estimated_tokens", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("payload", sa.JSON, nullable=False),
+    sa.Column("payload_hash", sa.Text, nullable=False),
+    sa.Column("status", sa.Text, nullable=False, server_default="QUEUED"),
+    sa.Column("attempts", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("max_attempts", sa.Integer, nullable=False, server_default="3"),
+    sa.Column("timeout_seconds", sa.Integer, nullable=False, server_default="900"),
+    sa.Column("worker_id", sa.Text),
+    sa.Column("lease_token", sa.Uuid),
+    sa.Column("lease_expires_at", sa.DateTime(timezone=True)),
+    sa.Column("deadline_at", sa.DateTime(timezone=True)),
+    sa.Column("result", sa.JSON),
+    sa.Column("last_error", sa.Text),
+    sa.Column("available_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+    sa.UniqueConstraint("agent_slug", "idempotency_key", name="uq_execution_job_idempotency"),
+)
+sa.Index("idx_execution_jobs_ready", execution_jobs.c.agent_slug, execution_jobs.c.kind, execution_jobs.c.priority,
+         execution_jobs.c.created_at, postgresql_where=execution_jobs.c.status == "QUEUED")
+sa.Index("idx_execution_jobs_running", execution_jobs.c.lease_expires_at, postgresql_where=execution_jobs.c.status == "RUNNING")
+
+execution_provider_charges = sa.Table(
+    "execution_provider_charges", metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column("provider", sa.Text, nullable=False),
+    sa.Column("tokens", sa.Integer, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+)
+sa.Index("idx_execution_provider_charges_window", execution_provider_charges.c.provider, execution_provider_charges.c.created_at)
+
+
+event_outbox = sa.Table(
+    "event_outbox", metadata,
+    sa.Column("event_id", sa.Uuid, primary_key=True),
+    sa.Column("event", sa.JSON, nullable=False),
+    sa.Column("attempts", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+    sa.Column("next_attempt_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+    sa.Column("delivered_at", sa.DateTime(timezone=True)),
+)
+sa.Index("idx_event_outbox_pending", event_outbox.c.next_attempt_at, postgresql_where=event_outbox.c.delivered_at.is_(None))
+sa.Index("idx_event_outbox_delivered", event_outbox.c.delivered_at, postgresql_where=event_outbox.c.delivered_at.is_not(None))
+
+
 agent_skill_mappings = sa.Table(
     "agent_skill_mappings",
     metadata,

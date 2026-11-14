@@ -77,6 +77,7 @@ class _FakeEngine:
 
 class ControlPlaneEndpointTests(unittest.TestCase):
     def _build_client(self, settings: Settings, redis: _FakeRedis | None = None) -> TestClient:
+        settings.event_outbox_enabled = False
         fake_redis = redis or _FakeRedis()
         patches = [
             patch("mission_control_api.app.main.load_settings", return_value=settings),

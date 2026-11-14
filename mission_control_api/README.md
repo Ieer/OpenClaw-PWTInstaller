@@ -85,6 +85,18 @@ curl -fsS http://127.0.0.1:18910/health
 - resolve：lexical / semantic / hybrid 召回与审计
 - feedback / lifecycle：回流事件和知识单元状态迁移
 
+## 多 Agent 执行与性能
+
+- 任务领取、完成、审查和事件驱动交接使用 PostgreSQL 事务行锁。
+- 任务创建、领取、完成、审查、评论和事件写入支持可选 `Idempotency-Key`；相同内容重放原响应，不同内容返回 409。
+- 默认启用事务 outbox，业务事件与任务更新同事务保存。后台至少一次投递，消费者按事件 ID 去重。
+- 查询向量缓存默认 60 秒、最多 128 项，同请求并发合并；动态知识权限、validation、排序和审计不缓存。
+- `/v1/execution/*` 是默认关闭的显式托管队列，支持幂等提交、租约、预算和过期回收，不拦截原生聊天、cron 或 ROS 任务。
+- `/v1/observability/outbox`、`/v1/observability/embedding-cache` 和 `/v1/execution/summary` 提供相关指标。
+- 可选 LangGraph 周报试点使用单独依赖和 SQLite 检查点，不加入 API 默认镜像。
+
+接口、上线、恢复和验收步骤见 [多 Agent 优化方案](../docs/multi-agent-optimization-zh-cn.md)。所有新表通过 Alembic 迁移；生产启用需保存旧镜像和数据库恢复点。
+
 ## 数据迁移规则
 
 必须遵守的约束：

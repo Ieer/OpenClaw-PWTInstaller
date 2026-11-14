@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GLOBAL_SKILLS_DIR = ROOT / "global-skills"
 DEFAULT_WORKSPACES_DIR = ROOT / "workspaces"
@@ -117,14 +119,33 @@ def validate_workspace_template(path: Path, content: str, sections: dict[str, st
     return errors
 
 
+def validate_native_knowledge_metadata(path: Path, content: str) -> list[str]:
+    rel = path.relative_to(ROOT)
+    lines = content.splitlines()
+    if not lines or lines[0] != "---":
+        return [f"{rel}: knowledge-eval requires native YAML frontmatter at byte 1"]
+    try:
+        end = lines.index("---", 1)
+        metadata = yaml.safe_load("\n".join(lines[1:end]))
+    except (ValueError, yaml.YAMLError):
+        return [f"{rel}: invalid knowledge-eval YAML frontmatter"]
+    if not isinstance(metadata, dict) or metadata.get("name") != "knowledge-eval":
+        return [f"{rel}: native skill name must be knowledge-eval"]
+    description = metadata.get("description")
+    if not isinstance(description, str) or not description.strip():
+        return [f"{rel}: native skill description is required"]
+    return []
+
+
 def validate_skill_file(path: Path) -> tuple[str, list[str]]:
     content = path.read_text(encoding="utf-8")
     template_type = detect_template_type(path, content)
     sections = extract_sections(content)
 
+    native_errors = validate_native_knowledge_metadata(path, content) if path.parent.name == "knowledge-eval" else []
     if template_type == "workspace":
-        return template_type, validate_workspace_template(path, content, sections)
-    return template_type, validate_global_template(path, content)
+        return template_type, native_errors + validate_workspace_template(path, content, sections)
+    return template_type, native_errors + validate_global_template(path, content)
 
 
 def main() -> int:

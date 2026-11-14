@@ -1,0 +1,9 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY requirements-orchestration.txt /app/requirements-orchestration.txt
+RUN python -m pip install --no-cache-dir -r /app/requirements-orchestration.txt
+COPY managed_execution_worker.py pilot_weekly_review.py weekly_review_router.py /app/panopticon/tools/
+USER 1000:1000
+CMD ["python", "-m", "panopticon.tools.managed_execution_worker"]

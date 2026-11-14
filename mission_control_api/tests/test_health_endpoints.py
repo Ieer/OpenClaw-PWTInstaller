@@ -200,6 +200,7 @@ class HealthEndpointTests(unittest.TestCase):
             agent_manifest_path="/missing-agent-manifest.yaml",
         )
         fake_engine = _FakeEngine()
+        fake_settings.event_outbox_enabled = False
 
         patches = [
             patch("mission_control_api.app.main.load_settings", return_value=fake_settings),

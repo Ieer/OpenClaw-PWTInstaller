@@ -101,6 +101,7 @@ docker-compose.override.yml
 panopticon/mission-control/redis-data/
 panopticon/mission-control/postgres-data/
 panopticon/mission-control/knowledge-sources/
+panopticon/mission-control/execution-worker/
 panopticon/shared-usb/
 panopticon/agent-homes/
 panopticon/workspaces/*/.git/
@@ -142,3 +143,5 @@ panopticon/mission-control/tls/*.srl
 
 # Panopticon local env overrides (contain secrets; do not commit)
 panopticon/env/*.env
+panopticon/env/mission-control-worker.json
+panopticon/env/knowledge-access.json

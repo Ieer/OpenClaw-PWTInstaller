@@ -7,8 +7,10 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from uuid import uuid4
 
 from fastapi import HTTPException
+from sqlalchemy.dialects import postgresql
 
 from mission_control_api.app.config import Settings, load_settings
 from mission_control_api.app.main import (
@@ -22,6 +24,7 @@ from mission_control_api.app.main import (
     _rewrite_control_ui_config,
     _rewrite_inline_assistant_avatar_vars,
     _suggest_task_route,
+    _task_transition_select,
     publish_event,
 )
 
@@ -36,6 +39,13 @@ class _FakeRedisStream:
 
 
 class OrchestrationGuardTests(unittest.TestCase):
+    def test_task_transition_select_locks_the_requested_row(self) -> None:
+        task_id = uuid4()
+        compiled = _task_transition_select(task_id).compile(dialect=postgresql.dialect())
+        self.assertIn("FOR UPDATE", str(compiled))
+        self.assertIn("WHERE tasks.id =", str(compiled))
+        self.assertIn(task_id, compiled.params.values())
+
     def test_gateway_agent_slug_accepts_known_agent_case_insensitive(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "nox").mkdir()

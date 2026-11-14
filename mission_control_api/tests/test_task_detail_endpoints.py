@@ -81,6 +81,7 @@ class TaskDetailEndpointTests(unittest.TestCase):
             agent_homes_dir="/missing-agent-homes",
             agent_manifest_path="/missing-agent-manifest.yaml",
         )
+        fake_settings.event_outbox_enabled = False
         patches = [
             patch("mission_control_api.app.main.load_settings", return_value=fake_settings),
             patch("mission_control_api.app.main.create_engine", return_value=_FakeEngine()),

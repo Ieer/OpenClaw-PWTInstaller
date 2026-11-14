@@ -1,4 +1,3 @@
-````skill
 ---
 name: knowledge-eval
 description: "Shared Mission Control knowledge evaluation skill for Panopticon agents. Use when Claude needs to assess a task against the central knowledge system, build a standardized POST /v1/knowledge/resolve request, apply agent_slug/risk defaults, and return a normalized evaluation summary with evidence and constraints."
@@ -72,5 +71,3 @@ Environment variables:
 
 - Template-Version: 0.1.0
 - Last-Updated: 2026-04-04
-
-````

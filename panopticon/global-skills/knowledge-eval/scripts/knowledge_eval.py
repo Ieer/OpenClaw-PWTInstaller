@@ -7,6 +7,7 @@ import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -66,6 +67,12 @@ def clamp_limit(value: int) -> int:
 
 
 def load_config() -> EvalConfig:
+    credential_path = Path(os.getenv("KNOWLEDGE_EVAL_CREDENTIAL_FILE") or Path.home() / ".openclaw" / "knowledge-access.json")
+    credential = json.loads(credential_path.read_text(encoding="utf-8")) if credential_path.is_file() else {}
+    if credential_path.is_file() and (not isinstance(credential, dict) or any(
+            not isinstance(credential.get(key), str) or not credential[key].strip()
+            for key in ("token", "agent_slug", "resolve_url"))):
+        raise ValueError("invalid role-bound knowledge credential; refusing legacy fallback")
     default_risk_level = (os.getenv("KNOWLEDGE_EVAL_DEFAULT_RISK") or "normal").strip().lower() or "normal"
     if default_risk_level not in VALID_RISK_LEVELS:
         default_risk_level = "normal"
@@ -76,9 +83,9 @@ def load_config() -> EvalConfig:
         default_limit = DEFAULT_LIMIT
 
     return EvalConfig(
-        resolve_url=resolve_endpoint_from_env(),
-        token=(os.getenv("EVENT_HTTP_TOKEN") or "").strip(),
-        default_agent_slug=(os.getenv("AGENT_SLUG") or "").strip(),
+        resolve_url=credential.get("resolve_url") or resolve_endpoint_from_env(),
+        token=credential.get("token") or (os.getenv("EVENT_HTTP_TOKEN") or "").strip(),
+        default_agent_slug=credential.get("agent_slug") or (os.getenv("AGENT_SLUG") or "").strip(),
         default_risk_level=default_risk_level,
         default_limit=default_limit,
     )

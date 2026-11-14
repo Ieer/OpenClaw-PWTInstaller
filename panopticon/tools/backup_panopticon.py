@@ -461,6 +461,14 @@ def build_file_entries(ctx: BackupContext, *, include_redis_data: bool = False) 
         FileEntry(PANOPTICON_DIR / "templates", "config/templates", required=False),
         FileEntry(PANOPTICON_DIR / "reports", "config/reports", required=False),
     ]
+    worker_state = resolve_bind_path(PANOPTICON_DIR,
+                                    os.getenv("MC_EXECUTION_WORKER_STATE_PATH", ctx.env_values.get("MC_EXECUTION_WORKER_STATE_PATH", "")),
+                                    "mission-control/execution-worker")
+    if worker_state.exists():
+        entries.append(FileEntry(worker_state, "data/execution-worker", required=False))
+    for filename in ("docker-compose.panopticon.yml", "docker-compose.lan-https.yml", "docker-compose.execution-worker.yml"):
+        if (PANOPTICON_DIR / filename).exists():
+            entries.append(FileEntry(PANOPTICON_DIR / filename, f"config/{filename}", required=False))
     if ctx.knowledge_raw_sources_path.exists():
         entries.append(FileEntry(ctx.knowledge_raw_sources_path, "data/knowledge-sources", required=False))
     if include_redis_data:

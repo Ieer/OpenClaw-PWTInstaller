@@ -9,6 +9,7 @@ import gzip
 import json
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 BACKUP_SCRIPT = Path(__file__).resolve().parent / "backup_panopticon.py"
@@ -21,6 +22,18 @@ SPEC.loader.exec_module(backup)
 
 
 class BackupPanopticonTests(unittest.TestCase):
+    def test_execution_state_and_overlay_are_in_backup_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / "mission-control/execution-worker"
+            state.mkdir(parents=True)
+            (root / "docker-compose.execution-worker.yml").write_text("services: {}")
+            ctx = SimpleNamespace(data_dir=root, env_values={}, knowledge_raw_sources_path=root / "missing")
+            with patch.object(backup, "PANOPTICON_DIR", root), patch.dict("os.environ", {"MC_EXECUTION_WORKER_STATE_PATH": str(state)}):
+                entries = {entry.arcname: entry.path for entry in backup.build_file_entries(ctx)}
+            self.assertEqual(entries["data/execution-worker"], state)
+            self.assertEqual(entries["config/docker-compose.execution-worker.yml"], root / "docker-compose.execution-worker.yml")
+
     def test_weekly_full_accepts_bounded_gzip_levels(self) -> None:
         parser = backup.build_parser()
         self.assertEqual(parser.parse_args(["weekly-full"]).gzip_level, 6)

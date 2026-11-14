@@ -636,6 +636,7 @@ class KnowledgeValidationPolicyOut(BaseModel):
 
 class KnowledgeResolveIn(BaseModel):
     task: str
+    request_id: str | None = Field(default=None, max_length=128)
     agent_slug: str | None = None
     risk_level: str = "normal"
     tags: list[str] = Field(default_factory=list)
@@ -672,6 +673,7 @@ class KnowledgeResolveRejectedOut(BaseModel):
 
 class KnowledgeResolveOut(BaseModel):
     task: str
+    audit_id: UUID | None = None
     agent_slug: str | None = None
     risk_level: str
     total: int

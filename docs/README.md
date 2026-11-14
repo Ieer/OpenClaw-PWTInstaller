@@ -30,6 +30,7 @@
 | 搭建 8-Agent 主路线 | [../panopticon/README.md](../panopticon/README.md) |
 | 准备升级或回滚 Panopticon OpenClaw 运行态 | [openclaw-cli-cheatsheet-zh-cn.md](openclaw-cli-cheatsheet-zh-cn.md) |
 | 评估多实例性能、内存压力与降配方案 | [openclaw-memory-performance-zh-cn.md](openclaw-memory-performance-zh-cn.md) |
+| 接入可靠执行队列、幂等交接与 LangGraph 周报试点 | [multi-agent-optimization-zh-cn.md](multi-agent-optimization-zh-cn.md) |
 | 需要基础设施自愈、健康诊断或新增 self-heal item | [infrastructure-self-heal-zh-cn.md](infrastructure-self-heal-zh-cn.md) |
 | 需要日常不停机备份、定期全量备份或 U 盘迁移 | [openclaw-backup-retention-zh-cn.md](openclaw-backup-retention-zh-cn.md) |
 | 需要从局域网电脑访问 Mission Control / Web Chat | [mission-control-lan-access-zh-cn.md](mission-control-lan-access-zh-cn.md) |

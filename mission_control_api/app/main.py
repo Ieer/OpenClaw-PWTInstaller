@@ -23,15 +23,22 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, W
 from fastapi.responses import HTMLResponse, Response
 import httpx
 import asyncio
+from contextlib import suppress
 from redis.asyncio import Redis
 
 from .agent_catalog import build_agent_catalog
 from .config import Settings, load_settings
 from .db import create_engine, create_session_factory
+from .outbox import EventOutbox, stage_event
+from .execution import register_execution_routes
+from .knowledge_access import bind_knowledge_request
+from .idempotency import replay_action, save_action
+from .embedding_cache import EmbeddingCache, embedding_cache_key
 from .models import (
     agent_skill_mappings,
     comments,
     events,
+    event_outbox,
     knowledge_feedback_events,
     knowledge_unit_lifecycle_events,
     knowledge_resolve_ranking_profiles,
@@ -2689,6 +2696,10 @@ def _build_handoff_task_update(
     return payload, errors
 
 
+def _task_transition_select(task_id: UUID):
+    return sa.select(tasks).where(tasks.c.id == task_id).with_for_update()
+
+
 def _build_task_claim_update(
     *,
     current_status: str,
@@ -3435,10 +3446,51 @@ def create_app() -> FastAPI:
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
 
     app = FastAPI(title="Mission Control API", version="0.1.0")
+    outbox = EventOutbox(session_factory, redis, settings)
+    embedding_cache = EmbeddingCache(ttl_seconds=settings.knowledge_embedding_cache_ttl_seconds)
+    app.state.embedding_cache = embedding_cache
+    outbox_worker = None
+
+    async def publish_event(redis, *, stream_key: str, event: dict, maxlen: int | None = None) -> None:
+        await outbox.publish(redis=redis, stream_key=stream_key, event=event, maxlen=maxlen)
+
+    @app.on_event("startup")
+    async def _start_outbox():
+        nonlocal outbox_worker
+        if settings.event_outbox_enabled:
+            outbox_worker = asyncio.create_task(outbox.run())
 
     async def get_session():
         async with session_factory() as session:
             yield session
+
+    register_execution_routes(
+        app, settings=settings, get_session=get_session,
+        auth_dependency=lambda authorization=Header(default=None): require_auth(settings, authorization),
+        normalize_agent=lambda agent: _normalize_gateway_agent_slug(settings, agent),
+    )
+
+    @app.get("/v1/observability/outbox")
+    async def outbox_summary(
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        session=Depends(get_session),
+    ):
+        if not settings.event_outbox_enabled:
+            return {"enabled": False, "pending": 0}
+        row = (await session.execute(sa.select(
+            sa.func.count().label("pending"), sa.func.min(event_outbox.c.created_at).label("oldest_created_at"),
+            sa.func.coalesce(sa.func.max(event_outbox.c.attempts), 0).label("max_attempts"),
+        ).where(event_outbox.c.delivered_at.is_(None)))).one()
+        return {"enabled": True, "pending": row.pending, "oldest_created_at": row.oldest_created_at,
+                "max_attempts": row.max_attempts, "delivery": "at-least-once"}
+
+    @app.get("/v1/observability/embedding-cache")
+    async def embedding_cache_summary(
+        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+    ):
+        return {"hits": embedding_cache.hits, "misses": embedding_cache.misses,
+                "entries": len(embedding_cache.entries), "pending": len(embedding_cache.pending),
+                "ttl_seconds": embedding_cache.ttl_seconds, "scope": "query-vectors-only; per-process"}
 
     async def publish_validation_result(
         *,
@@ -3493,7 +3545,7 @@ def create_app() -> FastAPI:
             )
         )
         row = (await session.execute(stmt)).one()
-        return {
+        queued_event = {
             "id": str(row.id),
             "type": row.type,
             "agent": row.agent,
@@ -3501,6 +3553,9 @@ def create_app() -> FastAPI:
             "payload": row.payload,
             "created_at": row.created_at.isoformat(),
         }
+        if settings.event_outbox_enabled:
+            await stage_event(session, queued_event)
+        return queued_event
 
     def _voice_source_refs(source_event: dict) -> dict[str, str]:
         payload = source_event.get("payload") if isinstance(source_event.get("payload"), dict) else {}
@@ -3627,7 +3682,7 @@ def create_app() -> FastAPI:
         if body.type == "task.handoff" and body.task_id:
             current_row = (
                 await session.execute(
-                    sa.select(tasks.c.id, tasks.c.status, tasks.c.assignee).where(tasks.c.id == body.task_id)
+                    _task_transition_select(body.task_id)
                 )
             ).first()
             if not current_row:
@@ -3680,7 +3735,7 @@ def create_app() -> FastAPI:
             if body.task_id:
                 current_row = (
                     await session.execute(
-                        sa.select(tasks.c.id, tasks.c.status).where(tasks.c.id == body.task_id)
+                        _task_transition_select(body.task_id)
                     )
                 ).first()
                 if not current_row:
@@ -6094,9 +6149,13 @@ def create_app() -> FastAPI:
     @app.post("/v1/knowledge/resolve", response_model=KnowledgeResolveOut)
     async def resolve_knowledge_package(
         body: KnowledgeResolveIn,
-        _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
+        authorization: str | None = Header(default=None),
         session=Depends(get_session),
     ) -> KnowledgeResolveOut:
+        body, principal_kind = bind_knowledge_request(
+            body, authorization=authorization, admin_token=settings.auth_token,
+            profiles=settings.knowledge_access_profiles,
+        )
         requested_rank = _risk_rank(body.risk_level)
         limit = min(max(int(body.limit or 10), 1), 100)
         retrieval_mode = str(body.retrieval_mode or "lexical").strip().lower() or "lexical"
@@ -6172,9 +6231,12 @@ def create_app() -> FastAPI:
                 )
 
             try:
-                vectors, model_name, actual_dimensions = await _request_knowledge_embeddings(
-                    [semantic_query],
-                    config=embedding_config,
+                cache_key = embedding_cache_key(
+                    query=semantic_query, agent_slug=body.agent_slug, risk_level=body.risk_level,
+                    config=embedding_config, revision=settings.knowledge_embedding_cache_revision,
+                )
+                vectors, model_name, actual_dimensions = await embedding_cache.get(
+                    cache_key, lambda: _request_knowledge_embeddings([semantic_query], config=embedding_config),
                 )
             except Exception as exc:
                 raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -6234,6 +6296,24 @@ def create_app() -> FastAPI:
 
         rows = list(candidate_rows_by_unit_id.values())
 
+        latest_validation_by_unit_id = {}
+        if rows:
+            ranked_validations = sa.select(
+                knowledge_validations.c.unit_id,
+                knowledge_validations.c.validation_status,
+                knowledge_validations.c.expires_at,
+                knowledge_validations.c.confidence,
+                knowledge_validations.c.validated_at,
+                sa.func.row_number().over(
+                    partition_by=knowledge_validations.c.unit_id,
+                    order_by=knowledge_validations.c.validated_at.desc(),
+                ).label("validation_order"),
+            ).where(knowledge_validations.c.unit_id.in_([row["id"] for row in rows])).subquery()
+            validation_rows = (await session.execute(sa.select(ranked_validations).where(
+                ranked_validations.c.validation_order == 1
+            ))).all()
+            latest_validation_by_unit_id = {row.unit_id: row for row in validation_rows}
+
         now = datetime.now(timezone.utc)
         selected_items: list[KnowledgeResolveItemOut] = []
         selected_payload: list[dict] = []
@@ -6247,19 +6327,7 @@ def create_app() -> FastAPI:
             if _risk_rank(row["risk_level"]) > requested_rank:
                 reject_reason = "unit_risk_exceeds_requested"
 
-            latest_validation = (
-                await session.execute(
-                    sa.select(
-                        knowledge_validations.c.validation_status,
-                        knowledge_validations.c.expires_at,
-                        knowledge_validations.c.confidence,
-                        knowledge_validations.c.validated_at,
-                    )
-                    .where(knowledge_validations.c.unit_id == row["id"])
-                    .order_by(knowledge_validations.c.validated_at.desc())
-                    .limit(1)
-                )
-            ).first()
+            latest_validation = latest_validation_by_unit_id.get(row["id"])
 
             validation_status = latest_validation.validation_status if latest_validation else None
             validation_expires_at = latest_validation.expires_at if latest_validation else None
@@ -6278,6 +6346,10 @@ def create_app() -> FastAPI:
 
             strict_mode = bool(policy.get("strict_mode"))
 
+            if reject_reason is None and principal_kind == "role" and validation_status != "approved":
+                reject_reason = "validation_not_approved"
+            if reject_reason is None and principal_kind == "role" and expired:
+                reject_reason = "validation_expired"
             if reject_reason is None and policy.get("require_validation") and not latest_validation:
                 reject_reason = "missing_validation"
             if reject_reason is None and strict_mode and policy.get("require_approved") and not validation_status:
@@ -6412,9 +6484,10 @@ def create_app() -> FastAPI:
         selected_ids = {str(item.unit.id) for item in selected}
         selected_payload = [item for item in selected_payload if item["unit_id"] in selected_ids]
 
+        audit_id = uuid4()
         await session.execute(
             knowledge_resolve_audits.insert().values(
-                id=uuid4(),
+                id=audit_id,
                 task=body.task,
                 agent_slug=body.agent_slug,
                 requested_risk_level=(body.risk_level or "normal").strip().lower() or "normal",
@@ -6422,6 +6495,9 @@ def create_app() -> FastAPI:
                 selected_count=len(selected_payload),
                 rejected_count=len(rejected_payload),
                 payload={
+                    "principal_kind": principal_kind,
+                    "request_id": body.request_id,
+                    "authenticated_agent": body.agent_slug if principal_kind == "role" else None,
                     "retrieval_mode": retrieval_mode,
                     "ranking_profile": ranking_profile,
                     "ranking_profile_weights": {
@@ -6450,6 +6526,7 @@ def create_app() -> FastAPI:
 
         return KnowledgeResolveOut(
             task=body.task,
+            audit_id=audit_id,
             agent_slug=body.agent_slug,
             risk_level=(body.risk_level or "normal").strip().lower() or "normal",
             total=len(selected),
@@ -7199,9 +7276,13 @@ def create_app() -> FastAPI:
     @app.post("/v1/tasks", response_model=TaskOut)
     async def create_task(
         body: TaskCreate,
+        idempotency_key: str | None = Header(default=None, max_length=128),
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
         session=Depends(get_session),
     ) -> TaskOut:
+        cached = await replay_action(session, scope="tasks:create", key=idempotency_key, body=body)
+        if cached is not None:
+            return TaskOut(**cached)
         task_out, queued_event = await _insert_task_row(
             session,
             title=body.title,
@@ -7209,6 +7290,7 @@ def create_app() -> FastAPI:
             assignee=body.assignee,
             tags=body.tags,
         )
+        await save_action(session, scope="tasks:create", key=idempotency_key, body=body, response=task_out)
         await session.commit()
         await publish_event(
             redis,
@@ -7308,21 +7390,18 @@ def create_app() -> FastAPI:
     async def claim_task(
         task_id: UUID,
         body: TaskClaimIn,
+        idempotency_key: str | None = Header(default=None, max_length=128),
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
         session=Depends(get_session),
     ) -> TaskOut:
+        scope = f"tasks:{task_id}:claim"
+        cached = await replay_action(session, scope=scope, key=idempotency_key, body=body)
+        if cached is not None:
+            return TaskOut(**cached)
         agent_slug = _normalize_gateway_agent_slug(settings, body.agent_slug)
         current_row = (
             await session.execute(
-                sa.select(
-                    tasks.c.id,
-                    tasks.c.title,
-                    tasks.c.status,
-                    tasks.c.assignee,
-                    tasks.c.tags,
-                    tasks.c.created_at,
-                    tasks.c.updated_at,
-                ).where(tasks.c.id == task_id)
+                _task_transition_select(task_id)
             )
         ).first()
         if not current_row:
@@ -7365,6 +7444,7 @@ def create_app() -> FastAPI:
             task_id=task_id,
             payload=claim_payload,
         )
+        await save_action(session, scope=scope, key=idempotency_key, body=body, response=task_out)
         await session.commit()
         await publish_event(
             redis,
@@ -7378,21 +7458,18 @@ def create_app() -> FastAPI:
     async def complete_task(
         task_id: UUID,
         body: TaskCompleteIn,
+        idempotency_key: str | None = Header(default=None, max_length=128),
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
         session=Depends(get_session),
     ) -> TaskOut:
+        scope = f"tasks:{task_id}:complete"
+        cached = await replay_action(session, scope=scope, key=idempotency_key, body=body)
+        if cached is not None:
+            return TaskOut(**cached)
         agent_slug = _normalize_gateway_agent_slug(settings, body.agent_slug)
         current_row = (
             await session.execute(
-                sa.select(
-                    tasks.c.id,
-                    tasks.c.title,
-                    tasks.c.status,
-                    tasks.c.assignee,
-                    tasks.c.tags,
-                    tasks.c.created_at,
-                    tasks.c.updated_at,
-                ).where(tasks.c.id == task_id)
+                _task_transition_select(task_id)
             )
         ).first()
         if not current_row:
@@ -7458,6 +7535,7 @@ def create_app() -> FastAPI:
                 payload=completion_payload,
             )
         )
+        await save_action(session, scope=scope, key=idempotency_key, body=body, response=task_out)
         await session.commit()
         for queued_event in queued_events:
             await publish_event(
@@ -7472,21 +7550,18 @@ def create_app() -> FastAPI:
     async def review_task(
         task_id: UUID,
         body: TaskReviewDecisionIn,
+        idempotency_key: str | None = Header(default=None, max_length=128),
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
         session=Depends(get_session),
     ) -> TaskOut:
+        scope = f"tasks:{task_id}:review"
+        cached = await replay_action(session, scope=scope, key=idempotency_key, body=body)
+        if cached is not None:
+            return TaskOut(**cached)
         reviewer_slug = _normalize_gateway_agent_slug(settings, body.reviewer_slug)
         current_row = (
             await session.execute(
-                sa.select(
-                    tasks.c.id,
-                    tasks.c.title,
-                    tasks.c.status,
-                    tasks.c.assignee,
-                    tasks.c.tags,
-                    tasks.c.created_at,
-                    tasks.c.updated_at,
-                ).where(tasks.c.id == task_id)
+                _task_transition_select(task_id)
             )
         ).first()
         if not current_row:
@@ -7533,6 +7608,7 @@ def create_app() -> FastAPI:
             task_id=task_id,
             payload=review_payload,
         )
+        await save_action(session, scope=scope, key=idempotency_key, body=body, response=task_out)
         await session.commit()
         await publish_event(
             redis,
@@ -7573,15 +7649,21 @@ def create_app() -> FastAPI:
     async def add_comment(
         task_id: UUID,
         body: CommentCreate,
+        idempotency_key: str | None = Header(default=None, max_length=128),
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
         session=Depends(get_session),
     ) -> CommentOut:
+        scope = f"tasks:{task_id}:comment"
+        cached = await replay_action(session, scope=scope, key=idempotency_key, body=body)
+        if cached is not None:
+            return CommentOut(**cached)
         comment_out, queued_event = await _insert_comment_row(
             session,
             task_id=task_id,
             author=body.author,
             body=body.body,
         )
+        await save_action(session, scope=scope, key=idempotency_key, body=body, response=comment_out)
         await session.commit()
         await publish_event(
             redis,
@@ -7594,9 +7676,13 @@ def create_app() -> FastAPI:
     @app.post("/v1/events", response_model=EventOut)
     async def ingest_event(
         body: EventIn,
+        idempotency_key: str | None = Header(default=None, max_length=128),
         _auth: None = Depends(lambda authorization=Header(default=None): require_auth(settings, authorization)),
         session=Depends(get_session),
     ) -> EventOut:
+        cached = await replay_action(session, scope="events:ingest", key=idempotency_key, body=body)
+        if cached is not None:
+            return EventOut(**cached)
         event_payload, validation_errors, validation_details = await _prepare_event_payload(body, session)
 
         if validation_errors:
@@ -7633,6 +7719,9 @@ def create_app() -> FastAPI:
         }
         if row.type == "voice.asr.final":
             queued_events = await _execute_voice_command(session, source_event)
+        if settings.event_outbox_enabled:
+            await stage_event(session, source_event)
+        await save_action(session, scope="events:ingest", key=idempotency_key, body=body, response=source_event)
         await session.commit()
 
         await publish_event(
@@ -8007,6 +8096,11 @@ def create_app() -> FastAPI:
 
     @app.on_event("shutdown")
     async def _shutdown():
+        await embedding_cache.close()
+        if outbox_worker is not None:
+            outbox_worker.cancel()
+            with suppress(asyncio.CancelledError):
+                await outbox_worker
         await redis.aclose()
         await engine.dispose()
 

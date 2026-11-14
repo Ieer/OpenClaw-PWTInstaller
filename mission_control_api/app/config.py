@@ -11,6 +11,7 @@ def _is_placeholder_token(value: str | None) -> bool:
 
 class Settings(BaseModel):
     auth_token: str | None = None
+    knowledge_access_profiles: dict[str, dict[str, str]] = {}
 
     database_url: str = (
         "postgresql+asyncpg://mission_control:mission_control@mc-postgres:5432/mission_control"
@@ -18,6 +19,16 @@ class Settings(BaseModel):
     redis_url: str = "redis://mc-redis:6379/0"
     redis_stream_key: str = "mc:events"
     redis_stream_maxlen: int = 10000
+    event_outbox_enabled: bool = True
+    execution_enabled: bool = False
+    execution_global_limit: int = 4
+    execution_main_limit: int = 4
+    execution_subtask_limit: int = 2
+    execution_maintenance_limit: int = 1
+    execution_agent_limit: int = 2
+    execution_lease_seconds: int = 60
+    execution_provider_rpm: int = 20
+    execution_provider_tpm: int = 60000
     global_skills_dir: str = "/data/global-skills"
     agent_homes_dir: str = "/data/agent-homes"
     workspaces_dir: str = "/data/workspaces"
@@ -29,6 +40,8 @@ class Settings(BaseModel):
     knowledge_embedding_api_protocol: str = "openai-embeddings"
     knowledge_embedding_dimensions: int | None = None
     knowledge_embedding_timeout_seconds: float = 20.0
+    knowledge_embedding_cache_ttl_seconds: int = 60
+    knowledge_embedding_cache_revision: str = "1"
     agent_token_map: dict[str, str] = {}
     agent_manifest_path: str = "/app/panopticon_agents.manifest.yaml"
     agent_slugs: str = ""
@@ -84,6 +97,8 @@ def _env_int(name: str, default: int) -> int:
 def load_settings() -> Settings:
     import os
 
+    from .knowledge_access import load_access_profiles
+
     raw_embedding_dimensions = (os.getenv("MC_KNOWLEDGE_EMBEDDING_DIMENSIONS") or "").strip()
 
     token_map_str = (os.getenv("MC_CHAT_AGENT_TOKEN_MAP") or os.getenv("MISSION_CONTROL_CHAT_AGENT_TOKEN_MAP") or "").strip()
@@ -98,11 +113,22 @@ def load_settings() -> Settings:
 
     return Settings(
         auth_token=os.getenv("MC_AUTH_TOKEN") or None,
+        knowledge_access_profiles=load_access_profiles(os.getenv("MC_KNOWLEDGE_ACCESS_FILE")),
         database_url=os.getenv("MC_DATABASE_URL")
         or "postgresql+asyncpg://mission_control:mission_control@mc-postgres:5432/mission_control",
         redis_url=os.getenv("MC_REDIS_URL") or "redis://mc-redis:6379/0",
         redis_stream_key=os.getenv("MC_REDIS_STREAM_KEY") or "mc:events",
         redis_stream_maxlen=max(0, _env_int("MC_REDIS_STREAM_MAXLEN", 10000)),
+        event_outbox_enabled=_env_flag("MC_EVENT_OUTBOX_ENABLED", True),
+        execution_enabled=_env_flag("MC_EXECUTION_ENABLED", False),
+        execution_global_limit=max(1, _env_int("MC_EXECUTION_GLOBAL_LIMIT", 4)),
+        execution_main_limit=max(1, _env_int("MC_EXECUTION_MAIN_LIMIT", 4)),
+        execution_subtask_limit=max(1, _env_int("MC_EXECUTION_SUBTASK_LIMIT", 2)),
+        execution_maintenance_limit=max(1, _env_int("MC_EXECUTION_MAINTENANCE_LIMIT", 1)),
+        execution_agent_limit=max(1, _env_int("MC_EXECUTION_AGENT_LIMIT", 2)),
+        execution_lease_seconds=max(10, _env_int("MC_EXECUTION_LEASE_SECONDS", 60)),
+        execution_provider_rpm=max(1, _env_int("MC_EXECUTION_PROVIDER_RPM", 20)),
+        execution_provider_tpm=max(1, _env_int("MC_EXECUTION_PROVIDER_TPM", 60000)),
         global_skills_dir=os.getenv("MC_GLOBAL_SKILLS_DIR") or "/data/global-skills",
         agent_homes_dir=os.getenv("MC_AGENT_HOMES_DIR") or "/data/agent-homes",
         workspaces_dir=os.getenv("MC_WORKSPACES_DIR") or "/data/workspaces",
@@ -114,6 +140,8 @@ def load_settings() -> Settings:
         knowledge_embedding_api_protocol=(os.getenv("MC_KNOWLEDGE_EMBEDDING_API_PROTOCOL") or "openai-embeddings").strip() or "openai-embeddings",
         knowledge_embedding_dimensions=int(raw_embedding_dimensions) if raw_embedding_dimensions else None,
         knowledge_embedding_timeout_seconds=float((os.getenv("MC_KNOWLEDGE_EMBEDDING_TIMEOUT_SECONDS") or "20.0").strip()),
+        knowledge_embedding_cache_ttl_seconds=max(0, _env_int("MC_KNOWLEDGE_EMBEDDING_CACHE_TTL_SECONDS", 60)),
+        knowledge_embedding_cache_revision=os.getenv("MC_KNOWLEDGE_EMBEDDING_CACHE_REVISION") or "1",
         agent_token_map=agent_token_map,
         agent_manifest_path=(os.getenv("MISSION_CONTROL_AGENT_MANIFEST_PATH") or "/app/panopticon_agents.manifest.yaml").strip() or "/app/panopticon_agents.manifest.yaml",
         agent_slugs=(os.getenv("MISSION_CONTROL_AGENT_SLUGS") or "").strip(),

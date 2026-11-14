@@ -7,6 +7,48 @@ on:
       - main
 
 jobs:
+  multi-agent-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: mission_control
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: mission_control_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mission_control -d mission_control_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      MC_TEST_DATABASE_URL: postgresql+asyncpg://mission_control:test-only@localhost:5432/mission_control_test
+      MC_DATABASE_URL: postgresql+asyncpg://mission_control:test-only@localhost:5432/mission_control_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install API test dependencies
+        run: python -m pip install -r mission_control_api/requirements.txt
+      - name: API and disposable database regression
+        run: python -m unittest discover -s mission_control_api/tests
+      - name: Additive migration roundtrip
+        working-directory: mission_control_api
+        run: |
+          alembic upgrade head
+          alembic downgrade 20260524_0013
+          alembic upgrade head
+      - name: Install optional orchestration dependencies
+        run: python -m pip install -r panopticon/tools/requirements-orchestration.txt
+      - name: Offline checkpoint and approval pilot
+        run: python -m unittest discover -s panopticon/tools -p 'test_weekly_review_pilot.py'
+      - name: Managed worker lease and draft boundaries
+        run: python -W error -m unittest discover -s panopticon/tools -p 'test_managed_execution_worker.py'
+      - name: Native knowledge client and metadata contract
+        run: python -m unittest discover -s panopticon/global-skills/knowledge-eval/tests
+
   minimal-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
