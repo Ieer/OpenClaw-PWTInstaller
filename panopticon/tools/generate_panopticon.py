@@ -33,14 +33,19 @@ TOKEN_PERSONAL=
 # 事件中写入的 agent 名称。
 MC_VOICE_AGENT=voice-engine
 
+# 语音设备稳定且唯一的 ID；桥接器和配对 ROS 音频栈必须一致。
+MC_VOICE_DEVICE_ID=
+
 # ROS topic 名称。
 MC_VOICE_TOPIC_WAKEUP=wakeup
 MC_VOICE_TOPIC_ASR=asr
 MC_VOICE_TOPIC_TEXT_RESPONSE=text_response
 MC_VOICE_TOPIC_TTS=tts_topic
+MC_VOICE_TOPIC_TTS_CANCEL=tts_cancel
 
 # 行为开关。
 MC_VOICE_ENABLE_LLM_FIRST_TOKEN=1
+# 仅兼容旧版纯文本 TTS 状态；新 JSON 生命周期事件以播放器回执为准。
 MC_VOICE_IDLE_AFTER_TTS_S=6.0
 
 # 发送队列与重试参数。

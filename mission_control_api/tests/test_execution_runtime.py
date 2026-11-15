@@ -18,12 +18,18 @@ from mission_control_api.app.execution import JobCreate, job_fingerprint, lease_
 from mission_control_api.app.knowledge_access import bind_knowledge_request
 from mission_control_api.app.schemas import KnowledgeResolveIn
 from mission_control_api.app.embedding_cache import EmbeddingCache, embedding_cache_key
-from mission_control_api.app.main import create_app
+from mission_control_api.app.main import _voice_source_refs, create_app
 from mission_control_api.app.models import metadata, tasks, events, event_outbox, execution_jobs, execution_provider_charges, task_action_requests, knowledge_units, knowledge_validations, knowledge_resolve_audits
 from mission_control_api.app.outbox import EventOutbox, stage_event
 
 
 class ExecutionUnitTests(unittest.TestCase):
+    def test_voice_source_identity_preserves_device_and_stable_event_key(self):
+        refs = _voice_source_refs({"id": "source-1", "agent": "nox", "payload": {
+            "turn_id": "turn-1", "event_key": "event-1", "device_id": "desk"}})
+        self.assertEqual(refs, {"source_voice_event_id": "source-1", "source_voice_agent": "nox",
+                                "voice_turn_id": "turn-1", "voice_event_key": "event-1", "device_id": "desk"})
+
     def test_knowledge_principal_binds_scope_risk_and_approved_only(self):
         profiles = {hashlib.sha256(b"role-token").hexdigest(): {"agent_slug": "health", "risk_floor": "high"}}
         body = KnowledgeResolveIn(task="evaluate supplied evidence", risk_level="low", limit=100,
@@ -214,6 +220,31 @@ class ExecutionDatabaseTests(unittest.IsolatedAsyncioTestCase):
         denied_queue = await self.client.post("/v1/execution/claim", headers={"Authorization": "Bearer role-token"},
                                               json={"agent_slug": "metrics", "worker_id": "forbidden"})
         self.assertEqual(denied_queue.status_code, 403)
+
+    async def test_voice_tts_feedback_preserves_source_device_id(self):
+        from mission_control_api.app.models import events
+
+        parsed = SimpleNamespace(outcome="rejected", command=None, normalized_text="unknown", prefix_used="指挥",
+                                 reason="synthetic acceptance")
+        event = {"type": "voice.asr.final", "agent": "nox",
+                 "payload": {"text": "指挥 synthetic", "device_id": "desk", "event_key": "voice-event-1"}}
+        headers = {"Idempotency-Key": "voice-ingress-stable"}
+        with patch("mission_control_api.app.main.parse_voice_command", return_value=parsed):
+            response = await self.client.post("/v1/events", headers=headers, json=event)
+            replay = await self.client.post("/v1/events", headers=headers, json=event)
+        self.assertEqual(replay.status_code, 200, replay.text)
+        self.assertEqual(replay.json()["id"], response.json()["id"])
+        self.assertEqual(response.status_code, 200, response.text)
+        async with self.factory() as session:
+            feedback_rows = (await session.execute(sa.select(events.c.payload).where(
+                events.c.type == "voice.tts.requested",
+            ))).all()
+        feedback = next(row.payload for row in feedback_rows
+                        if row.payload.get("source_voice_event_id") == response.json()["id"])
+        self.assertEqual(len([row for row in feedback_rows
+                      if row.payload.get("source_voice_event_id") == response.json()["id"]]), 1)
+        self.assertEqual(feedback["device_id"], "desk")
+        self.assertEqual(feedback["voice_event_key"], "voice-event-1")
 
     async def claim(self, agent="nox", kind="main") -> dict | None:
         response = await self.client.post("/v1/execution/claim", json={"agent_slug": agent, "kind": kind, "worker_id": uuid4().hex})

@@ -25,6 +25,11 @@ class UICallbackTests(unittest.TestCase):
         cache.start()
         self.addCleanup(cache.stop)
 
+    def test_device_tts_end_returns_overlay_to_idle(self):
+        self.assertEqual(ui._voice_state_from_event("voice.tts.end", {"status": "finished"}), "idle")
+        self.assertEqual(ui._voice_state_from_event("voice.tts.end", {"status": "cancelled"}), "idle")
+        self.assertIsNone(ui._voice_state_from_event("voice.tts.queued", {"status": "queued"}))
+
     def test_event_coalescing_retains_pending_revision_until_success(self):
         state = ui._sync_state_default()
         state.update(last_success="12:00:00", last_success_epoch=100, last_attempt_epoch=100,

@@ -11,7 +11,8 @@
 | `/wakeup` | `std_msgs/msg/Bool` | 语音栈 -> Mission Control | `true` 表示进入 listening |
 | `/asr` | `std_msgs/msg/String` | 语音栈 -> Mission Control | 最终识别文本，触发 `voice.asr.final` |
 | `/text_response` | `std_msgs/msg/String` | 可选 | 首个文本响应 token，触发 `voice.llm.first_token` |
-| `/tts_topic` | `std_msgs/msg/String` | 语音栈 -> Mission Control | 开始播报，触发 `voice.tts.start` |
+| `/tts_topic` | `std_msgs/msg/String` | 语音栈 -> Mission Control | JSON 生命周期状态 queued/started/finished/failed/cancelled，关联 request_id 和 device_id；兼容旧纯文本 started |
+| `/tts_cancel` | `std_msgs/msg/String` | Mission Control bridge -> 语音栈 | 取消指定 request_id 的排队或当前播报 |
 | `/tts_request` | `std_msgs/msg/String` | 本语音栈内部 | Mission Control TTS 反馈转本地播报 |
 
 ## 包结构
@@ -21,6 +22,8 @@
 - `tts_node`：订阅 `/tts_request`，执行播报并发布 `/tts_topic`。
 - `mc_tts_feedback_node`：轮询 Mission Control `voice.tts.requested`，转发到 `/tts_request`。
 - `manual_turn_node`：无硬件 smoke 节点，手动发布一轮 wake/asr/tts。
+
+真实设备应给桥接器和音频容器设置相同且唯一的 `MC_VOICE_DEVICE_ID`；TTS feed 首次启动会跳过历史播报，请求终态确认后才持久提交消费游标。容器脚本默认把游标持久化到宿主 `$XDG_STATE_HOME/openclaw-voice`，以避免重启重播。
 
 ## 构建
 

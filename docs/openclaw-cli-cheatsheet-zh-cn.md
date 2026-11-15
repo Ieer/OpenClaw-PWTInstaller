@@ -58,6 +58,27 @@ OpenClaw 2026.4.29 延续双层配置思路：全局配置与工作区 / agent �
 - Panopticon 不是“一份全局 openclaw.json 走天下”，而是每个 agent 独立 home 与独立配置
 - 资料冲突时，以本仓库当前 manifest、env 与生成结果为准，不要从旧博客抄字段
 
+### Panopticon 浏览器认证（2026.11.3 已核验）
+
+以下命令在 OpenClaw 2026.11.3 容器中核验，独立于本速查表其他旧版本示例。请在自己的交互式终端中，仅运行需要登录的角色命令；`-it` 提供终端，避免 `auth-token --show` 因非交互环境拒绝显示。
+
+```bash
+docker exec -it --user node openclaw-personal openclaw gateway auth-token --show
+docker exec -it --user node openclaw-nox openclaw gateway auth-token --show
+docker exec -it --user node openclaw-metrics openclaw gateway auth-token --show
+docker exec -it --user node openclaw-growth openclaw gateway auth-token --show
+docker exec -it --user node openclaw-email openclaw gateway auth-token --show
+docker exec -it --user node openclaw-writing openclaw gateway auth-token --show
+docker exec -it --user node openclaw-health openclaw gateway auth-token --show
+docker exec -it --user node openclaw-trades openclaw gateway auth-token --show
+```
+
+打开对应的同源页面 `https://<树莓派IP>:18921/chat/<agent>/`，把该角色的 token 直接填入 **Gateway secret**，点击 **Connect**。例如 `openclaw-personal` 对应 `/chat/personal/`，不要把一个角色的 token 填到其他角色页面。
+
+命令输出含敏感凭据，不要整块批量执行、重定向到日志、截图公开或粘贴到聊天/仓库。输入 token 时暂停共享登录页，连接成功后再共享聊天页；浏览器必须信任本地 HTTPS 证书。
+
+连接顺序是 **token 认证 → 设备配对 → 会话连接**。限时自动批准只处理符合策略的设备配对，不代替首次 token 登录；策略到期、次数耗尽或权限升级时不能假定会自动获批。固定使用同一浏览器配置和同一站点地址，避免 HTTP/HTTPS 或 localhost/局域网地址切换导致不同站点的登录状态不共用。自动配对排障与语音配置见 [语音设备联调指南](voice-device-bringup-zh-cn.md)。
+
 ## 3. 模型管理
 
 模型是 agent 的“大脑”。这一层决定推理能力、成本和上下文窗口。

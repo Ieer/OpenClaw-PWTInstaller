@@ -15,6 +15,123 @@
 
 一句话记忆：**设备发 ROS2，桥接器发事件，Mission Control 做治理。**
 
+## 浏览器文字与语音
+
+### 局域网设备自动批准排障
+
+首次连接顺序是 **Gateway token 认证 → 浏览器签名设备配对 → 会话连接**。自动批准脚本只处理第二步；停在 “This Gateway expects its token” 时，不会产生待配对请求，也不能用自动批准代替 token。请在浏览器中直接输入 token，勿发到聊天、日志或仓库中。
+
+八个角色的交互式终端 token 查看命令及对应页面登录步骤，见 [CLI 速查表的 Panopticon 浏览器认证](openclaw-cli-cheatsheet-zh-cn.md#panopticon-浏览器认证2026113-已核验)。
+
+`auto_approve_control_ui_repairs.js` 默认 dry-run，通过原生 `devices list/approve` CLI 工作，不再跨 Agent 继承信任。生效策略须明确角色列表、私有 LAN CIDR、权限、请求年龄、次数上限和截止时间；当前八角色授权仅允许 `192.168.1.3/32`。完整 Control UI 的管理/审批/配对权限要求显式 `allowAdmin=true`，已有设备权限升级仍要求人工确认。
+
+日志状态包括 `monitor-started`、`inventory-checked`、拒绝原因、`scan-complete` 和 `monitor-stopped`。单个角色 CLI 失败会记录 `inventory-unavailable` 并继续其他角色；批准结果不确定时记录 `approval-outcome-unknown`，不自动重试，并保守消耗一次额度。原生 CLI 顺序查询八个角色可能约需 40 秒，10 秒间隔是在整轮查询完成后开始。
+
+同一策略的次数持久保存在 `control-ui-auto-approve.policy.json.state.json`，服务重启不重置额度；独占 `.lock` 防止同时启动两份 apply 监控。策略、状态和锁文件被 Git 忽略且为私有权限；异常强制终止可能留下锁，需确认没有活动进程后才能人工清理，不能直接绕过锁。不要在无人授权时延长策略截止时间或重置次数。
+
+检查配置与当前候选（不批准）：
+
+```bash
+node panopticon/tools/auto_approve_control_ui_repairs.js \
+	--policy panopticon/env/control-ui-auto-approve.policy.json
+```
+
+本次经用户确认的新窗口由独立 systemd 用户服务 `openclaw-control-ui-auto-approve-20261115-085158.service` 管理，截止北京时间 2026-11-15 09:21:23，最多消耗 8 次批准尝试，不是永久后台授权。查看日志和停止：
+
+```bash
+journalctl --user --no-pager -u openclaw-control-ui-auto-approve-20261115-085158.service -n 30
+systemctl --user stop openclaw-control-ui-auto-approve-20261115-085158.service
+```
+
+服务独立于编辑器终端，并有运行时间上限；过期或额度耗尽后不会自动创建新窗口。脚本不填写登录密钥、不关闭 Gateway 认证，也不改变浏览器麦克风权限。
+
+### Personal UI 单角色试点（2026-11-15）
+
+personal 初次通过原生配置 CLI 接入显式音频 CLI 转写、Microsoft TTS（中文 Xiaoxiao）和 `talk.realtime.mode=stt-tts`。原生 Microsoft 客户端出现 403 后，语音输出已改用下述内部兼容接口。文字、听写和 Talk 仍属于同一个原生 WebChat 会话；没有新增会话数据库，也没有更改 personal 原模型、渠道和 Gateway 认证。`tts.auto=off`，普通文字回复不自动播报，用户可手动 Read aloud 或开启 Talk。
+
+`agent-speech` 是八角色可复用的单路 ASR/TTS 适配服务，不是另一套 Agent。浏览器上传的音频由所选角色的原生音频 CLI 转发给它；服务使用 ffmpeg 解码为单声道 PCM WAV，按模型转换为 8 kHz 或 16 kHz，然后调用 DashScope。最大输入 3 MiB、最大时长 30 秒；忙时拒绝新请求，不自动重试。适配服务不发布主机端口，只有容器网络可达。各角色使用独立 token，共享服务不等于共享聊天会话、私有知识或工具权限。
+
+明文 DashScope key 仅在私有 `panopticon/env/agent-speech.json` 中，角色客户端只持有自己的独立服务 token：`agent-homes/<role>/voice/speech-client.json`。这些文件权限 600 且被 Git 忽略。`prepare` 从指定私有 YAML 读取凭据，不打印秘密；更换 provider key 后重新准备并重建服务，重复准备不会自动轮换 token。服务侧私有 key 与 token 应成套备份，权限 600 不等于加密。
+
+```bash
+python3 panopticon/tools/agent_speech.py prepare \
+	--source /home/pi/yahboom_ws/src/largemodel/config/large_model_interface.yaml \
+	--credentials panopticon/env/agent-speech.json \
+	--client panopticon/agent-homes/personal/voice/speech-client.json
+
+docker compose -p panopticon \
+	-f panopticon/docker-compose.panopticon.yml \
+	-f panopticon/docker-compose.lan-https.yml \
+	-f panopticon/docker-compose.execution-worker.yml \
+	-f panopticon/docker-compose.agent-speech.yml \
+	--profile voice-ui up -d --no-deps agent-speech
+```
+
+新原生 CLI 配置里的执行路径是 `/home/node/.openclaw/voice/agent_speech.py`，须与受版本控制的 `panopticon/tools/agent_speech.py` 同步；传入 `{{AttachmentPath}}`，不是手工读取 UI DOM。此脚本只访问固定的内部 ASR 服务地址，不使用环境 HTTP 代理或跟随重定向。初次部署仍须用原生 `openclaw config set --batch-json ... --dry-run` 验证 `tools.media.models`、`tts`、`talk` 和 provider 插件白名单；不能覆盖其他角色或已有模型配置。
+
+共享组件现统一为 `agent_speech.py`、`test_agent_speech.py`、`Dockerfile.agent-speech`、`docker-compose.agent-speech.yml` 和 `agent-speech:local`。旧 `personal_speech.py` 只保留兼容 CLI 入口；同步旧入口到角色目录时须同时同步新模块。新 compose 保留 `personal-speech` DNS 别名和 `personal-voice` profile，旧 URL 仍可被客户端识别，但新配置默认使用 `http://agent-speech:18081`。`personal` 的角色标识和历史 token 不改名、不轮换。
+
+2026-11-15 10:24 已完成运行迁移：`agent-speech:local` 容器 `agent-speech` 健康，新旧 DNS 名 `agent-speech` 和 `personal-speech` 均指向它。旧容器保留为停止且断网的 `personal-speech-rollback-20261115-102449`，回滚镜像为 `agent-speech:rollback-20261115-102449`；新旧私有配置完全一致，没有轮换 token。此次只迁移语音服务，八个 Agent 启动时间和重启计数未变；现有 personal CLI 路径继续兼容，没有顺带应用其他角色的语音配置。
+
+以后完整迁移其他角色时，须同步各角色 CLI 路径并逐项 dry-run、应用；现有自定义语音配置不得直接覆盖。代码支持八角色独立 token，不代表八个角色均已配置或完成真实浏览器语音验收。
+
+若本次迁移后发生故障，可仅切回保留的语音容器，不执行整套 compose down：
+
+```bash
+docker stop agent-speech
+docker network disconnect panopticon_panopticon agent-speech
+docker network connect --alias agent-speech --alias personal-speech \
+	panopticon_panopticon personal-speech-rollback-20261115-102449
+docker start personal-speech-rollback-20261115-102449
+```
+
+回滚后不要同时启动新旧容器，避免兼容 DNS 别名同时指向两份服务。回滚容器和旧配置用于本次恢复，不能随意执行 `--remove-orphans` 清理。
+
+进入可信 HTTPS 的 `/chat/personal/` 后，先确认文字聊天和原会话历史正常，再手动启用麦克风。浏览器麦克风来源是客户端，不一定是树莓派 USB 设备。用户点击录音/听写才会通过该服务上传到 DashScope；本轮没有自动录制或再次上传语音。Stop reading 停止播放；Talk Stop 是否正确取消实际聊天轮次仍需要真实浏览器验收。
+
+部署验证仅包括镜像内 3 项模拟测试、原生 schema 校验、服务健康 200 和配置差异检查；先前单次合成 ASR 验证不能代替此适配器的真实浏览器端到端测试。当前未宣称浏览器 Talk、回声消除或完整打断体验已经验收。
+
+本次检查发现重启后 API 实际 IP 已从 `172.21.0.15` 变成 `172.21.0.16`，personal 原生 UI 因旧的单地址 `gateway.trustedProxies` 返回 403。只将 personal 精确信任地址替换为实际 API 地址后，HTTPS `/chat/personal/` 返回 200；token 认证模式与 token 未改变，没有信任整个网段或同步修改其他角色。今后容器 IP 变化时必须重新核对实际上游地址，不应把关闭认证当成修复。
+
+回滚时先停对应部署的 `agent-speech`（迁移前容器名为 `personal-speech`）。personal 的配置恢复点保存在私有 `agent-homes/personal/voice/openclaw-before-*.json`；恢复前核对其后的用户变更，只撤销本次 speech 配置，勿直接用旧文件覆盖新模型或渠道配置。该试点不要求重建八个 Agent，也不要求部署此前尚未上线的 ROS/API/UI 语音改动。
+
+### Talk 出现 “OpenClaw tool call aborted”
+
+这条信息来自原生前端等待 Agent 回复时的取消分支，不等于 ASR/TTS 鉴权失败。2026-11-15 实际排查中，转写后出现 `talk.session.close`、同一 run 的 `chat.abort` 和 `run aborted / AbortError`；用户确认在等待时点击了 Stop 或再次点麦克风，属于主动结束 Talk。
+
+使用 Talk 时，启动后等正在监听，再说短句；说完停顿，让系统自动识别并提交，然后等待回复。**不要用 Stop 或再次点麦克风来表示“说完了”**，它会结束 Talk，并可能取消当前尚未完成的聊天轮次。需要停止采集、播放或生成时再用 Stop；只想手动结束录音而保留待发文字时，应使用独立听写/发送流程，不把 Talk Stop 当作提交键。
+
+如果没有点击 Stop、切换页面或刷新仍出现 aborted，再按同一 run ID 核对前端取消、连接丢失、超时及 Gateway 生命周期；不要直接放宽认证、扩大超时或更换 provider。此处说明的是一次主动取消的已确认原因，不代表 Talk 自动回复已经重新验收通过。
+
+### Personal TTS 403 修复与浏览器验收
+
+2026-11-15 的固定短句对照测试：personal 安装包的 `node-edge-tts@1.2.10` 直接调用返回 403，同一 Docker 网络中的 Python `edge-tts@7.2.7` 也握手失败，而 `edge-tts@7.3.1` 成功；系统 NTP 同步且与 Microsoft HTTP 日期一致。这支持客户端协议兼容问题，不应仅凭 403 认定缺少 Microsoft key 或余额不足。
+
+共享 `agent-speech` 镜像固定安装 `edge-tts==7.3.1`，提供 `/v1/audio/speech` 音频接口。请求需本地专用 token，固定模型名 `local-edge`、音色 `zh-CN-XiaoxiaoNeural`、MP3 格式，最长 1000 字符、音频不超过 3 MiB、合成超时 30 秒，与 ASR 共用单路并发上限。TTS provider 标为 `openai` 仅代表兼容协议：新配置使用 `tts.providers.openai.baseUrl=http://agent-speech:18081/v1`（旧部署为兼容别名 `personal-speech`），实际仍是 Edge 中文语音，不调用 OpenAI 云端；旧 Microsoft 路由禁用回退。通用 `models.providers.openai` 和原聊天模型没有改变。
+
+准备本地 TTS 配置批次（目标必须是新文件，文件中含本地 token，不可公开）：
+
+```bash
+python3 panopticon/tools/agent_speech.py prepare-tts-config \
+	--client panopticon/agent-homes/personal/voice/speech-client.json \
+	--credentials panopticon/agent-homes/personal/voice/tts-batch-NEW.json
+
+docker exec --user node openclaw-personal openclaw config set \
+	--batch-file /home/node/.openclaw/voice/tts-batch-NEW.json --dry-run
+```
+
+校验后再明确应用同一批次，保留私有 `openclaw-before-tts-*.json` 恢复点；无需重启 Agent。历史试点发布镜像为 `personal-speech:tts-20261115-091551`，旧镜像 `personal-speech:rollback-20261115-091551` 保留，这些实际历史标签不因源码改名而改写。新构建使用 `Dockerfile.agent-speech` 和 `agent-speech:local`。回滚时应同时核对 TTS 路由与服务镜像，不能只换旧镜像而留下不可用的新接口。
+
+验证结果：镜像内 6 项模拟认证/契约测试通过，固定句接口 HTTP 200，返回 17568 字节 MP3；原生 UI Read aloud 的 403 消失，用户确认听到语音，并在播放中点击 Stop reading 后确认声音立即中断；页面恢复 Read aloud、无 TTS 错误，麦克风保持停止。八个 Agent 容器启动基线未变，只更新独立语音服务和 personal 的 TTS 配置。
+
+此前真实语音转写将“你好，这是语音识别测试”识别成了其他文本；这项准确性仍未重新通过。初次语音按钮实际启动 Talk 并自动提交转写，不是仅写入草稿的 Dictation。本次验证了手动 Read aloud 和播放中 Stop，不等于已重新验证 Talk 自动语音回复、回声消除或连续对话。
+
+当前项目的 Chat 面板继续嵌入 OpenClaw 原生 WebChat，不另建会话或转录存储。OpenClaw 2026.11.3 的 WebChat 支持文字输入和按住麦克风听写到当前会话；配置好转写与 TTS 后，可使用 Talk 并在停止时取消当前聊天轮次。UI iframe 已声明麦克风权限；浏览器仍要求 HTTPS/localhost、用户授予权限及可用的语音 provider。听写是否有实时部分字幕取决于 provider。
+
+原生 WebChat 的转写使用 `tools.media.models` 或 `agents.defaults.voiceModel` 等 OpenClaw 配置；Talk 还需要转写与语音输出配置。此前八角色均未配置这些能力；目前仅 personal 按上述试点配置，其他角色保持不变。不要把 ASR/TTS API key 加入 UI、README 或提交的 env example；按每个 Agent 的 credential/provider 约定单独配置。当前 P1 复用原生聊天，因此打字和听写使用同一 Agent 会话与聊天历史；不需要再经过 ROS 语音命令入口。
+
+ROS 实体设备链路是独立入口，按下述规则使用稳定 `device_id`；它不自动与浏览器会话共享麦克风音频或播放控制。
+
 ## 推荐联调拓扑
 
 真实设备联调优先按下面顺序选：
@@ -137,10 +254,15 @@ cp panopticon/env/mission-control-voice-bridge.env.example panopticon/env/missio
 如果你的文本响应链路也会发 `text_response`，建议开启。
 
 - `MC_VOICE_IDLE_AFTER_TTS_S=6.0`
-控制 speaking 回 idle 的时间窗口。
+仅兼容旧版纯文本 TTS 状态的 speaking 回 idle 兜底。新 JSON 生命周期事件以播放器实际 finished/cancelled 状态为准。
+
+- `MC_VOICE_DEVICE_ID=desk-pi`
+为这套语音桥接和配对 ROS 音频设备设置稳定且唯一的 ID。桥接器、`run_humble_container.sh` 启动的音频栈必须一致；没有 ID 或 TTS 请求没有匹配 ID 时，默认不播报。不同设备不可共用 ID。
 
 - `MC_VOICE_BRIDGE_LOG_PAYLOAD=1`
 只在排障时临时打开，平时建议保持 `0`。
+
+设备播报消费者会将已确认事件游标保存在 ROS 容器挂载的 `~/.local/state/openclaw-voice/tts-cursor.sqlite3`，数据库权限为 600、目录权限为 700；可用 `MC_VOICE_STATE_DIR` 指定主机持久目录。首次启动先记录当前 feed 历史，不重播旧播报；尚未收到设备终态的请求不会确认，重启后可重投。若要更换设备身份，应为新设备使用新的 cursor DB。
 
 ## 真实设备侧需要对齐什么
 
@@ -150,18 +272,21 @@ cp panopticon/env/mission-control-voice-bridge.env.example panopticon/env/missio
 - `asr`，类型 `std_msgs/msg/String`
 - `text_response`，类型 `std_msgs/msg/String`
 - `tts_topic`，类型 `std_msgs/msg/String`
+- `tts_cancel`，类型 `std_msgs/msg/String`，内容为 `request_id` 或 `{"request_id":"..."}`
 
 桥接逻辑如下：
 
 - `wakeup=true`：写 `voice.state = listening`
 - `asr` 文本：写 `voice.asr.final`，同时切 `voice.state = thinking`
 - `text_response`：写 `voice.llm.first_token`
-- `tts_topic`：写 `voice.tts.start`，同时切 `voice.state = speaking`
+- `tts_topic`：新版本以 JSON 状态上报 queued/started/finished/failed/cancelled；桥接器据真实播放状态更新 UI，不再对新状态使用固定时长推断
 
 如果你的设备侧命名不同，有两种方式：
 
 1. 改设备侧发布的话题名。
 2. 改 `mission-control-voice-bridge.env` 中的 `MC_VOICE_TOPIC_*`。
+
+ASR 事件和语音命令回执携带 `device_id`，feed 消费器只把定向给本设备的 TTS 请求送入有界串行队列；重复 request_id 会被去重。可通过 `tts_cancel` 取消排队或当前请求，系统会尝试终止对应播放/合成进程。取消协议是 ROS 设备侧能力，不等同于 OpenClaw WebChat 的会话 Stop。
 
 ## 标准联调顺序
 

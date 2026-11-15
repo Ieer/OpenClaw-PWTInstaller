@@ -1,373 +1,212 @@
 #!/usr/bin/env node
 
-const fs = require("fs");
-const path = require("path");
+const fs = require("node:fs");
+const net = require("node:net");
+const crypto = require("node:crypto");
+const { execFileSync } = require("node:child_process");
+const { setTimeout: delay } = require("node:timers/promises");
 
-const ROOT = path.resolve(__dirname, "..");
-const AGENT_HOMES_DIR = path.join(ROOT, "agent-homes");
-const DEFAULT_GATEWAY_URL = process.env.MC_GATEWAY_URL || "ws://localhost:18920";
+const AGENTS = new Set(["personal", "nox", "metrics", "growth", "email", "writing", "health", "trades"]);
+const SCOPES = new Set(["operator.read", "operator.write", "operator.admin", "operator.approvals", "operator.questions", "operator.pairing"]);
 
-const TARGET_CLIENT_ID = "openclaw-control-ui";
-const TARGET_CLIENT_MODE = "webchat";
-const APPROVE_NEW_CONTROL_UI = process.env.APPROVE_NEW_CONTROL_UI === "1";
-
-function loadJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+function ipv4(address) {
+  const normalized = String(address || "").replace(/^::ffff:/i, "");
+  if (net.isIP(normalized) !== 4) return null;
+  return normalized.split(".").reduce((total, octet) => (total * 256 + Number(octet)) >>> 0, 0);
 }
 
-function listAgentSlugs() {
-  const names = fs.readdirSync(AGENT_HOMES_DIR, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
-  return names;
+function parseCidr(value) {
+  const [address, prefix, extra] = String(value).split("/");
+  const numeric = ipv4(address);
+  if (numeric === null || extra !== undefined || !/^\d+$/.test(prefix || "")) throw new Error("invalid LAN CIDR");
+  const bits = Number(prefix);
+  if (bits < 8 || bits > 32) throw new Error("LAN CIDR must have prefix 8..32");
+  const mask = (0xffffffff << (32 - bits)) >>> 0;
+  const network = (numeric & mask) >>> 0;
+  const end = (network | (~mask >>> 0)) >>> 0;
+  const privateRanges = [[0x0a000000, 0x0affffff], [0xac100000, 0xac1fffff], [0xc0a80000, 0xc0a8ffff]];
+  if (!privateRanges.some(([start, stop]) => network >= start && end <= stop)) throw new Error("CIDR must be entirely RFC1918 LAN space");
+  return { network, mask };
 }
 
-function loadGlobalTrustedControlUiIdentities() {
-  const deviceIds = new Set();
-  const publicKeys = new Set();
+function validatePolicy(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("policy must be an object");
+  const keys = new Set(["agents", "lanCidrs", "allowedScopes", "allowAdmin", "maxAgeSeconds", "maxApprovals", "expiresAt"]);
+  if (Object.keys(value).some(key => !keys.has(key))) throw new Error("unknown policy field");
+  if (!Array.isArray(value.agents) || !value.agents.length || value.agents.some(agent => !AGENTS.has(agent))) throw new Error("explicit known agents required");
+  if (!Array.isArray(value.lanCidrs) || !value.lanCidrs.length) throw new Error("explicit LAN CIDRs required");
+  if (!Array.isArray(value.allowedScopes) || !value.allowedScopes.length || value.allowedScopes.some(scope => !SCOPES.has(scope))) throw new Error("explicit known scopes required");
+  if (value.allowedScopes.some(scope => ["operator.admin", "operator.approvals", "operator.pairing"].includes(scope)) && value.allowAdmin !== true) throw new Error("privileged Control UI scopes require allowAdmin=true");
+  const maxAgeSeconds = value.maxAgeSeconds ?? 300;
+  const maxApprovals = value.maxApprovals ?? 1;
+  if (!Number.isInteger(maxAgeSeconds) || maxAgeSeconds < 1 || maxAgeSeconds > 900) throw new Error("request age must be 1..900 seconds");
+  if (!Number.isInteger(maxApprovals) || maxApprovals < 1 || maxApprovals > 10) throw new Error("approval cap must be 1..10");
+  const expiresAt = Date.parse(value.expiresAt);
+  if (!Number.isFinite(expiresAt)) throw new Error("explicit policy expiry required");
+  return { ...value, ranges: value.lanCidrs.map(parseCidr), maxAgeSeconds, maxApprovals, expiry: expiresAt };
+}
 
-  for (const slug of listAgentSlugs()) {
-    const pairedPath = path.join(AGENT_HOMES_DIR, slug, "devices", "paired.json");
-    if (!fs.existsSync(pairedPath)) {
-      continue;
-    }
-    let paired;
+function evaluate(item, paired, policy, now = Date.now()) {
+  if (now >= policy.expiry) return "policy-expired";
+  if (!item || !/^[a-f0-9-]{36}$/i.test(item.requestId || "") || !/^[a-f0-9]{64}$/i.test(item.deviceId || "") || typeof item.publicKey !== "string" || !item.publicKey) return "invalid-identity";
+  if (item.clientId !== "openclaw-control-ui" || item.clientMode !== "webchat") return "not-control-ui";
+  if (item.role !== "operator" || (item.roles !== undefined && (!Array.isArray(item.roles) || item.roles.some(role => role !== "operator")))) return "unexpected-role";
+  const source = ipv4(item.remoteIp);
+  if (source === null || !policy.ranges.some(range => ((source & range.mask) >>> 0) === range.network)) return "outside-lan-policy";
+  if (!Number.isFinite(item.ts) || item.ts > now + 5000 || now - item.ts > policy.maxAgeSeconds * 1000) return "stale-request";
+  if (!Array.isArray(item.scopes) || !item.scopes.length || item.scopes.some(scope => !policy.allowedScopes.includes(scope))) return "scope-denied";
+  const existing = paired.find(device => device.deviceId === item.deviceId || device.publicKey === item.publicKey);
+  if (existing) {
+    if (existing.deviceId !== item.deviceId || existing.publicKey !== item.publicKey) return "identity-changed";
+    const granted = existing.approvedScopes || existing.scopes || [];
+    if (item.scopes.some(scope => !granted.includes(scope))) return "scope-upgrade-requires-human";
+  } else if (item.isRepair) {
+    return "unknown-repair-identity";
+  }
+  return "eligible";
+}
+
+function fingerprint(item) {
+  return crypto.createHash("sha256").update(JSON.stringify([item.requestId, item.deviceId, item.publicKey,
+    item.clientId, item.clientMode, item.role, item.roles, item.remoteIp, [...item.scopes].sort(), item.ts, item.isRepair])).digest("hex");
+}
+
+function cli(agent, args) {
+  const output = execFileSync("docker", ["exec", "--user", "node", `openclaw-${agent}`, "openclaw", "devices", ...args, "--json"], {
+    encoding: "utf8", timeout: 25000, maxBuffer: 2 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"],
+  });
+  return JSON.parse(output);
+}
+
+function run(policy, { apply = false, invoke = cli, log = console.log, now = Date.now, onAttempt = () => {} } = {}) {
+  let attempts = 0;
+  for (const agent of policy.agents) {
+    if (now() >= policy.expiry) break;
+    let first;
     try {
-      paired = loadJson(pairedPath);
+      first = invoke(agent, ["list"]);
+      if (!Array.isArray(first.pending) || !Array.isArray(first.paired)) throw new Error("invalid pairing inventory");
     } catch {
+      log(JSON.stringify({ agent, decision: "inventory-unavailable" }));
       continue;
     }
-
-    for (const item of Object.values(paired || {})) {
-      if (!item || item.clientId !== TARGET_CLIENT_ID || item.clientMode !== TARGET_CLIENT_MODE) {
+    log(JSON.stringify({ agent, decision: "inventory-checked", pending: first.pending.length, paired: first.paired.length }));
+    for (const item of first.pending) {
+      const decision = evaluate(item, first.paired, policy, now());
+      if (decision !== "eligible") {
+        log(JSON.stringify({ agent, requestId: item.requestId, decision }));
         continue;
       }
-      if (item.deviceId) {
-        deviceIds.add(item.deviceId);
+      if (attempts >= policy.maxApprovals) break;
+      if (!apply) {
+        log(JSON.stringify({ agent, requestId: item.requestId, decision: "would-approve", remoteIp: item.remoteIp, scopes: item.scopes }));
+        continue;
       }
-      if (item.publicKey) {
-        publicKeys.add(item.publicKey);
+      let current;
+      try {
+        current = invoke(agent, ["list"]);
+        if (!Array.isArray(current.pending) || !Array.isArray(current.paired)) throw new Error("invalid rechecked inventory");
+      } catch {
+        log(JSON.stringify({ agent, requestId: item.requestId, decision: "recheck-unavailable" }));
+        continue;
+      }
+      const fresh = current.pending.find(request => request.requestId === item.requestId);
+      if (!fresh || evaluate(fresh, current.paired, policy, now()) !== "eligible" || fingerprint(fresh) !== fingerprint(item)) {
+        log(JSON.stringify({ agent, requestId: item.requestId, decision: "changed-before-approval" }));
+        continue;
+      }
+      onAttempt();
+      attempts += 1;
+      try {
+        invoke(agent, ["approve", item.requestId]);
+        const confirmed = invoke(agent, ["list"]);
+        const device = confirmed.paired?.find(entry => entry.deviceId === item.deviceId && entry.publicKey === item.publicKey);
+        if (!device || !Array.isArray(confirmed.pending) || confirmed.pending.some(entry => entry.requestId === item.requestId)) throw new Error("approval outcome unconfirmed");
+        log(JSON.stringify({ agent, requestId: item.requestId, deviceId: item.deviceId, decision: "approved", remoteIp: item.remoteIp, scopes: item.scopes }));
+      } catch {
+        log(JSON.stringify({ agent, requestId: item.requestId, decision: "approval-outcome-unknown", budgetConsumed: true }));
       }
     }
   }
-
-  return { deviceIds, publicKeys };
+  return attempts;
 }
 
-function getAgentConfig(slug) {
-  const cfgPath = path.join(AGENT_HOMES_DIR, slug, "openclaw.json");
-  if (!fs.existsSync(cfgPath)) {
-    return null;
+function openBudget(policy, filename) {
+  const policyId = crypto.createHash("sha256").update(JSON.stringify([policy.agents, policy.lanCidrs,
+    policy.allowedScopes, policy.allowAdmin, policy.maxAgeSeconds, policy.maxApprovals, policy.expiresAt])).digest("hex");
+  let state = fs.existsSync(filename) ? JSON.parse(fs.readFileSync(filename, "utf8")) : { policyId, attempts: 0 };
+  if (state.policyId !== policyId) state = { policyId, attempts: 0 };
+  if (!Number.isInteger(state.attempts) || state.attempts < 0 || state.attempts > policy.maxApprovals) throw new Error("invalid approval budget state");
+  return {
+    remaining: () => policy.maxApprovals - state.attempts,
+    consume: () => {
+      if (state.attempts >= policy.maxApprovals) throw new Error("approval budget exhausted");
+      const next = { policyId, attempts: state.attempts + 1 };
+      const temporary = `${filename}.${crypto.randomUUID()}.part`;
+      try {
+        fs.writeFileSync(temporary, JSON.stringify(next), { mode: 0o600, flag: "wx" });
+        fs.renameSync(temporary, filename);
+      } finally {
+        if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+      }
+      state = next;
+    },
+  };
+}
+
+function acquireLock(filename) {
+  const descriptor = fs.openSync(filename, "wx", 0o600);
+  try {
+    fs.writeFileSync(descriptor, JSON.stringify({ pid: process.pid }));
+  } finally {
+    fs.closeSync(descriptor);
   }
-  const cfg = loadJson(cfgPath);
-  const token = String(cfg?.gateway?.auth?.token || "").trim();
-  return token ? { cfgPath, token } : null;
-}
-
-function wsUrlForAgent(slug) {
-  const base = DEFAULT_GATEWAY_URL.replace(/\/$/, "");
-  return `${base}/chat/${slug}/`;
-}
-
-function connectAndList(slug, token) {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrlForAgent(slug), {
-      headers: { Origin: "http://localhost:18920" },
-    });
-
-    const connectId = `connect-${slug}-${Date.now()}`;
-    let resolved = false;
-
-    const finish = (result, isError = false) => {
-      if (resolved) {
-        return;
-      }
-      resolved = true;
-      try {
-        ws.close();
-      } catch {
-      }
-      if (isError) {
-        reject(result);
-      } else {
-        resolve(result);
-      }
-    };
-
-    const timeout = setTimeout(() => {
-      finish(new Error(`timeout: ${slug}`), true);
-    }, 15000);
-
-    const requests = new Map();
-    const sendReq = (method, params) => {
-      const id = `${method}-${slug}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-      requests.set(id, method);
-      ws.send(JSON.stringify({ type: "req", id, method, params }));
-      return id;
-    };
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({
-        type: "req",
-        id: connectId,
-        method: "connect",
-        params: {
-          minProtocol: 3,
-          maxProtocol: 3,
-          client: {
-            id: "gateway-client",
-            version: "auto-approve-script",
-            platform: "linux",
-            mode: "backend",
-          },
-          role: "operator",
-          scopes: ["operator.admin", "operator.pairing"],
-          auth: { token },
-        },
-      }));
-    };
-
-    ws.onmessage = (event) => {
-      let msg;
-      try {
-        msg = JSON.parse(String(event.data));
-      } catch {
-        return;
-      }
-
-      if (msg.type === "event" && msg.event === "connect.challenge") {
-        return;
-      }
-
-      if (msg.type === "res" && msg.id === connectId) {
-        if (!msg.ok) {
-          clearTimeout(timeout);
-          finish(new Error(`connect failed (${slug}): ${msg.error?.message || "unknown"}`), true);
-          return;
-        }
-        sendReq("device.pair.list", {});
-        return;
-      }
-
-      if (msg.type === "res" && requests.has(msg.id)) {
-        const method = requests.get(msg.id);
-        requests.delete(msg.id);
-
-        if (!msg.ok) {
-          clearTimeout(timeout);
-          finish(new Error(`${method} failed (${slug}): ${msg.error?.message || "unknown"}`), true);
-          return;
-        }
-
-        if (method === "device.pair.list") {
-          clearTimeout(timeout);
-          finish({ slug, pending: msg.payload?.pending || [], paired: msg.payload?.paired || [], sendReq }, false);
-        }
-      }
-    };
-
-    ws.onerror = () => {};
-  });
-}
-
-async function approveForAgent(slug, token, globalTrusted) {
-  const first = await connectAndList(slug, token);
-  const paired = Array.isArray(first.paired) ? first.paired : [];
-  const pending = Array.isArray(first.pending) ? first.pending : [];
-
-  const knownDeviceIds = new Set(
-    paired
-      .filter((item) => item?.clientId === TARGET_CLIENT_ID && item?.clientMode === TARGET_CLIENT_MODE)
-      .map((item) => item.deviceId)
-      .filter(Boolean)
-  );
-  const knownPublicKeys = new Set(
-    paired
-      .filter((item) => item?.clientId === TARGET_CLIENT_ID && item?.clientMode === TARGET_CLIENT_MODE)
-      .map((item) => item.publicKey)
-      .filter(Boolean)
-  );
-
-  const candidates = pending.filter((item) => {
-    if (item?.clientId !== TARGET_CLIENT_ID || item?.clientMode !== TARGET_CLIENT_MODE) {
-      return false;
-    }
-
-    const matchesKnownLocal =
-      (item.deviceId && knownDeviceIds.has(item.deviceId)) ||
-      (item.publicKey && knownPublicKeys.has(item.publicKey));
-
-    const matchesKnownGlobal =
-      (item.deviceId && globalTrusted.deviceIds.has(item.deviceId)) ||
-      (item.publicKey && globalTrusted.publicKeys.has(item.publicKey));
-
-    const isNewControlUiCandidate =
-      APPROVE_NEW_CONTROL_UI && item.clientId === TARGET_CLIENT_ID && item.clientMode === TARGET_CLIENT_MODE;
-
-    return Boolean(item.isRepair) || matchesKnownLocal || matchesKnownGlobal || isNewControlUiCandidate;
-  });
-
-  if (candidates.length === 0) {
-    return {
-      slug,
-      approved: 0,
-      pending: pending.length,
-      message: "no matching repair requests",
-    };
-  }
-
-  const ws = new WebSocket(wsUrlForAgent(slug), {
-    headers: { Origin: "http://localhost:18920" },
-  });
-
-  return await new Promise((resolve, reject) => {
-    const connectId = `connect-approve-${slug}-${Date.now()}`;
-    const requests = new Map();
-    let approved = 0;
-    let queue = [...candidates];
-
-    const timeout = setTimeout(() => {
-      try {
-        ws.close();
-      } catch {
-      }
-      reject(new Error(`approve timeout: ${slug}`));
-    }, 20000);
-
-    const sendReq = (method, params) => {
-      const id = `${method}-${slug}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-      requests.set(id, method);
-      ws.send(JSON.stringify({ type: "req", id, method, params }));
-      return id;
-    };
-
-    const approveNext = () => {
-      if (queue.length === 0) {
-        clearTimeout(timeout);
-        try {
-          ws.close();
-        } catch {
-        }
-        resolve({
-          slug,
-          approved,
-          pending: pending.length,
-          message: "approved matching repair requests",
-        });
-        return;
-      }
-      const req = queue.shift();
-      sendReq("device.pair.approve", { requestId: req.requestId || req.id });
-    };
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({
-        type: "req",
-        id: connectId,
-        method: "connect",
-        params: {
-          minProtocol: 3,
-          maxProtocol: 3,
-          client: {
-            id: "gateway-client",
-            version: "auto-approve-script",
-            platform: "linux",
-            mode: "backend",
-          },
-          role: "operator",
-          scopes: ["operator.admin", "operator.pairing"],
-          auth: { token },
-        },
-      }));
-    };
-
-    ws.onmessage = (event) => {
-      let msg;
-      try {
-        msg = JSON.parse(String(event.data));
-      } catch {
-        return;
-      }
-
-      if (msg.type === "event" && msg.event === "connect.challenge") {
-        return;
-      }
-
-      if (msg.type === "res" && msg.id === connectId) {
-        if (!msg.ok) {
-          clearTimeout(timeout);
-          reject(new Error(`connect failed (${slug}): ${msg.error?.message || "unknown"}`));
-          return;
-        }
-        approveNext();
-        return;
-      }
-
-      if (msg.type === "res" && requests.has(msg.id)) {
-        const method = requests.get(msg.id);
-        requests.delete(msg.id);
-
-        if (!msg.ok) {
-          clearTimeout(timeout);
-          reject(new Error(`${method} failed (${slug}): ${msg.error?.message || "unknown"}`));
-          return;
-        }
-
-        if (method === "device.pair.approve") {
-          approved += 1;
-          approveNext();
-        }
-      }
-    };
-
-    ws.onerror = () => {};
-  });
+  return () => fs.unlinkSync(filename);
 }
 
 async function main() {
-  const slugs = listAgentSlugs();
-  const globalTrusted = loadGlobalTrustedControlUiIdentities();
-  let failed = 0;
-
-  for (const slug of slugs) {
-    const cfg = getAgentConfig(slug);
-    if (!cfg) {
-      console.log(`[SKIP] ${slug} missing token/config`);
-      continue;
-    }
-
-    try {
-      let result;
-      let lastError = null;
-      for (let attempt = 1; attempt <= 3; attempt += 1) {
-        try {
-          result = await approveForAgent(slug, cfg.token, globalTrusted);
-          lastError = null;
-          break;
-        } catch (error) {
-          lastError = error;
-          await new Promise((r) => setTimeout(r, 1000 * attempt));
-        }
-      }
-
-      if (lastError) {
-        throw lastError;
-      }
-
-      console.log(`[OK] ${slug} approved=${result.approved} pending=${result.pending} (${result.message})`);
-    } catch (error) {
-      failed += 1;
-      console.log(`[FAIL] ${slug} ${String(error.message || error)}`);
-    }
+  const args = process.argv.slice(2);
+  if (!args.length || args.includes("--help")) {
+    console.log("Usage: node auto_approve_control_ui_repairs.js --policy FILE [--apply] [--watch]\nDefault: dry-run. Watch stops at policy expiry or approval cap. No token is printed or passed as a command argument.");
+    return;
   }
-
-  if (failed > 0) {
-    process.exit(1);
+  if (args.some(arg => !["--apply", "--policy", "--watch"].includes(arg) && arg !== args[args.indexOf("--policy") + 1])) throw new Error("unknown arguments");
+  const index = args.indexOf("--policy");
+  if (index < 0 || !args[index + 1] || args[index + 1].startsWith("--")) throw new Error("policy file required");
+  const policy = validatePolicy(JSON.parse(fs.readFileSync(args[index + 1], "utf8")));
+  const apply = args.includes("--apply");
+  const releaseLock = apply ? acquireLock(`${args[index + 1]}.lock`) : () => {};
+  try {
+    const budget = openBudget(policy, `${args[index + 1]}.state.json`);
+    let remaining = budget.remaining();
+    console.log(JSON.stringify({ decision: "monitor-started", mode: apply ? "apply" : "dry-run", agents: policy.agents,
+      lanCidrs: policy.lanCidrs, expiresAt: policy.expiresAt, remaining }));
+    const stop = new AbortController();
+    process.once("SIGTERM", () => stop.abort());
+    process.once("SIGINT", () => stop.abort());
+    do {
+      if (stop.signal.aborted || Date.now() >= policy.expiry) break;
+      run({ ...policy, maxApprovals: remaining }, { apply, onAttempt: () => budget.consume() });
+      remaining = budget.remaining();
+      console.log(JSON.stringify({ decision: "scan-complete", remaining, expiresAt: policy.expiresAt }));
+      if (!args.includes("--watch") || remaining <= 0 || Date.now() >= policy.expiry || stop.signal.aborted) break;
+      try {
+        await delay(Math.min(10000, policy.expiry - Date.now()), undefined, { signal: stop.signal });
+      } catch {
+        break;
+      }
+    } while (!stop.signal.aborted);
+    console.log(JSON.stringify({ decision: "monitor-stopped", reason: stop.signal.aborted ? "signal" :
+      Date.now() >= policy.expiry ? "policy-expired" : remaining <= 0 ? "approval-cap" : "single-scan", remaining }));
+  } finally {
+    releaseLock();
   }
 }
 
-main().catch((error) => {
-  console.error(`[FATAL] ${String(error.message || error)}`);
-  process.exit(1);
-});
+module.exports = { parseCidr, validatePolicy, evaluate, fingerprint, run, openBudget, acquireLock };
+if (require.main === module) {
+  main().catch(() => {
+    console.error("Automatic pairing failed; inspect policy and native device inventory. No credentials or raw CLI errors are logged.");
+    process.exitCode = 1;
+  });
+}

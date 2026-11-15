@@ -1,0 +1,8 @@
+FROM python:3.11-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+RUN python -m pip install --no-cache-dir dashscope==1.25.1 PyYAML==6.0.2 edge-tts==7.3.1
+COPY agent_speech.py /app/agent_speech.py
+USER 1000:1000
+CMD ["python", "/app/agent_speech.py", "serve"]

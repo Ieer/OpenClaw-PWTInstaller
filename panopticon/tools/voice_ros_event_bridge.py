@@ -140,6 +140,9 @@ class MissionControlEventSink:
     def _post_json(self, payload: dict[str, Any]) -> tuple[bool, int, bool]:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers = {"Content-Type": "application/json"}
+        event_key = str((payload.get("payload") or {}).get("event_key") or "").strip()
+        if event_key:
+            headers["Idempotency-Key"] = event_key
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
 
@@ -175,6 +178,8 @@ class VoiceRosEventBridge(Node):
         self.topic_asr = (os.getenv("MC_VOICE_TOPIC_ASR") or "asr").strip() or "asr"
         self.topic_text_response = (os.getenv("MC_VOICE_TOPIC_TEXT_RESPONSE") or "text_response").strip() or "text_response"
         self.topic_tts = (os.getenv("MC_VOICE_TOPIC_TTS") or "tts_topic").strip() or "tts_topic"
+        self.topic_tts_cancel = (os.getenv("MC_VOICE_TOPIC_TTS_CANCEL") or "tts_cancel").strip() or "tts_cancel"
+        self.device_id = (os.getenv("MC_VOICE_DEVICE_ID") or "").strip()
         self.enable_llm_first_token = _env_bool("MC_VOICE_ENABLE_LLM_FIRST_TOKEN", True)
         self.idle_after_tts_s = max(1.0, _env_float("MC_VOICE_IDLE_AFTER_TTS_S", 6.0))
 
@@ -182,6 +187,8 @@ class VoiceRosEventBridge(Node):
         self.seq = 0
         self.has_llm_first_token = False
         self.speaking_since_mono = 0.0
+        self.legacy_speaking = False
+        self.active_tts_request_id = ""
 
         self.sink = MissionControlEventSink()
         self.sink.start()
@@ -190,11 +197,12 @@ class VoiceRosEventBridge(Node):
         self.create_subscription(String, self.topic_asr, self._on_asr, 20)
         self.create_subscription(String, self.topic_text_response, self._on_text_response, 20)
         self.create_subscription(String, self.topic_tts, self._on_tts_start, 20)
+        self.tts_cancel_publisher = self.create_publisher(String, self.topic_tts_cancel, 10)
         self.create_timer(0.25, self._on_tick)
 
         self.get_logger().info(
             f"voice bridge started agent={self.agent} topics="
-            f"{self.topic_wakeup},{self.topic_asr},{self.topic_text_response},{self.topic_tts}"
+            f"{self.topic_wakeup},{self.topic_asr},{self.topic_text_response},{self.topic_tts}; cancel={self.topic_tts_cancel}"
         )
 
     def destroy_node(self) -> bool:
@@ -208,6 +216,7 @@ class VoiceRosEventBridge(Node):
         self.seq = 0
         self.has_llm_first_token = False
         self.speaking_since_mono = 0.0
+        self.legacy_speaking = False
 
     def _event_key(self, event_type: str, seq: int, text_fingerprint: str = "") -> str:
         base = f"{self.agent}|{self.current_turn_id}|{event_type}|{seq}|{text_fingerprint}"
@@ -224,6 +233,8 @@ class VoiceRosEventBridge(Node):
         body["source_topic"] = source_topic
         body["client_sent_ms"] = now_ms
         body.setdefault("trace_id", self.current_turn_id)
+        if self.device_id:
+            body["device_id"] = self.device_id
 
         fp = ""
         if body.get("text"):
@@ -261,6 +272,7 @@ class VoiceRosEventBridge(Node):
         def _cb() -> None:
             if not bool(msg.data):
                 return
+            self._cancel_active_tts()
             self._next_turn()
             self._emit("voice.state", self.topic_wakeup, {"state": "listening", "trigger": "wakeup"})
 
@@ -294,23 +306,71 @@ class VoiceRosEventBridge(Node):
 
     def _on_tts_start(self, msg: Any) -> None:
         def _cb() -> None:
-            text = str(msg.data or "").strip()
+            raw = str(msg.data or "").strip()
+            try:
+                status_payload = json.loads(raw)
+            except json.JSONDecodeError:
+                status_payload = {"status": "started", "text": raw, "legacy": True}
+            if not isinstance(status_payload, dict):
+                return
+            status = str(status_payload.get("status") or "started").strip().lower()
+            request_id = str(status_payload.get("request_id") or "").strip()
+            status_device_id = str(status_payload.get("device_id") or "").strip()
+            if status_device_id and self.device_id and status_device_id != self.device_id:
+                return
+            if status in {"finished", "cancelled"} and request_id and request_id != self.active_tts_request_id:
+                return
             if not self.current_turn_id:
                 self._next_turn()
-            self._emit("voice.tts.start", self.topic_tts, {"text": text[:200] if text else ""})
-            self._emit("voice.state", self.topic_tts, {"state": "speaking"})
-            self.speaking_since_mono = time.monotonic()
+            payload = {key: status_payload[key] for key in ("request_id", "device_id") if status_payload.get(key)}
+            if status == "queued":
+                self._emit("voice.tts.queued", self.topic_tts, payload)
+            elif status == "started":
+                payload["text"] = str(status_payload.get("text") or "")[:200]
+                self.active_tts_request_id = request_id
+                self._emit("voice.tts.start", self.topic_tts, payload)
+                self._emit("voice.state", self.topic_tts, {**payload, "state": "speaking"})
+                self.speaking_since_mono = time.monotonic()
+                self.legacy_speaking = bool(status_payload.get("legacy"))
+            elif status in {"finished", "cancelled"}:
+                payload["status"] = status
+                self._emit("voice.tts.end", self.topic_tts, payload)
+                self._emit("voice.state", self.topic_tts, {**payload, "state": "idle"})
+                self.speaking_since_mono = 0.0
+                self.legacy_speaking = False
+                if str(status_payload.get("request_id") or "") == self.active_tts_request_id:
+                    self.active_tts_request_id = ""
+            elif status in {"failed", "rejected"}:
+                payload.update(error_type=str(status_payload.get("error_type") or status), retryable=False)
+                self._emit("voice.error", self.topic_tts, payload)
+                self._emit("voice.state", self.topic_tts, {**payload, "state": "error"})
+                self.speaking_since_mono = 0.0
+                self.legacy_speaking = False
+                if str(status_payload.get("request_id") or "") == self.active_tts_request_id:
+                    self.active_tts_request_id = ""
 
         self._safe_callback("_on_tts_start", self.topic_tts, _cb)
 
+    def _cancel_active_tts(self) -> None:
+        request_id = self.active_tts_request_id
+        if not request_id:
+            return
+        message = String()
+        message.data = json.dumps({"request_id": request_id}, ensure_ascii=False)
+        self.tts_cancel_publisher.publish(message)
+        self.active_tts_request_id = ""
+        self.speaking_since_mono = 0.0
+        self.legacy_speaking = False
+
     def _on_tick(self) -> None:
-        if self.speaking_since_mono <= 0.0:
+        if self.speaking_since_mono <= 0.0 or not self.legacy_speaking:
             return
         elapsed = time.monotonic() - self.speaking_since_mono
         if elapsed < self.idle_after_tts_s:
             return
         self._emit("voice.state", "bridge.timer", {"state": "idle"})
         self.speaking_since_mono = 0.0
+        self.legacy_speaking = False
 
 
 def main() -> None:

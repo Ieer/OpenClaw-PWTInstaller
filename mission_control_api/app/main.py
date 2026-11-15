@@ -3438,6 +3438,20 @@ async def _get_agent_usage_snapshot_nonblocking(settings: Settings, days: int) -
     return _cached_agent_usage_snapshot(clamped_days) or []
 
 
+def _voice_source_refs(source_event: dict) -> dict[str, str]:
+    payload = source_event.get("payload") if isinstance(source_event.get("payload"), dict) else {}
+    refs: dict[str, str] = {}
+    for source_key, target_key in (("id", "source_voice_event_id"), ("agent", "source_voice_agent")):
+        value = str(source_event.get(source_key) or "").strip()
+        if value:
+            refs[target_key] = value
+    for key in ("turn_id", "event_key", "device_id"):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            refs["device_id" if key == "device_id" else f"voice_{key}"] = value
+    return refs
+
+
 def create_app() -> FastAPI:
     settings = load_settings()
 
@@ -3556,23 +3570,6 @@ def create_app() -> FastAPI:
         if settings.event_outbox_enabled:
             await stage_event(session, queued_event)
         return queued_event
-
-    def _voice_source_refs(source_event: dict) -> dict[str, str]:
-        payload = source_event.get("payload") if isinstance(source_event.get("payload"), dict) else {}
-        refs: dict[str, str] = {}
-        source_voice_event_id = str(source_event.get("id") or "").strip()
-        source_voice_agent = str(source_event.get("agent") or "").strip()
-        voice_turn_id = str(payload.get("turn_id") or "").strip()
-        voice_event_key = str(payload.get("event_key") or "").strip()
-        if source_voice_event_id:
-            refs["source_voice_event_id"] = source_voice_event_id
-        if source_voice_agent:
-            refs["source_voice_agent"] = source_voice_agent
-        if voice_turn_id:
-            refs["voice_turn_id"] = voice_turn_id
-        if voice_event_key:
-            refs["voice_event_key"] = voice_event_key
-        return refs
 
     def _voice_command_audit_payload(
         source_event: dict,

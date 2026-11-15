@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
+import threading
 import tempfile
 from pathlib import Path
 
-from .tts_base import TtsEngine
+from .tts_base import TtsEngine, run_process
 
 
 class EdgeTtsEngine(TtsEngine):
@@ -13,7 +13,7 @@ class EdgeTtsEngine(TtsEngine):
         self.voice = voice
         self.output_device = output_device
 
-    def speak(self, text: str) -> None:
+    def speak(self, text: str, cancel_event: threading.Event | None = None) -> None:
         clean = text.strip()
         if not clean:
             return
@@ -25,12 +25,14 @@ class EdgeTtsEngine(TtsEngine):
             raise RuntimeError("mpg123 or ffplay is required to play edge-tts output")
         with tempfile.TemporaryDirectory(prefix="openclaw-edge-tts-") as tmpdir:
             media_path = Path(tmpdir) / "speech.mp3"
-            subprocess.run([edge_tts, "--voice", self.voice, "--text", clean, "--write-media", str(media_path)], check=True, timeout=120)
+            run_process([edge_tts, "--voice", self.voice, "--text", clean, "--write-media", str(media_path)],
+                        timeout=120, cancel_event=cancel_event)
             if Path(player).name == "ffplay":
-                subprocess.run([player, "-nodisp", "-autoexit", "-loglevel", "error", str(media_path)], check=True, timeout=120)
+                run_process([player, "-nodisp", "-autoexit", "-loglevel", "error", str(media_path)],
+                            timeout=120, cancel_event=cancel_event)
             else:
                 player_args = [player, "-q"]
                 if self.output_device:
                     player_args.extend(["-a", self.output_device])
                 player_args.append(str(media_path))
-                subprocess.run(player_args, check=True, timeout=120)
+                run_process(player_args, timeout=120, cancel_event=cancel_event)

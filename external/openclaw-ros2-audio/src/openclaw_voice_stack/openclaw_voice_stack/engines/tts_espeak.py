@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
+import threading
 
-from .tts_base import TtsEngine
+from .tts_base import TtsEngine, run_process
 
 
 class EspeakTtsEngine(TtsEngine):
@@ -12,14 +12,14 @@ class EspeakTtsEngine(TtsEngine):
         self.speed = int(speed)
         self.command = command.strip() or shutil.which("espeak-ng") or shutil.which("espeak") or ""
 
-    def speak(self, text: str) -> None:
+    def speak(self, text: str, cancel_event: threading.Event | None = None) -> None:
         clean = text.strip()
         if not clean:
             return
         if not self.command:
             raise RuntimeError("espeak-ng/espeak not found; install espeak-ng or choose another TTS engine")
-        subprocess.run(
+        run_process(
             [self.command, "-v", self.voice, "-s", str(self.speed), clean],
-            check=True,
             timeout=max(15, min(120, len(clean) // 3 + 15)),
+            cancel_event=cancel_event,
         )

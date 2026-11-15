@@ -1,3 +1,8 @@
+panopticon/env/agent-speech.json
+panopticon/env/control-ui-auto-approve.policy.json
+panopticon/env/control-ui-auto-approve.policy.json.state.json
+panopticon/env/control-ui-auto-approve.policy.json.lock
+panopticon/env/personal-speech.json
 # ------------------------------
 # OS / Editor
 # ------------------------------

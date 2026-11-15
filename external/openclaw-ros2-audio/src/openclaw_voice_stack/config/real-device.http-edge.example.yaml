@@ -43,6 +43,8 @@ tts_node:
     speed: 165
     model_path: ""
     command: ""
+    tts_cancel_topic: tts_cancel
+    queue_size: 16
 
 mc_tts_feedback_node:
   ros__parameters:
@@ -53,6 +55,7 @@ mc_tts_feedback_node:
     mc_auth_token_env: MC_AUTH_TOKEN
     feed_limit: 80
     poll_interval_seconds: 0.5
+    # MC_VOICE_DEVICE_ID must match the bridge's stable device ID.
 
 manual_turn_node:
   ros__parameters:

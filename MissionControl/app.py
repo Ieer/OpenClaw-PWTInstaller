@@ -456,6 +456,8 @@ def _voice_state_from_event(event_type: str, payload: dict | None) -> str | None
 
     if event_type == "chat.proxy.error" or event_type == "voice.error":
         return "error"
+    if event_type == "voice.tts.end":
+        return "idle" if str(payload.get("status") or "").lower() in {"finished", "cancelled"} else None
     if event_type == "chat.message.received" or event_type == "voice.tts.start":
         return "speaking"
     if event_type == "chat.message.sent" or event_type == "voice.asr.final":
@@ -2593,7 +2595,7 @@ app.layout = html.Div(
                                             className="ghost-button docs-link chat-external-link",
                                         ),
                                         html.Div(
-                                            "Mission Control now routes chat via the unified gateway. If a browser policy blocks iframe rendering, use Open External.",
+                                            "Text chat and the built-in microphone share this agent conversation. Dictation and Talk require configured speech providers and HTTPS microphone permission. If iframe rendering is blocked, use Open External.",
                                             className="chat-hint",
                                         ),
                                     ],

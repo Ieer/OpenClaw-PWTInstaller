@@ -1,0 +1,9 @@
+{
+  "agents": ["personal", "nox", "metrics", "growth", "email", "writing", "health", "trades"],
+  "lanCidrs": ["192.168.1.3/32"],
+  "allowedScopes": ["operator.read", "operator.write"],
+  "allowAdmin": false,
+  "maxAgeSeconds": 300,
+  "maxApprovals": 8,
+  "expiresAt": "REPLACE_WITH_SHORT_LIVED_ISO_8601_EXPIRY"
+}

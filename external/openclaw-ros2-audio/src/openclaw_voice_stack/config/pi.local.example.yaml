@@ -37,9 +37,13 @@ tts_node:
     speed: 165
     # For edge-tts: install edge-tts and mpg123/ffplay, then set tts_engine: edge.
     # For Piper: install piper, set tts_engine: piper and model_path.
+    tts_cancel_topic: tts_cancel
+    queue_size: 16
 
 mc_tts_feedback_node:
   ros__parameters:
     mc_api_url: http://127.0.0.1:18910
     mc_auth_token_env: MC_AUTH_TOKEN
     poll_interval_seconds: 0.5
+    # Set MC_VOICE_DEVICE_ID to the same unique ID used by the event bridge.
+    # The consumer persists its cursor under ~/.openclaw/voice/ by default.

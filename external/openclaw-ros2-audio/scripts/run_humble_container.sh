@@ -10,6 +10,7 @@ BRIDGE_CONTAINER="${MC_VOICE_BRIDGE_CONTAINER:-mission-control-voice-bridge}"
 DEFAULT_CMD='ros2 run openclaw_voice_stack manual_turn_node --ros-args -p delay_seconds:=1.0 -p wait_for_subscriptions:=true -p subscription_wait_seconds:=8.0'
 RUN_CMD="${*:-$DEFAULT_CMD}"
 AUDIO_UID="${AUDIO_UID:-$(id -u)}"
+VOICE_STATE_DIR="${MC_VOICE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/openclaw-voice}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[FAIL] docker not found"
@@ -61,8 +62,17 @@ if [[ -f "$REPO_ROOT/panopticon/env/mission-control.env" ]]; then
   DOCKER_ARGS+=(--env-file "$REPO_ROOT/panopticon/env/mission-control.env")
 fi
 
+VOICE_ENV_FILE="$REPO_ROOT/panopticon/env/mission-control-voice-bridge.env"
+if [[ -z "${MC_VOICE_DEVICE_ID:-}" && -f "$VOICE_ENV_FILE" ]]; then
+  MC_VOICE_DEVICE_ID="$(sed -n 's/^MC_VOICE_DEVICE_ID=//p' "$VOICE_ENV_FILE" | tail -n 1 | tr -d "\"'" | xargs)"
+fi
+mkdir -p "$VOICE_STATE_DIR"
+chmod 700 "$VOICE_STATE_DIR"
+
 DOCKER_ARGS+=(
   -e "MC_API_URL=${MC_API_URL:-http://mission-control-api:9090}"
+  -e "MC_VOICE_DEVICE_ID=${MC_VOICE_DEVICE_ID:-}"
+  -e "MC_VOICE_CURSOR_DB=/var/lib/openclaw-voice/tts-cursor.sqlite3"
   -e "OPENCLAW_ASR_HTTP_URL=${OPENCLAW_ASR_HTTP_URL:-}"
   -e "OPENCLAW_ASR_HTTP_TOKEN=${OPENCLAW_ASR_HTTP_TOKEN:-}"
   -e "OPENCLAW_AUDIO_INPUT_DEVICE=${OPENCLAW_AUDIO_INPUT_DEVICE:-}"
@@ -81,6 +91,7 @@ DOCKER_ARGS+=(
   -e "OPENCLAW_ROS_INSTALL_TONGYI_ASR_DEPS=${OPENCLAW_ROS_INSTALL_TONGYI_ASR_DEPS:-0}"
   -e "FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4}"
   -e "OPENCLAW_ROS_INSTALL_AUDIO_DEPS=${OPENCLAW_ROS_INSTALL_AUDIO_DEPS:-0}"
+  -v "$VOICE_STATE_DIR:/var/lib/openclaw-voice"
   -v "$WORKSPACE_DIR:/ws-src:ro"
   -w /tmp/openclaw-ros2-audio
 )
